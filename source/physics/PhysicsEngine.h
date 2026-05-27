@@ -5,31 +5,47 @@
 #include <juce_core/juce_core.h>
 
 #include "PhysicsState.h"
+#include "FieldObject.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PhysicsEngine — dedicated physics simulation thread
+// Emitter — Morphon generator (Phase 1 minimal version)
 //
-// Runs at TICK_RATE_HZ (500 Hz by default). On each tick it:
-//   1. Drains the NoteEvent queue (note-on/off from the audio thread)
-//   2. Integrates Morphon positions under field forces
-//   3. Evaluates Timbral Anchor blending (RBF)
-//   4. Publishes a PhysicsStateSnapshot via the triple-buffer bridge
-//
-// Currently (Phase 0): the tick loop is structurally complete but produces
-// only an empty snapshot. Morphon logic is added in Phase 1–2.
-//
-// Thread safety:
-//   - Parameters (globalTimeScale_, etc.) are written from the audio/UI thread
-//     via std::atomic. No locks required.
-//   - Note events travel audio → physics via a lock-free SPSC queue.
-//   - Snapshot travels physics → audio via PhysicsAudioBridge (triple buffer).
+// Full Emitter spec (key ranges, macro ranges, velocity layering, etc.)
+// is implemented in Phase 3. This struct holds only the parameters needed
+// to spawn and initialise a Morphon from a MIDI note-on event.
 // ─────────────────────────────────────────────────────────────────────────────
+static constexpr int MAX_EMITTERS = 8;
 
+struct Emitter
+{
+    float           x            = 0.5f;    // Spawn position on Manifold
+    float           y            = 0.5f;
+    float           launchAngle  = 0.0f;    // Radians; 0 = rightward. Phase 4: vel-mappable
+    float           launchSpeed  = 0.0f;    // Initial speed (Manifold units/sec); 0 = field carries
+    float           spawnMass    = 1.0f;
+    float           spawnDrag    = 0.02f;
+    float           attackTime   = 0.05f;   // Envelope attack, seconds
+    float           releaseTime  = 0.30f;   // Envelope release, seconds
+    BoundaryBehavior boundary    = BoundaryBehavior::Wrap;
+    bool            active       = true;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PhysicsEngine — dedicated simulation thread
+//
+// Tick loop runs at TICK_RATE_HZ. Each tick:
+//   1. Drain NoteEvent queue (audio → physics)
+//   2. Rebuild field grid if any object changed
+//   3. Integrate all active Morphon positions
+//   4. Update amplitude envelopes
+//   5. Publish snapshot via triple buffer
+//
+// All mutable state lives on the physics thread. External threads communicate
+// only via atomics (parameters) and lock-free queues (events).
+// ─────────────────────────────────────────────────────────────────────────────
 class PhysicsEngine : public juce::Thread
 {
 public:
-    // Target physics tick rate. Exposed so the audio thread can compute
-    // interpolation coefficients. Lowering this trades accuracy for CPU.
     static constexpr double TICK_RATE_HZ      = 500.0;
     static constexpr double TICK_INTERVAL_SEC = 1.0 / TICK_RATE_HZ;
 
@@ -37,46 +53,51 @@ public:
     ~PhysicsEngine() override;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
-
     void startSimulation();
     void stopSimulation();
 
-    // ── Called from audio thread (lock-free) ──────────────────────────────────
-
-    // Push a note event into the SPSC queue. Called from processBlock().
-    // Returns false and drops the event if the queue is full (should not
-    // happen in practice; queue capacity is generous).
+    // ── Audio thread interface (lock-free) ───────────────────────────────────
     bool pushNoteEvent(const NoteEvent& event) noexcept;
-
-    // Grab the latest physics snapshot for synthesis.
-    // Call once at the start of processBlock(); hold reference for that block.
     const PhysicsStateSnapshot& getLatestState() noexcept;
 
-    // ── Called from audio or UI thread (atomic writes) ────────────────────────
-
+    // ── Any thread (atomic writes) ───────────────────────────────────────────
     void setGlobalTimeScale(float scale) noexcept;
 
 private:
     // ── juce::Thread ──────────────────────────────────────────────────────────
     void run() override;
 
-    // ── Internal tick ─────────────────────────────────────────────────────────
+    // ── Tick sub-steps ────────────────────────────────────────────────────────
     void tick(double dtSeconds);
     void drainNoteEvents();
+    void rebuildFieldGridIfDirty();
+    void integrateMorphons(double dt);
+    void updateEnvelopes(double dt);
+    void applyBoundary(MorphonState& m) const noexcept;
+    void writeSnapshot();
+
+    // ── Note handling (physics thread only) ──────────────────────────────────
+    void handleNoteOn(int channel, int note, int velocity);
+    void handleNoteOff(int channel, int note);
+    int  findFreeSlot() const noexcept;   // Returns -1 if none
+    int  findActiveNote(int channel, int note) const noexcept;
 
     // ── Communication ─────────────────────────────────────────────────────────
     PhysicsAudioBridge bridge_;
 
-    // Note event queue: audio → physics (SPSC, lock-free)
     static constexpr int EVENT_QUEUE_CAPACITY = 128;
     juce::AbstractFifo              eventFifo_{ EVENT_QUEUE_CAPACITY };
     std::array<NoteEvent, EVENT_QUEUE_CAPACITY> eventBuffer_;
 
-    // ── Parameters (atomic; written from any thread) ──────────────────────────
+    // ── Parameters (atomic) ───────────────────────────────────────────────────
     std::atomic<float> globalTimeScale_{ 1.0f };
 
-    // ── Internal simulation state ──────────────────────────────────────────────
-    // Phase 1+: Morphon array, field objects, etc. will live here.
+    // ── Simulation state (physics thread only) ────────────────────────────────
+    std::array<MorphonState, MAX_MORPHONS>   morphons_{};
+    std::array<FieldObject,  MAX_FIELD_OBJECTS> fieldObjects_{};
+    std::array<Emitter,      MAX_EMITTERS>   emitters_{};
+    FieldGrid fieldGrid_;
+
     uint64_t tickIndex_        = 0;
     double   simulationTimeMs_ = 0.0;
 

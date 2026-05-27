@@ -3,71 +3,94 @@
 #include <atomic>
 #include <cstdint>
 
+#include "FieldObject.h"
+
 // ─────────────────────────────────────────────────────────────────────────────
-// PhysicsState.h — Shared data structures for physics ↔ audio communication
+// PhysicsState.h — Shared data structures for physics ↔ audio/UI communication
 //
-// Threading model:
-//   Physics thread  → writes PhysicsStateSnapshot, publishes via PhysicsAudioBridge
-//   Audio thread    → reads latest PhysicsStateSnapshot at start of each block
-//   UI thread       → reads via a separate polling mechanism (see PhysicsEngine)
-//
-// Lock-free triple buffer: at any moment, three buffers exist —
-//   one owned by physics (writing), one published (latest complete tick),
-//   one owned by audio (reading). No buffer is ever shared between two threads.
+// Threading model (unchanged from Phase 0):
+//   Physics thread  → writes PhysicsStateSnapshot, publishes via triple buffer
+//   Audio thread    → reads latest snapshot at start of each processBlock()
+//   UI thread       → reads a relaxed copy for display (~30 Hz)
 // ─────────────────────────────────────────────────────────────────────────────
 
 static constexpr int MAX_MORPHONS = 256;
 
-// Per-Morphon state produced by the physics tick.
-// Read by the audio thread to drive synthesis.
+// Boundary behaviour when a Morphon exits the [0,1]×[0,1] Manifold.
+enum class BoundaryBehavior : uint8_t { Wrap, Reflect, Terminate };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MorphonState — per-Morphon data shared between physics, audio, and UI
+// ─────────────────────────────────────────────────────────────────────────────
 struct MorphonState
 {
-    // Manifold position, normalised [0, 1] × [0, 1]
-    float x = 0.5f;
-    float y = 0.5f;
-
-    // Velocity vector (Manifold units per second)
-    float vx = 0.0f;
+    // ── Position & kinematics ─────────────────────────────────────────────────
+    float x  = 0.5f;    // Manifold position, normalised [0,1]
+    float y  = 0.5f;
+    float vx = 0.0f;    // Velocity (Manifold units per second)
     float vy = 0.0f;
 
-    // Lifecycle
-    float age      = 0.0f;  // Normalised 0..1 (age / lifetime)
-    float lifetime = 2.0f;  // Seconds; ∞ if <= 0
-    bool  active   = false;
+    // ── Physics parameters ────────────────────────────────────────────────────
+    float mass = 1.0f;  // Resistance to field forces
+    float drag = 0.02f; // Velocity dissipation per tick (0 = frictionless, 1 = instant stop)
 
-    // MIDI identity — lets the audio thread know which voice this is
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
+    float            age          = 0.0f;   // Seconds alive
+    bool             active       = false;
+    bool             noteReleased = false;  // true after note-off; triggers release phase
+    BoundaryBehavior boundary     = BoundaryBehavior::Wrap;
+
+    // ── MIDI identity ─────────────────────────────────────────────────────────
     int midiNote    = 60;
     int midiChannel = 1;
 
-    // Amplitude from the ADSR envelope (0..1).
-    // Synthesis engine multiplies by this.
-    float amplitude = 0.0f;
+    // ── Amplitude envelope ────────────────────────────────────────────────────
+    // Computed by physics tick; read by audio engine each buffer.
+    // Phase 2+: full multi-stage ADSR replaces this simple attack/release.
+    float amplitude = 0.0f;   // 0..1, authoritative value for synthesis scaling
 
-    // Blended timbral parameters — output of Anchor RBF interpolation.
-    // For Phase 2 (additive engine): timbreX = spectral rolloff, timbreY = inharmonicity.
-    // Extended in later phases as more engines are added.
+    // ── Timbral parameters ────────────────────────────────────────────────────
+    // Output of Timbral Anchor RBF blending at current Manifold position.
+    // Phase 2: timbreX = spectral rolloff, timbreY = inharmonicity.
+    // Extended in later phases.
     float timbreX = 0.5f;
     float timbreY = 0.5f;
 
-    // Fundamental frequency derived from MIDI note (Hz)
+    // Fundamental frequency derived from midiNote (Hz)
     float fundamentalHz = 440.0f;
 };
 
-// Full simulation snapshot — one per physics tick, triple-buffered.
-struct PhysicsStateSnapshot
+// ─────────────────────────────────────────────────────────────────────────────
+// FieldObjectSnapshot — lightweight field object data for UI rendering
+// ─────────────────────────────────────────────────────────────────────────────
+struct FieldObjectSnapshot
 {
-    std::array<MorphonState, MAX_MORPHONS> morphons{};
-    int      activeMorphonCount = 0;
-    uint64_t tickIndex          = 0;   // Monotonically increasing; useful for debugging
-    double   simulationTimeMs   = 0.0; // Wall-clock simulation time in ms
+    FieldObjectType type      = FieldObjectType::Attractor;
+    float           x         = 0.5f;
+    float           y         = 0.5f;
+    float           strength  = 0.0f;
+    float           radius    = 0.0f;
+    float           chirality = 1.0f;
+    bool            active    = false;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PhysicsAudioBridge — wait-free triple buffer
-//
-// Invariant: writeIdx_ ≠ publishedIdx_ ≠ readIdx_ at all times.
-// Physics and audio each own one index exclusively; the third is the
-// "hot" published buffer available for atomic swap.
+// PhysicsStateSnapshot — one complete physics tick output
+// Triple-buffered between physics and audio threads.
+// ─────────────────────────────────────────────────────────────────────────────
+struct PhysicsStateSnapshot
+{
+    std::array<MorphonState,       MAX_MORPHONS>       morphons{};
+    std::array<FieldObjectSnapshot, MAX_FIELD_OBJECTS> fieldObjects{};
+
+    int      activeMorphonCount  = 0;
+    int      activeFieldObjCount = 0;
+    uint64_t tickIndex           = 0;
+    double   simulationTimeMs    = 0.0;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PhysicsAudioBridge — wait-free triple buffer (unchanged from Phase 0)
 // ─────────────────────────────────────────────────────────────────────────────
 class PhysicsAudioBridge
 {
@@ -76,25 +99,16 @@ public:
         : publishedIdx_(0), writeIdx_(1), readIdx_(2)
     {}
 
-    // ── Physics thread ────────────────────────────────────────────────────────
-
-    // Get the buffer physics should write into this tick.
     PhysicsStateSnapshot& getWriteBuffer() noexcept
     {
         return buffers_[writeIdx_];
     }
 
-    // Call after writing to make the new state visible to the audio thread.
-    // Physics receives the old published index as its next write buffer.
     void publish() noexcept
     {
         writeIdx_ = publishedIdx_.exchange(writeIdx_, std::memory_order_acq_rel);
     }
 
-    // ── Audio thread ──────────────────────────────────────────────────────────
-
-    // Call at the start of each processBlock(). Atomically grabs the latest
-    // published snapshot. Safe to read for the entire duration of the block.
     const PhysicsStateSnapshot& getLatestForAudio() noexcept
     {
         readIdx_ = publishedIdx_.exchange(readIdx_, std::memory_order_acq_rel);
@@ -104,18 +118,18 @@ public:
 private:
     std::array<PhysicsStateSnapshot, 3> buffers_;
     std::atomic<int> publishedIdx_;
-    int writeIdx_;   // Exclusively owned by physics thread
-    int readIdx_;    // Exclusively owned by audio thread
+    int writeIdx_;
+    int readIdx_;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// NoteEvent — audio thread → physics thread event queue
+// NoteEvent — audio thread → physics thread (unchanged from Phase 0)
 // ─────────────────────────────────────────────────────────────────────────────
 struct NoteEvent
 {
     enum class Type : uint8_t { NoteOn, NoteOff };
-    Type type       = Type::NoteOff;
-    int  channel    = 1;
-    int  note       = 60;
-    int  velocity   = 0;
+    Type type     = Type::NoteOff;
+    int  channel  = 1;
+    int  note     = 60;
+    int  velocity = 0;
 };

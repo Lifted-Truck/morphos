@@ -1,0 +1,21 @@
+# Normalize all text files to LF in the repository.
+# Git converts to CRLF on Windows checkout automatically (core.autocrlf).
+* text=auto eol=lf
+
+# Source files — explicitly text
+*.cpp   text eol=lf
+*.h     text eol=lf
+*.cmake text eol=lf
+*.txt   text eol=lf
+*.md    text eol=lf
+*.json  text eol=lf
+*.xml   text eol=lf
+*.html  text eol=lf
+
+# Binary files — never convert
+*.png   binary
+*.jpg   binary
+*.wav   binary
+*.aif   binary
+*.dll   binary
+*.vst3  binary
