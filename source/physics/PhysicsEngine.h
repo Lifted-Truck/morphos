@@ -61,6 +61,11 @@ public:
     bool pushNoteEvent(const NoteEvent& event) noexcept;
     const PhysicsStateSnapshot& getLatestState() noexcept;
 
+    // ── UI thread interface (lock-free) ──────────────────────────────────────
+    // Send an edit command (object move, parameter change) from the UI thread.
+    // Applied at the start of the next physics tick — no wait, no blocking.
+    bool pushManifoldEdit(const ManifoldEdit& edit) noexcept;
+
     // ── Any thread (atomic writes) ───────────────────────────────────────────
     void setGlobalTimeScale(float scale) noexcept;
 
@@ -71,6 +76,7 @@ private:
     // ── Tick sub-steps ────────────────────────────────────────────────────────
     void tick(double dtSeconds);
     void drainNoteEvents();
+    void drainEditCommands();        // Apply UI → physics edits before integration
     void rebuildFieldGridIfDirty();
     void integrateMorphons(double dt);
     void updateEnvelopes(double dt);
@@ -86,9 +92,15 @@ private:
     // ── Communication ─────────────────────────────────────────────────────────
     PhysicsAudioBridge bridge_;
 
+    // Note events: audio → physics
     static constexpr int EVENT_QUEUE_CAPACITY = 128;
-    juce::AbstractFifo              eventFifo_{ EVENT_QUEUE_CAPACITY };
+    juce::AbstractFifo               eventFifo_{ EVENT_QUEUE_CAPACITY };
     std::array<NoteEvent, EVENT_QUEUE_CAPACITY> eventBuffer_;
+
+    // Manifold edits: UI → physics
+    static constexpr int EDIT_QUEUE_CAPACITY = 64;
+    juce::AbstractFifo                   editFifo_{ EDIT_QUEUE_CAPACITY };
+    std::array<ManifoldEdit, EDIT_QUEUE_CAPACITY> editBuffer_;
 
     // ── Parameters (atomic) ───────────────────────────────────────────────────
     std::atomic<float> globalTimeScale_{ 1.0f };
@@ -99,9 +111,12 @@ private:
     std::array<Emitter,      MAX_EMITTERS>      emitters_{};
     FieldGrid                                   fieldGrid_;
 
-    // ── Timbral Anchors (Phase 2: two hardcoded; Phase 3+: user-placed) ──────
-    static constexpr int NUM_ANCHORS = 2;
-    std::array<TimbralAnchor, NUM_ANCHORS> timbralAnchors_{};
+    // ── Timbral Anchors ───────────────────────────────────────────────────────
+    // Phase 2: two hardcoded anchors at indices 0–1.
+    // Phase 3+: user-placed via drag; active count tracked separately.
+    // Active anchors are always compacted at the front of the array (no gaps).
+    int activeAnchorCount_ = 2;
+    std::array<TimbralAnchor, MAX_TIMBRAL_ANCHORS> timbralAnchors_{};
 
     uint64_t tickIndex_        = 0;
     double   simulationTimeMs_ = 0.0;

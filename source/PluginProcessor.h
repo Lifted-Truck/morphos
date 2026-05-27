@@ -66,6 +66,13 @@ public:
         return latestSnapshotForUI_;
     }
 
+    // Forward a Manifold edit command from the UI thread to the physics thread.
+    // Returns false if the edit queue is full (rare; editor should tolerate silently).
+    bool pushManifoldEdit(const ManifoldEdit& edit) noexcept
+    {
+        return physicsEngine_.pushManifoldEdit(edit);
+    }
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 

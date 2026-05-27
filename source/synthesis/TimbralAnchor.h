@@ -25,6 +25,7 @@ struct TimbralAnchor
     float y       = 0.5f;
     float timbreX = 0.5f;   // Phase 2: spectral rolloff [0,1]
     float timbreY = 0.0f;   // Phase 2: inharmonicity    [0,1]
+    bool  active  = false;  // Slot in use (physics thread manages compaction)
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

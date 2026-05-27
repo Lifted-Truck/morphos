@@ -17,14 +17,18 @@
 namespace Colour
 {
     static const juce::Colour Background  { 0xFF1A1A18 };
+    static const juce::Colour PanelBg     { 0xFF1F1F1D };   // Slightly lighter — panel area
     static const juce::Colour GridLine    { 0xFF252522 };
+    static const juce::Colour Divider     { 0xFF2E2E2B };   // Canvas / panel border
     static const juce::Colour Attractor   { 0xFF378ADD };
     static const juce::Colour Repeller    { 0xFFE24B4A };
     static const juce::Colour Vortex      { 0xFF7F77DD };
-    static const juce::Colour Emitter     { 0xFFD9A63A };  // Amber — spawn / generation
+    static const juce::Colour Emitter     { 0xFFD9A63A };   // Amber — spawn / generation
+    static const juce::Colour Anchor      { 0xFF3DC9B0 };   // Teal — Timbral Anchor
     static const juce::Colour MorphonDot  { 0xFFE8E4DC };
     static const juce::Colour TrailBase   { 0xFFB0AB9E };
     static const juce::Colour StatusText  { 0xFF888880 };
+    static const juce::Colour SelectRing  { 0xFFFFFFFF };   // Selection highlight ring
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,6 +41,10 @@ MorphosEditor::MorphosEditor(MorphosProcessor& p)
     setSize(900, 600);
     setResizable(true, true);
     setResizeLimits(600, 400, 2400, 1600);
+
+    setupSliders();
+    updatePanel();    // Initialise panel to "No Selection" state
+
     startTimerHz(30);
 }
 
@@ -51,18 +59,341 @@ MorphosEditor::~MorphosEditor()
 
 juce::Rectangle<int> MorphosEditor::getCanvasBounds() const
 {
-    // Leave 28px at the bottom for the status bar; 8px margin all around.
-    return getLocalBounds().reduced(8).withTrimmedBottom(28);
+    // Full inner area (8 px margin, 28 px status bar, panel on right)
+    auto r = getLocalBounds().reduced(8).withTrimmedBottom(28);
+    r.removeFromRight(PANEL_WIDTH + 8);   // +8 = gap between canvas and panel
+    return r;
+}
+
+juce::Rectangle<int> MorphosEditor::getPanelBounds() const
+{
+    auto r = getLocalBounds().reduced(8).withTrimmedBottom(28);
+    return r.removeFromRight(PANEL_WIDTH);
 }
 
 juce::Point<float> MorphosEditor::manifoldToCanvas(float mx, float my,
                                                     juce::Rectangle<int> canvas) const
 {
-    // Manifold (0,0) → top-left of canvas, (1,1) → bottom-right.
     return {
         canvas.getX() + mx * canvas.getWidth(),
         canvas.getY() + my * canvas.getHeight()
     };
+}
+
+juce::Point<float> MorphosEditor::canvasToManifold(juce::Point<float> screenPt,
+                                                    juce::Rectangle<int> canvas) const
+{
+    return {
+        (screenPt.x - canvas.getX()) / canvas.getWidth(),
+        (screenPt.y - canvas.getY()) / canvas.getHeight()
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// resized — lay out all child components
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MorphosEditor::resized()
+{
+    layoutPanel(getPanelBounds());
+}
+
+void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
+{
+    constexpr int HEADER_H  = 26;
+    constexpr int LABEL_H   = 14;
+    constexpr int SLIDER_H  = 20;
+    constexpr int ROW_H     = LABEL_H + SLIDER_H + 2;   // label + slider + small gap
+    constexpr int SECTION_GAP = 6;
+
+    int y = panel.getY();
+    const int x = panel.getX();
+    const int w = panel.getWidth();
+
+    lblPanelHeader_.setBounds(x, y, w, HEADER_H);
+    y += HEADER_H + SECTION_GAP;
+
+    auto layoutRow = [&](juce::Label& lbl, juce::Slider& sld)
+    {
+        lbl.setBounds(x, y,          w, LABEL_H);
+        sld.setBounds(x, y + LABEL_H, w, SLIDER_H);
+        y += ROW_H;
+    };
+
+    // Anchor section
+    layoutRow(lblBrightness_,    sldBrightness_);
+    layoutRow(lblInharmonicity_, sldInharmonicity_);
+    y += SECTION_GAP;
+
+    // Field object section
+    layoutRow(lblFOStrength_,  sldFOStrength_);
+    layoutRow(lblFORadius_,    sldFORadius_);
+    layoutRow(lblFOChirality_, sldFOChirality_);
+    y += SECTION_GAP;
+
+    // Emitter section
+    layoutRow(lblEmitAngle_,   sldEmitAngle_);
+    layoutRow(lblEmitSpeed_,   sldEmitSpeed_);
+    layoutRow(lblEmitAttack_,  sldEmitAttack_);
+    layoutRow(lblEmitDecay_,   sldEmitDecay_);
+    layoutRow(lblEmitSustain_, sldEmitSustain_);
+    layoutRow(lblEmitRelease_, sldEmitRelease_);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// setupSliders — called once from constructor
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MorphosEditor::setupSliders()
+{
+    // ── Style helpers ──────────────────────────────────────────────────────────
+    auto styleSlider = [](juce::Slider& s, double lo, double hi)
+    {
+        s.setRange(lo, hi, 0.0);
+        s.setSliderStyle(juce::Slider::LinearHorizontal);
+        s.setTextBoxStyle(juce::Slider::TextBoxRight, false, 52, 18);
+        s.setColour(juce::Slider::backgroundColourId,        juce::Colour(0xFF252522));
+        s.setColour(juce::Slider::trackColourId,             juce::Colour(0xFF3DC9B0));
+        s.setColour(juce::Slider::thumbColourId,             juce::Colour(0xFFE8E4DC));
+        s.setColour(juce::Slider::textBoxTextColourId,       juce::Colour(0xFF888880));
+        s.setColour(juce::Slider::textBoxBackgroundColourId, juce::Colour(0xFF1A1A18));
+        s.setColour(juce::Slider::textBoxOutlineColourId,    juce::Colour(0xFF252522));
+        s.setVisible(false);
+    };
+
+    auto styleLabel = [](juce::Label& l, const juce::String& text)
+    {
+        l.setText(text, juce::dontSendNotification);
+        l.setFont(juce::FontOptions(11.0f));
+        l.setColour(juce::Label::textColourId, juce::Colour(0xFF888880));
+        l.setVisible(false);
+    };
+
+    // ── Panel header ───────────────────────────────────────────────────────────
+    lblPanelHeader_.setText("No Selection", juce::dontSendNotification);
+    lblPanelHeader_.setFont(juce::FontOptions(13.0f));
+    lblPanelHeader_.setColour(juce::Label::textColourId, juce::Colour(0xFFD0CBC2));
+    addAndMakeVisible(lblPanelHeader_);
+
+    // ── Anchor sliders ─────────────────────────────────────────────────────────
+    styleLabel (lblBrightness_,    "Brightness");
+    styleLabel (lblInharmonicity_, "Inharmonicity");
+    styleSlider(sldBrightness_,    0.0, 1.0);
+    styleSlider(sldInharmonicity_, 0.0, 1.0);
+    addAndMakeVisible(lblBrightness_);    addAndMakeVisible(sldBrightness_);
+    addAndMakeVisible(lblInharmonicity_); addAndMakeVisible(sldInharmonicity_);
+
+    sldBrightness_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTimbralAnchorTimbreX,
+                     selection_.index, (float)sldBrightness_.getValue());
+    };
+    sldInharmonicity_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTimbralAnchorTimbreY,
+                     selection_.index, (float)sldInharmonicity_.getValue());
+    };
+
+    // ── Field object sliders ───────────────────────────────────────────────────
+    styleLabel (lblFOStrength_,  "Strength");
+    styleLabel (lblFORadius_,    "Radius");
+    styleLabel (lblFOChirality_, "Chirality");
+    styleSlider(sldFOStrength_,  0.0,  1.0);
+    styleSlider(sldFORadius_,    0.01, 1.0);
+    styleSlider(sldFOChirality_,-1.0,  1.0);
+    addAndMakeVisible(lblFOStrength_);  addAndMakeVisible(sldFOStrength_);
+    addAndMakeVisible(lblFORadius_);    addAndMakeVisible(sldFORadius_);
+    addAndMakeVisible(lblFOChirality_); addAndMakeVisible(sldFOChirality_);
+
+    sldFOStrength_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetFieldObjectStrength,
+                     selection_.index, (float)sldFOStrength_.getValue());
+    };
+    sldFORadius_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetFieldObjectRadius,
+                     selection_.index, (float)sldFORadius_.getValue());
+    };
+    sldFOChirality_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetFieldObjectChirality,
+                     selection_.index, (float)sldFOChirality_.getValue());
+    };
+
+    // ── Emitter sliders ────────────────────────────────────────────────────────
+    styleLabel (lblEmitAngle_,   "Launch Angle");
+    styleLabel (lblEmitSpeed_,   "Launch Speed");
+    styleLabel (lblEmitAttack_,  "Attack (s)");
+    styleLabel (lblEmitDecay_,   "Decay (s)");
+    styleLabel (lblEmitSustain_, "Sustain");
+    styleLabel (lblEmitRelease_, "Release (s)");
+
+    const double PI = juce::MathConstants<double>::pi;
+    styleSlider(sldEmitAngle_,   -PI,   PI);
+    styleSlider(sldEmitSpeed_,    0.0,  0.8);
+    styleSlider(sldEmitAttack_,   0.001, 5.0);
+    styleSlider(sldEmitDecay_,    0.001, 5.0);
+    styleSlider(sldEmitSustain_,  0.0,  1.0);
+    styleSlider(sldEmitRelease_,  0.001, 10.0);
+
+    addAndMakeVisible(lblEmitAngle_);   addAndMakeVisible(sldEmitAngle_);
+    addAndMakeVisible(lblEmitSpeed_);   addAndMakeVisible(sldEmitSpeed_);
+    addAndMakeVisible(lblEmitAttack_);  addAndMakeVisible(sldEmitAttack_);
+    addAndMakeVisible(lblEmitDecay_);   addAndMakeVisible(sldEmitDecay_);
+    addAndMakeVisible(lblEmitSustain_); addAndMakeVisible(sldEmitSustain_);
+    addAndMakeVisible(lblEmitRelease_); addAndMakeVisible(sldEmitRelease_);
+
+    sldEmitAngle_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterLaunchAngle,
+                     selection_.index, (float)sldEmitAngle_.getValue());
+    };
+    sldEmitSpeed_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterLaunchSpeed,
+                     selection_.index, (float)sldEmitSpeed_.getValue());
+    };
+    sldEmitAttack_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterAttack,
+                     selection_.index, (float)sldEmitAttack_.getValue());
+    };
+    sldEmitDecay_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterDecay,
+                     selection_.index, (float)sldEmitDecay_.getValue());
+    };
+    sldEmitSustain_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterSustain,
+                     selection_.index, (float)sldEmitSustain_.getValue());
+    };
+    sldEmitRelease_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterRelease,
+                     selection_.index, (float)sldEmitRelease_.getValue());
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// updatePanel — refresh slider visibility + values from current snapshot
+// Call on selection change; NOT in the timer (sliders only reflect state at
+// time of selection — they are not live-updated by physics output).
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MorphosEditor::updatePanel()
+{
+    // Hide every slider group first
+    lblBrightness_.setVisible(false);    sldBrightness_.setVisible(false);
+    lblInharmonicity_.setVisible(false); sldInharmonicity_.setVisible(false);
+
+    lblFOStrength_.setVisible(false);    sldFOStrength_.setVisible(false);
+    lblFORadius_.setVisible(false);      sldFORadius_.setVisible(false);
+    lblFOChirality_.setVisible(false);   sldFOChirality_.setVisible(false);
+
+    lblEmitAngle_.setVisible(false);     sldEmitAngle_.setVisible(false);
+    lblEmitSpeed_.setVisible(false);     sldEmitSpeed_.setVisible(false);
+    lblEmitAttack_.setVisible(false);    sldEmitAttack_.setVisible(false);
+    lblEmitDecay_.setVisible(false);     sldEmitDecay_.setVisible(false);
+    lblEmitSustain_.setVisible(false);   sldEmitSustain_.setVisible(false);
+    lblEmitRelease_.setVisible(false);   sldEmitRelease_.setVisible(false);
+
+    if (!selection_.valid())
+    {
+        lblPanelHeader_.setText("No Selection", juce::dontSendNotification);
+        return;
+    }
+
+    const auto& state = processor_.getPhysicsStateForUI();
+    ignoreSliderCallbacks_ = true;
+
+    if (selection_.kind == ObjectKind::TimbralAnchor)
+    {
+        const int i = selection_.index;
+        if (i >= state.activeTimbralAnchorCount) { selection_ = {}; ignoreSliderCallbacks_ = false; return; }
+
+        lblPanelHeader_.setText("Anchor " + juce::String(i), juce::dontSendNotification);
+
+        sldBrightness_.setValue(state.timbralAnchors[i].timbreX, juce::dontSendNotification);
+        sldInharmonicity_.setValue(state.timbralAnchors[i].timbreY, juce::dontSendNotification);
+
+        lblBrightness_.setVisible(true);    sldBrightness_.setVisible(true);
+        lblInharmonicity_.setVisible(true); sldInharmonicity_.setVisible(true);
+    }
+    else if (selection_.kind == ObjectKind::FieldObject)
+    {
+        const int i = selection_.index;
+        if (i >= MAX_FIELD_OBJECTS || !state.fieldObjects[i].active)
+        {
+            selection_ = {}; ignoreSliderCallbacks_ = false; return;
+        }
+        const auto& obj = state.fieldObjects[i];
+
+        juce::String typeName;
+        switch (obj.type)
+        {
+            case FieldObjectType::Attractor: typeName = "Attractor"; break;
+            case FieldObjectType::Repeller:  typeName = "Repeller";  break;
+            case FieldObjectType::Vortex:    typeName = "Vortex";    break;
+        }
+        lblPanelHeader_.setText(typeName + " " + juce::String(i), juce::dontSendNotification);
+
+        sldFOStrength_.setValue(obj.strength, juce::dontSendNotification);
+        sldFORadius_.setValue  (obj.radius,   juce::dontSendNotification);
+
+        lblFOStrength_.setVisible(true); sldFOStrength_.setVisible(true);
+        lblFORadius_.setVisible(true);   sldFORadius_.setVisible(true);
+
+        if (obj.type == FieldObjectType::Vortex)
+        {
+            sldFOChirality_.setValue(obj.chirality, juce::dontSendNotification);
+            lblFOChirality_.setVisible(true);
+            sldFOChirality_.setVisible(true);
+        }
+    }
+    else if (selection_.kind == ObjectKind::Emitter)
+    {
+        const int i = selection_.index;
+        if (i >= MAX_EMITTERS || !state.emitters[i].active)
+        {
+            selection_ = {}; ignoreSliderCallbacks_ = false; return;
+        }
+        const auto& e = state.emitters[i];
+
+        lblPanelHeader_.setText("Emitter " + juce::String(i), juce::dontSendNotification);
+
+        sldEmitAngle_.setValue  (e.launchAngle,  juce::dontSendNotification);
+        sldEmitSpeed_.setValue  (e.launchSpeed,  juce::dontSendNotification);
+        sldEmitAttack_.setValue (e.attackTime,   juce::dontSendNotification);
+        sldEmitDecay_.setValue  (e.decayTime,    juce::dontSendNotification);
+        sldEmitSustain_.setValue(e.sustainLevel, juce::dontSendNotification);
+        sldEmitRelease_.setValue(e.releaseTime,  juce::dontSendNotification);
+
+        lblEmitAngle_.setVisible(true);     sldEmitAngle_.setVisible(true);
+        lblEmitSpeed_.setVisible(true);     sldEmitSpeed_.setVisible(true);
+        lblEmitAttack_.setVisible(true);    sldEmitAttack_.setVisible(true);
+        lblEmitDecay_.setVisible(true);     sldEmitDecay_.setVisible(true);
+        lblEmitSustain_.setVisible(true);   sldEmitSustain_.setVisible(true);
+        lblEmitRelease_.setVisible(true);   sldEmitRelease_.setVisible(true);
+    }
+
+    ignoreSliderCallbacks_ = false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// sendEdit — convenience wrapper; dispatches a ManifoldEdit to physics thread
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MorphosEditor::sendEdit(ManifoldEdit::Type type, int index, float x, float y)
+{
+    if (index < 0) return;   // Guard against stale selection_
+    ManifoldEdit e;
+    e.type  = type;
+    e.index = index;
+    e.x     = x;
+    e.y     = y;
+    processor_.pushManifoldEdit(e);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -86,6 +417,119 @@ void MorphosEditor::timerCallback()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Mouse — drag-and-drop Manifold objects
+// ─────────────────────────────────────────────────────────────────────────────
+
+MorphosEditor::Selection MorphosEditor::hitTest(juce::Point<float> canvasPt,
+                                                 const PhysicsStateSnapshot& state,
+                                                 juce::Rectangle<int> canvas) const
+{
+    constexpr float HIT_PX = 14.0f;   // Pixel hit radius for all object types
+
+    // Priority 1: TimbralAnchors (smallest glyph — need first crack to be selectable)
+    for (int i = 0; i < state.activeTimbralAnchorCount; ++i)
+    {
+        const auto& a = state.timbralAnchors[i];
+        if (!a.active) continue;
+        if (canvasPt.getDistanceFrom(manifoldToCanvas(a.x, a.y, canvas)) <= HIT_PX)
+            return { ObjectKind::TimbralAnchor, i };
+    }
+
+    // Priority 2: Emitters
+    for (int i = 0; i < MAX_EMITTERS; ++i)
+    {
+        const auto& e = state.emitters[i];
+        if (!e.active) continue;
+        if (canvasPt.getDistanceFrom(manifoldToCanvas(e.x, e.y, canvas)) <= HIT_PX)
+            return { ObjectKind::Emitter, i };
+    }
+
+    // Priority 3: Field objects
+    for (int i = 0; i < MAX_FIELD_OBJECTS; ++i)
+    {
+        const auto& obj = state.fieldObjects[i];
+        if (!obj.active) continue;
+        if (canvasPt.getDistanceFrom(manifoldToCanvas(obj.x, obj.y, canvas)) <= HIT_PX)
+            return { ObjectKind::FieldObject, i };
+    }
+
+    return { ObjectKind::None, -1 };
+}
+
+void MorphosEditor::mouseDown(const juce::MouseEvent& event)
+{
+    const auto canvas = getCanvasBounds();
+    if (!canvas.toFloat().contains(event.getPosition().toFloat()))
+        return;
+
+    const auto& state = processor_.getPhysicsStateForUI();
+    const auto hit    = hitTest(event.getPosition().toFloat(), state, canvas);
+
+    const bool selectionChanged = (hit.kind != selection_.kind || hit.index != selection_.index);
+    selection_ = hit;
+
+    if (hit.valid())
+    {
+        drag_.active = true;
+        // Seed drag position from snapshot so first drag renders correctly
+        switch (hit.kind)
+        {
+            case ObjectKind::TimbralAnchor:
+                drag_.pendingX = state.timbralAnchors[hit.index].x;
+                drag_.pendingY = state.timbralAnchors[hit.index].y;
+                break;
+            case ObjectKind::Emitter:
+                drag_.pendingX = state.emitters[hit.index].x;
+                drag_.pendingY = state.emitters[hit.index].y;
+                break;
+            case ObjectKind::FieldObject:
+                drag_.pendingX = state.fieldObjects[hit.index].x;
+                drag_.pendingY = state.fieldObjects[hit.index].y;
+                break;
+            default: break;
+        }
+    }
+    else
+    {
+        drag_.active = false;
+    }
+
+    if (selectionChanged)
+        updatePanel();
+
+    repaint();
+}
+
+void MorphosEditor::mouseDrag(const juce::MouseEvent& event)
+{
+    if (!drag_.active || !selection_.valid()) return;
+
+    const auto canvas     = getCanvasBounds();
+    const auto manifoldPt = canvasToManifold(event.getPosition().toFloat(), canvas);
+
+    drag_.pendingX = juce::jlimit(0.0f, 1.0f, manifoldPt.x);
+    drag_.pendingY = juce::jlimit(0.0f, 1.0f, manifoldPt.y);
+
+    ManifoldEdit::Type moveType;
+    switch (selection_.kind)
+    {
+        case ObjectKind::TimbralAnchor: moveType = ManifoldEdit::Type::MoveTimbralAnchor; break;
+        case ObjectKind::Emitter:       moveType = ManifoldEdit::Type::MoveEmitter;        break;
+        case ObjectKind::FieldObject:   moveType = ManifoldEdit::Type::MoveFieldObject;    break;
+        default: return;
+    }
+
+    sendEdit(moveType, selection_.index, drag_.pendingX, drag_.pendingY);
+    repaint();
+}
+
+void MorphosEditor::mouseUp(const juce::MouseEvent&)
+{
+    drag_.active = false;
+    repaint();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // paint
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -96,17 +540,14 @@ void MorphosEditor::paint(juce::Graphics& g)
     const auto canvas = getCanvasBounds();
     const auto& state = processor_.getPhysicsStateForUI();
 
-    drawGrid        (g, canvas);
-    drawFieldObjects(g, state, canvas);
-    drawEmitters    (g, state, canvas);
-    drawTrails      (g, canvas);
-    drawMorphons    (g, state, canvas);
-    drawStatusBar   (g, state);
-}
-
-void MorphosEditor::resized()
-{
-    // Phase 3+: lay out the canvas + parameter panel here.
+    drawGrid            (g, canvas);
+    drawFieldObjects    (g, state, canvas);
+    drawEmitters        (g, state, canvas);
+    drawTimbralAnchors  (g, state, canvas);
+    drawTrails          (g, canvas);
+    drawMorphons        (g, state, canvas);
+    drawPanelBackground (g);
+    drawStatusBar       (g, state);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -152,10 +593,17 @@ void MorphosEditor::drawFieldObjects(juce::Graphics& g,
             case FieldObjectType::Attractor: c = Colour::Attractor; break;
             case FieldObjectType::Repeller:  c = Colour::Repeller;  break;
             case FieldObjectType::Vortex:    c = Colour::Vortex;    break;
-            default:                         c = Colour::MorphonDot; break;
         }
 
-        const auto  centre      = manifoldToCanvas(obj.x, obj.y, canvas);
+        // If this object is being dragged, use the pending position
+        float px = obj.x, py = obj.y;
+        if (drag_.active && selection_.kind == ObjectKind::FieldObject && selection_.index == i)
+        {
+            px = drag_.pendingX;
+            py = drag_.pendingY;
+        }
+
+        const auto  centre      = manifoldToCanvas(px, py, canvas);
         const float screenRadius = obj.radius * canvas.getWidth();
 
         // Influence halo
@@ -173,6 +621,15 @@ void MorphosEditor::drawFieldObjects(juce::Graphics& g,
         g.setColour(c.withAlpha(0.85f));
         g.fillEllipse(centre.x - GLYPH_R, centre.y - GLYPH_R,
                       GLYPH_R * 2.0f, GLYPH_R * 2.0f);
+
+        // Selection ring
+        const bool selected = (selection_.kind == ObjectKind::FieldObject && selection_.index == i);
+        if (selected)
+        {
+            g.setColour(Colour::SelectRing.withAlpha(0.8f));
+            g.drawEllipse(centre.x - GLYPH_R - 3.0f, centre.y - GLYPH_R - 3.0f,
+                          (GLYPH_R + 3.0f) * 2.0f, (GLYPH_R + 3.0f) * 2.0f, 1.5f);
+        }
 
         // Vortex: curved spin arrow indicating rotation direction
         if (obj.type == FieldObjectType::Vortex)
@@ -247,7 +704,15 @@ void MorphosEditor::drawEmitters(juce::Graphics& g,
         const auto& e = state.emitters[i];
         if (!e.active) continue;
 
-        const auto centre = manifoldToCanvas(e.x, e.y, canvas);
+        // Use pending drag position if this emitter is being dragged
+        float px = e.x, py = e.y;
+        if (drag_.active && selection_.kind == ObjectKind::Emitter && selection_.index == i)
+        {
+            px = drag_.pendingX;
+            py = drag_.pendingY;
+        }
+
+        const auto centre = manifoldToCanvas(px, py, canvas);
 
         // Outer ring — distinguishes emitter from field-object glyphs
         constexpr float RING_R = 11.0f;
@@ -260,6 +725,15 @@ void MorphosEditor::drawEmitters(juce::Graphics& g,
         g.setColour(Colour::Emitter.withAlpha(0.88f));
         g.fillEllipse(centre.x - GLYPH_R, centre.y - GLYPH_R,
                       GLYPH_R * 2.0f, GLYPH_R * 2.0f);
+
+        // Selection ring
+        const bool selected = (selection_.kind == ObjectKind::Emitter && selection_.index == i);
+        if (selected)
+        {
+            g.setColour(Colour::SelectRing.withAlpha(0.8f));
+            g.drawEllipse(centre.x - RING_R - 3.0f, centre.y - RING_R - 3.0f,
+                          (RING_R + 3.0f) * 2.0f, (RING_R + 3.0f) * 2.0f, 1.5f);
+        }
 
         // Launch-direction arrow (only when launchSpeed > 0)
         if (e.launchSpeed > 0.001f)
@@ -282,6 +756,89 @@ void MorphosEditor::drawEmitters(juce::Graphics& g,
             g.drawLine(tipX, tipY, tipX + std::cos(b) * HEAD_LEN,
                                    tipY + std::sin(b) * HEAD_LEN, 1.5f);
         }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Draw — Timbral Anchors
+//
+// Diamond (rotated square) glyph in teal. Colour tinted by the anchor's
+// own timbre values so anchors are visually distinct from each other:
+//   timbreX (brightness) → shifts hue from teal toward amber
+//   timbreY (inharmonicity) → dims/saturates the base colour
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MorphosEditor::drawTimbralAnchors(juce::Graphics& g,
+                                        const PhysicsStateSnapshot& state,
+                                        juce::Rectangle<int> canvas) const
+{
+    for (int i = 0; i < state.activeTimbralAnchorCount; ++i)
+    {
+        const auto& a = state.timbralAnchors[i];
+        if (!a.active) continue;
+
+        // Use pending drag position if this anchor is being dragged
+        float px = a.x, py = a.y;
+        if (drag_.active && selection_.kind == ObjectKind::TimbralAnchor && selection_.index == i)
+        {
+            px = drag_.pendingX;
+            py = drag_.pendingY;
+        }
+
+        const auto centre = manifoldToCanvas(px, py, canvas);
+        const bool selected = (selection_.kind == ObjectKind::TimbralAnchor && selection_.index == i);
+
+        // Tint: blend from teal (dark/harmonic) toward amber (bright/inharmonic)
+        const float tintT = a.timbreX * 0.6f + a.timbreY * 0.4f;
+        const juce::Colour fillC = Colour::Anchor.interpolatedWith(Colour::Emitter, tintT);
+
+        // Diamond (rotated square)
+        constexpr float D = 9.0f;    // half-diagonal in pixels
+        juce::Path diamond;
+        diamond.startNewSubPath(centre.x,       centre.y - D);
+        diamond.lineTo         (centre.x + D,   centre.y);
+        diamond.lineTo         (centre.x,       centre.y + D);
+        diamond.lineTo         (centre.x - D,   centre.y);
+        diamond.closeSubPath();
+
+        // Subtle halo (influence cue)
+        constexpr float HALO_D = 18.0f;
+        g.setColour(fillC.withAlpha(0.07f));
+        g.fillEllipse(centre.x - HALO_D, centre.y - HALO_D, HALO_D * 2.0f, HALO_D * 2.0f);
+
+        // Fill
+        g.setColour(fillC.withAlpha(0.88f));
+        g.fillPath(diamond);
+
+        // Rim / selection
+        if (selected)
+        {
+            g.setColour(Colour::SelectRing.withAlpha(0.85f));
+            g.strokePath(diamond, juce::PathStrokeType(1.8f));
+
+            // Outer selection ring (larger, fainter)
+            constexpr float SEL_D = D + 4.0f;
+            juce::Path selRing;
+            selRing.startNewSubPath(centre.x,        centre.y - SEL_D);
+            selRing.lineTo         (centre.x + SEL_D, centre.y);
+            selRing.lineTo         (centre.x,         centre.y + SEL_D);
+            selRing.lineTo         (centre.x - SEL_D, centre.y);
+            selRing.closeSubPath();
+            g.setColour(Colour::SelectRing.withAlpha(0.3f));
+            g.strokePath(selRing, juce::PathStrokeType(1.0f));
+        }
+        else
+        {
+            g.setColour(fillC.brighter(0.4f).withAlpha(0.55f));
+            g.strokePath(diamond, juce::PathStrokeType(1.0f));
+        }
+
+        // Index digit (centred in diamond)
+        g.setColour(juce::Colours::black.withAlpha(0.65f));
+        g.setFont(juce::FontOptions(9.0f));
+        g.drawText(juce::String(i),
+                   juce::Rectangle<float>(centre.x - 6.0f, centre.y - 5.5f, 12.0f, 11.0f),
+                   juce::Justification::centred, false);
     }
 }
 
@@ -340,6 +897,32 @@ void MorphosEditor::drawMorphons(juce::Graphics& g,
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Draw — panel background + divider
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MorphosEditor::drawPanelBackground(juce::Graphics& g) const
+{
+    const auto panel  = getPanelBounds();
+    const auto canvas = getCanvasBounds();
+
+    // Panel fill (slightly lighter than canvas)
+    g.setColour(Colour::PanelBg);
+    g.fillRect(panel);
+
+    // Vertical divider between canvas and panel
+    g.setColour(Colour::Divider);
+    g.drawVerticalLine(canvas.getRight() + 4,
+                       static_cast<float>(panel.getY()),
+                       static_cast<float>(panel.getBottom()));
+
+    // Horizontal rule under the panel header
+    const int headerBottom = panel.getY() + 26 + 6;   // matches layoutPanel offsets
+    g.setColour(Colour::Divider);
+    g.drawHorizontalLine(headerBottom, static_cast<float>(panel.getX()),
+                         static_cast<float>(panel.getRight()));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Draw — status bar
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -356,7 +939,9 @@ void MorphosEditor::drawStatusBar(juce::Graphics& g,
            << state.activeMorphonCount << " morphon"
            << (state.activeMorphonCount != 1 ? "s" : "") << " active  |  "
            << state.activeFieldObjCount << " field object"
-           << (state.activeFieldObjCount != 1 ? "s" : "");
+           << (state.activeFieldObjCount != 1 ? "s" : "") << "  |  "
+           << state.activeTimbralAnchorCount << " anchor"
+           << (state.activeTimbralAnchorCount != 1 ? "s" : "");
 
     const auto statusRect = getLocalBounds()
                                 .removeFromBottom(28)

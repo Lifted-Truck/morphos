@@ -74,11 +74,11 @@ PhysicsEngine::PhysicsEngine()
     emitters_[0].boundary     = BoundaryBehavior::Wrap;
     emitters_[0].active       = true;
 
-    // ── Timbral Anchors for Phase 2 demonstration ─────────────────────────────
+    // ── Timbral Anchors for Phase 2/3 demonstration ───────────────────────────
     // Anchor 0 — upper-left: dark (low rolloff brightness) and purely harmonic
-    timbralAnchors_[0] = { 0.15f, 0.15f, 0.05f, 0.00f };
+    timbralAnchors_[0] = { 0.15f, 0.15f, 0.05f, 0.00f, true };
     // Anchor 1 — lower-right: bright (flat spectrum) and heavily inharmonic
-    timbralAnchors_[1] = { 0.85f, 0.85f, 0.92f, 0.80f };
+    timbralAnchors_[1] = { 0.85f, 0.85f, 0.92f, 0.80f, true };
 
     fieldGrid_.dirty = true;  // Will be rebuilt on first tick
 }
@@ -115,6 +115,16 @@ bool PhysicsEngine::pushNoteEvent(const NoteEvent& event) noexcept
     if (n1 == 0) return false;
     eventBuffer_[s1] = event;
     eventFifo_.finishedWrite(1);
+    return true;
+}
+
+bool PhysicsEngine::pushManifoldEdit(const ManifoldEdit& edit) noexcept
+{
+    int s1, n1, s2, n2;
+    editFifo_.prepareToWrite(1, s1, n1, s2, n2);
+    if (n1 == 0) return false;
+    editBuffer_[s1] = edit;
+    editFifo_.finishedWrite(1);
     return true;
 }
 
@@ -167,6 +177,7 @@ void PhysicsEngine::run()
 void PhysicsEngine::tick(double dtSeconds)
 {
     drainNoteEvents();
+    drainEditCommands();      // Apply UI edits before rebuilding grid / integrating
     rebuildFieldGridIfDirty();
     integrateMorphons(dtSeconds);
     updateEnvelopes(dtSeconds);
@@ -200,6 +211,125 @@ void PhysicsEngine::drainNoteEvents()
     process(s1, n1);
     process(s2, n2);
     eventFifo_.finishedRead(n1 + n2);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Edit command drain — UI → physics; runs at start of each tick
+// ─────────────────────────────────────────────────────────────────────────────
+
+void PhysicsEngine::drainEditCommands()
+{
+    int s1, n1, s2, n2;
+    editFifo_.prepareToRead(editFifo_.getNumReady(), s1, n1, s2, n2);
+
+    auto apply = [this](int start, int count)
+    {
+        for (int i = start; i < start + count; ++i)
+        {
+            const auto& e   = editBuffer_[i];
+            const int   idx = e.index;
+
+            switch (e.type)
+            {
+                // ── Position edits ────────────────────────────────────────────
+                case ManifoldEdit::Type::MoveFieldObject:
+                    if (idx >= 0 && idx < MAX_FIELD_OBJECTS)
+                    {
+                        fieldObjects_[idx].x = e.x;
+                        fieldObjects_[idx].y = e.y;
+                        fieldGrid_.dirty = true;
+                    }
+                    break;
+
+                case ManifoldEdit::Type::MoveEmitter:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                    {
+                        emitters_[idx].x = e.x;
+                        emitters_[idx].y = e.y;
+                    }
+                    break;
+
+                case ManifoldEdit::Type::MoveTimbralAnchor:
+                    if (idx >= 0 && idx < activeAnchorCount_)
+                    {
+                        timbralAnchors_[idx].x = e.x;
+                        timbralAnchors_[idx].y = e.y;
+                    }
+                    break;
+
+                // ── Field object property edits ───────────────────────────────
+                case ManifoldEdit::Type::SetFieldObjectStrength:
+                    if (idx >= 0 && idx < MAX_FIELD_OBJECTS)
+                    {
+                        fieldObjects_[idx].strength = e.x;
+                        fieldGrid_.dirty = true;
+                    }
+                    break;
+
+                case ManifoldEdit::Type::SetFieldObjectRadius:
+                    if (idx >= 0 && idx < MAX_FIELD_OBJECTS)
+                    {
+                        fieldObjects_[idx].radius = e.x;
+                        fieldGrid_.dirty = true;
+                    }
+                    break;
+
+                case ManifoldEdit::Type::SetFieldObjectChirality:
+                    if (idx >= 0 && idx < MAX_FIELD_OBJECTS)
+                    {
+                        fieldObjects_[idx].chirality = e.x;
+                        fieldGrid_.dirty = true;
+                    }
+                    break;
+
+                // ── Emitter property edits ────────────────────────────────────
+                case ManifoldEdit::Type::SetEmitterLaunchAngle:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].launchAngle = e.x;
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterLaunchSpeed:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].launchSpeed = e.x;
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterAttack:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].attackTime = e.x;
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterDecay:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].decayTime = e.x;
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterSustain:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].sustainLevel = e.x;
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterRelease:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].releaseTime = e.x;
+                    break;
+
+                // ── Timbral Anchor property edits ─────────────────────────────
+                case ManifoldEdit::Type::SetTimbralAnchorTimbreX:
+                    if (idx >= 0 && idx < activeAnchorCount_)
+                        timbralAnchors_[idx].timbreX = e.x;
+                    break;
+
+                case ManifoldEdit::Type::SetTimbralAnchorTimbreY:
+                    if (idx >= 0 && idx < activeAnchorCount_)
+                        timbralAnchors_[idx].timbreY = e.x;
+                    break;
+            }
+        }
+    };
+
+    apply(s1, n1);
+    apply(s2, n2);
+    editFifo_.finishedRead(n1 + n2);
 }
 
 void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
@@ -313,9 +443,9 @@ void PhysicsEngine::integrateMorphons(double dt)
 
         // Blend Timbral Anchors at current Manifold position.
         // timbreX → spectral rolloff [0,1]; timbreY → inharmonicity [0,1].
-        // Phase 3+: anchors become user-placed objects; blending upgrades to RBF.
+        // Active anchors are compacted at the front; pass activeAnchorCount_.
         blendAnchors(m.x, m.y,
-                     timbralAnchors_.data(), NUM_ANCHORS,
+                     timbralAnchors_.data(), activeAnchorCount_,
                      m.timbreX, m.timbreY);
     }
 }
@@ -454,13 +584,30 @@ void PhysicsEngine::writeSnapshot()
     // Copy emitters for UI rendering
     for (int i = 0; i < MAX_EMITTERS; ++i)
     {
-        const auto& src = emitters_[i];
-        auto&       dst = snap.emitters[i];
-        dst.x           = src.x;
-        dst.y           = src.y;
-        dst.launchAngle = src.launchAngle;
-        dst.launchSpeed = src.launchSpeed;
-        dst.active      = src.active;
+        const auto& src  = emitters_[i];
+        auto&       dst  = snap.emitters[i];
+        dst.x            = src.x;
+        dst.y            = src.y;
+        dst.launchAngle  = src.launchAngle;
+        dst.launchSpeed  = src.launchSpeed;
+        dst.attackTime   = src.attackTime;
+        dst.decayTime    = src.decayTime;
+        dst.sustainLevel = src.sustainLevel;
+        dst.releaseTime  = src.releaseTime;
+        dst.active       = src.active;
+    }
+
+    // Copy timbral anchors for UI rendering
+    snap.activeTimbralAnchorCount = activeAnchorCount_;
+    for (int i = 0; i < MAX_TIMBRAL_ANCHORS; ++i)
+    {
+        const auto& src = timbralAnchors_[i];
+        auto&       dst = snap.timbralAnchors[i];
+        dst.x       = src.x;
+        dst.y       = src.y;
+        dst.timbreX = src.timbreX;
+        dst.timbreY = src.timbreY;
+        dst.active  = (i < activeAnchorCount_);
     }
 
     bridge_.publish();

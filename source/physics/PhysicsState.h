@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "FieldObject.h"
+#include "synthesis/TimbralAnchor.h"   // for MAX_TIMBRAL_ANCHORS
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PhysicsState.h — Shared data structures for physics ↔ audio/UI communication
@@ -71,11 +72,27 @@ struct MorphonState
 // ─────────────────────────────────────────────────────────────────────────────
 struct EmitterSnapshot
 {
-    float x           = 0.5f;
-    float y           = 0.5f;
-    float launchAngle = 0.0f;   // radians; used to draw direction arrow
-    float launchSpeed = 0.0f;   // scales arrow length
-    bool  active      = false;
+    float x            = 0.5f;
+    float y            = 0.5f;
+    float launchAngle  = 0.0f;   // radians; used to draw direction arrow
+    float launchSpeed  = 0.0f;   // scales arrow length
+    float attackTime   = 0.05f;
+    float decayTime    = 0.15f;
+    float sustainLevel = 0.70f;
+    float releaseTime  = 0.30f;
+    bool  active       = false;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TimbralAnchorSnapshot — Anchor position and timbre params for UI rendering
+// ─────────────────────────────────────────────────────────────────────────────
+struct TimbralAnchorSnapshot
+{
+    float x       = 0.5f;
+    float y       = 0.5f;
+    float timbreX = 0.5f;   // spectral rolloff [0,1]
+    float timbreY = 0.0f;   // inharmonicity    [0,1]
+    bool  active  = false;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -98,14 +115,55 @@ struct FieldObjectSnapshot
 // ─────────────────────────────────────────────────────────────────────────────
 struct PhysicsStateSnapshot
 {
-    std::array<MorphonState,        MAX_MORPHONS>       morphons{};
-    std::array<FieldObjectSnapshot, MAX_FIELD_OBJECTS>  fieldObjects{};
-    std::array<EmitterSnapshot,     MAX_EMITTERS>       emitters{};
+    std::array<MorphonState,           MAX_MORPHONS>         morphons{};
+    std::array<FieldObjectSnapshot,    MAX_FIELD_OBJECTS>    fieldObjects{};
+    std::array<EmitterSnapshot,        MAX_EMITTERS>         emitters{};
+    std::array<TimbralAnchorSnapshot,  MAX_TIMBRAL_ANCHORS>  timbralAnchors{};
 
-    int      activeMorphonCount  = 0;
-    int      activeFieldObjCount = 0;
-    uint64_t tickIndex           = 0;
-    double   simulationTimeMs    = 0.0;
+    int      activeMorphonCount       = 0;
+    int      activeFieldObjCount      = 0;
+    int      activeTimbralAnchorCount = 0;
+    uint64_t tickIndex                = 0;
+    double   simulationTimeMs         = 0.0;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ManifoldEdit — UI thread → physics thread edit command
+//
+// Sent via a lock-free SPSC queue; applied at the start of the next physics
+// tick. Keeps the UI responsive (no waiting for physics) while guaranteeing
+// that object state is mutated only on the physics thread.
+//
+// Scalar edits (non-Move types) carry the new value in `x`; `y` is unused.
+// Move edits carry the new Manifold position in (x, y).
+// ─────────────────────────────────────────────────────────────────────────────
+struct ManifoldEdit
+{
+    enum class Type : uint8_t
+    {
+        // Position edits — x,y carry new Manifold coords [0,1]
+        MoveFieldObject,
+        MoveEmitter,
+        MoveTimbralAnchor,
+
+        // Scalar property edits — x carries new value, y unused
+        SetFieldObjectStrength,
+        SetFieldObjectRadius,
+        SetFieldObjectChirality,
+        SetEmitterLaunchAngle,
+        SetEmitterLaunchSpeed,
+        SetEmitterAttack,
+        SetEmitterDecay,
+        SetEmitterSustain,
+        SetEmitterRelease,
+        SetTimbralAnchorTimbreX,
+        SetTimbralAnchorTimbreY,
+    };
+
+    Type  type  = Type::MoveFieldObject;
+    int   index = 0;
+    float x     = 0.0f;
+    float y     = 0.0f;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
