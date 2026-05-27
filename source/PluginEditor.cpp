@@ -177,7 +177,7 @@ void MorphosEditor::drawFieldObjects(juce::Graphics& g,
         // Vortex: curved spin arrow indicating rotation direction
         if (obj.type == FieldObjectType::Vortex)
         {
-            constexpr float ARROW_R    = 10.0f;
+            constexpr float ARROW_R    = 14.0f;
             constexpr float HEAD_LEN   =  5.0f;
             constexpr float HEAD_ANGLE =  2.44f;  // ~140° — wide open arrowhead
 
