@@ -174,13 +174,43 @@ void MorphosEditor::drawFieldObjects(juce::Graphics& g,
         g.fillEllipse(centre.x - GLYPH_R, centre.y - GLYPH_R,
                       GLYPH_R * 2.0f, GLYPH_R * 2.0f);
 
-        // Vortex: draw a small chirality arrow
+        // Vortex: curved spin arrow indicating rotation direction
         if (obj.type == FieldObjectType::Vortex)
         {
-            g.setColour(juce::Colours::white.withAlpha(0.5f));
-            // Simple "+" centre marker — arrow drawn in Phase 3+
-            g.drawLine(centre.x - 3.5f, centre.y, centre.x + 3.5f, centre.y, 1.5f);
-            g.drawLine(centre.x, centre.y - 3.5f, centre.x, centre.y + 3.5f, 1.5f);
+            constexpr float ARROW_R    = 10.0f;
+            constexpr float HEAD_LEN   =  5.0f;
+            constexpr float HEAD_ANGLE =  2.44f;  // ~140° — wide open arrowhead
+
+            // chirality > 0 → CW in screen coords (Y-down); < 0 → CCW
+            const float cw = (obj.chirality >= 0.0f) ? 1.0f : -1.0f;
+
+            // 270° arc: starts at 12 o'clock (-π/2), sweeps CW to 9 o'clock (π)
+            // or CCW to 3 o'clock (-2π).  JUCE addArc is CW when from < to.
+            const float startAngle = -juce::MathConstants<float>::halfPi;
+            const float endAngle   = startAngle
+                                     + cw * 1.5f * juce::MathConstants<float>::pi;
+
+            juce::Path arc;
+            arc.addArc(centre.x - ARROW_R, centre.y - ARROW_R,
+                       ARROW_R * 2.0f, ARROW_R * 2.0f,
+                       startAngle, endAngle, true);
+
+            g.setColour(juce::Colours::white.withAlpha(0.55f));
+            g.strokePath(arc, juce::PathStrokeType(1.5f));
+
+            // Arrowhead at the arc terminus
+            const float tipX = centre.x + ARROW_R * std::cos(endAngle);
+            const float tipY = centre.y + ARROW_R * std::sin(endAngle);
+
+            // Tangent direction of arc motion at tip: (-cw·sinθ, cw·cosθ)
+            const float motionAngle = std::atan2( cw * std::cos(endAngle),
+                                                 -cw * std::sin(endAngle));
+            g.drawLine(tipX, tipY,
+                       tipX + std::cos(motionAngle + HEAD_ANGLE) * HEAD_LEN,
+                       tipY + std::sin(motionAngle + HEAD_ANGLE) * HEAD_LEN, 1.5f);
+            g.drawLine(tipX, tipY,
+                       tipX + std::cos(motionAngle - HEAD_ANGLE) * HEAD_LEN,
+                       tipY + std::sin(motionAngle - HEAD_ANGLE) * HEAD_LEN, 1.5f);
         }
     }
 }
