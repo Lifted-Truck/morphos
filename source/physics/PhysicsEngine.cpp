@@ -20,40 +20,53 @@ PhysicsEngine::PhysicsEngine()
     : juce::Thread("MorphosPhysics")
 {
     // ── Default field objects ─────────────────────────────────────────────────
-    // One of each type, arranged to produce visually interesting trajectories
-    // so Phase 1 is immediately testable. Phase 3+: replaced by user placement.
+    // Phase 3+: replaced by user placement. These are chosen so the default
+    // patch has immediately interesting orbital behaviour without any editing.
+    //
+    // Design intent:
+    //   Attractor bottom-centre  — the gravitational well; Morphons orbit it.
+    //   Vortex upper-left        — off-centre from spawn so it has non-zero arm
+    //                              and imparts CCW angular momentum immediately.
+    //   Repeller upper-right     — redirects trajectories that escape the orbit
+    //                              upward, keeping everything in play.
 
-    // Attractor — upper-left; pulls Morphons gently toward that region
+    // Attractor — bottom-centre; the main orbital anchor
     fieldObjects_[0].type     = FieldObjectType::Attractor;
-    fieldObjects_[0].x        = 0.30f;
-    fieldObjects_[0].y        = 0.30f;
-    fieldObjects_[0].strength = 0.22f;
-    fieldObjects_[0].radius   = 0.50f;
+    fieldObjects_[0].x        = 0.50f;
+    fieldObjects_[0].y        = 0.75f;
+    fieldObjects_[0].strength = 0.28f;
+    fieldObjects_[0].radius   = 0.62f;
     fieldObjects_[0].active   = true;
 
-    // Repeller — lower-right; pushes Morphons away from that corner
-    fieldObjects_[1].type     = FieldObjectType::Repeller;
-    fieldObjects_[1].x        = 0.72f;
-    fieldObjects_[1].y        = 0.72f;
-    fieldObjects_[1].strength = 0.18f;
-    fieldObjects_[1].radius   = 0.40f;
-    fieldObjects_[1].active   = true;
+    // Vortex — upper-left; imparts CCW spin. Arm to spawn (0.5,0.5): ~0.25
+    // so force is non-zero from the first tick.
+    fieldObjects_[1].type      = FieldObjectType::Vortex;
+    fieldObjects_[1].x         = 0.38f;
+    fieldObjects_[1].y         = 0.30f;
+    fieldObjects_[1].strength  = 0.22f;
+    fieldObjects_[1].radius    = 0.65f;
+    fieldObjects_[1].chirality = 1.0f;  // CCW
+    fieldObjects_[1].active    = true;
 
-    // Vortex — centre; imparts CCW spin, combines with Attractor for orbital paths
-    fieldObjects_[2].type     = FieldObjectType::Vortex;
-    fieldObjects_[2].x        = 0.50f;
-    fieldObjects_[2].y        = 0.50f;
+    // Repeller — upper-right; deflects escaping Morphons back into the orbit
+    fieldObjects_[2].type     = FieldObjectType::Repeller;
+    fieldObjects_[2].x        = 0.72f;
+    fieldObjects_[2].y        = 0.25f;
     fieldObjects_[2].strength = 0.15f;
-    fieldObjects_[2].radius   = 0.60f;
-    fieldObjects_[2].chirality = 1.0f;  // CCW
+    fieldObjects_[2].radius   = 0.38f;
     fieldObjects_[2].active   = true;
 
     // ── Default emitter ───────────────────────────────────────────────────────
+    // launchSpeed > 0 gives the Morphon initial angular momentum so the
+    // Attractor bends it into an orbit rather than a straight plunge.
+    // spawnDrag = 0.001 lets orbits persist for several seconds — enough to
+    // hear clear timbral evolution — before decaying toward the Attractor.
     emitters_[0].x            = 0.50f;
     emitters_[0].y            = 0.50f;
-    emitters_[0].launchSpeed  = 0.0f;   // Stationary start; field carries the Morphon
+    emitters_[0].launchAngle  = 0.0f;   // Rightward; field curves into orbit
+    emitters_[0].launchSpeed  = 0.18f;  // Initial velocity (Manifold units/sec)
     emitters_[0].spawnMass    = 1.0f;
-    emitters_[0].spawnDrag    = 0.015f;
+    emitters_[0].spawnDrag    = 0.001f; // Low drag: ~60% velocity after 1 s
     emitters_[0].attackTime   = 0.05f;
     emitters_[0].decayTime    = 0.15f;
     emitters_[0].sustainLevel = 0.70f;
