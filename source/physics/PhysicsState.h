@@ -19,6 +19,9 @@ static constexpr int MAX_MORPHONS = 256;
 // Boundary behaviour when a Morphon exits the [0,1]×[0,1] Manifold.
 enum class BoundaryBehavior : uint8_t { Wrap, Reflect, Terminate };
 
+// Amplitude envelope state machine stages (ADSR)
+enum class EnvelopeStage : uint8_t { Attack, Decay, Sustain, Release };
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MorphonState — per-Morphon data shared between physics, audio, and UI
 // ─────────────────────────────────────────────────────────────────────────────
@@ -37,16 +40,18 @@ struct MorphonState
     // ── Lifecycle ─────────────────────────────────────────────────────────────
     float            age          = 0.0f;   // Seconds alive
     bool             active       = false;
-    bool             noteReleased = false;  // true after note-off; triggers release phase
+    bool             noteReleased = false;  // true after note-off; triggers Release stage
     BoundaryBehavior boundary     = BoundaryBehavior::Wrap;
+
+    // ── Envelope state ────────────────────────────────────────────────────────
+    EnvelopeStage envStage = EnvelopeStage::Attack;
 
     // ── MIDI identity ─────────────────────────────────────────────────────────
     int midiNote    = 60;
     int midiChannel = 1;
 
     // ── Amplitude envelope ────────────────────────────────────────────────────
-    // Computed by physics tick; read by audio engine each buffer.
-    // Phase 2+: full multi-stage ADSR replaces this simple attack/release.
+    // Computed by physics tick via ADSR state machine; read by audio engine each buffer.
     float amplitude = 0.0f;   // 0..1, authoritative value for synthesis scaling
 
     // ── Timbral parameters ────────────────────────────────────────────────────

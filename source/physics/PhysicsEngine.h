@@ -6,6 +6,7 @@
 
 #include "PhysicsState.h"
 #include "FieldObject.h"
+#include "synthesis/TimbralAnchor.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Emitter — Morphon generator (Phase 1 minimal version)
@@ -24,8 +25,10 @@ struct Emitter
     float           launchSpeed  = 0.0f;    // Initial speed (Manifold units/sec); 0 = field carries
     float           spawnMass    = 1.0f;
     float           spawnDrag    = 0.02f;
-    float           attackTime   = 0.05f;   // Envelope attack, seconds
-    float           releaseTime  = 0.30f;   // Envelope release, seconds
+    float           attackTime    = 0.05f;   // Envelope attack, seconds
+    float           decayTime    = 0.15f;   // Envelope decay, seconds (attack peak → sustain)
+    float           sustainLevel = 0.70f;   // Sustain amplitude [0..1]
+    float           releaseTime  = 0.30f;   // Envelope release, seconds (after note-off)
     BoundaryBehavior boundary    = BoundaryBehavior::Wrap;
     bool            active       = true;
 };
@@ -93,10 +96,14 @@ private:
     std::atomic<float> globalTimeScale_{ 1.0f };
 
     // ── Simulation state (physics thread only) ────────────────────────────────
-    std::array<MorphonState, MAX_MORPHONS>   morphons_{};
+    std::array<MorphonState, MAX_MORPHONS>      morphons_{};
     std::array<FieldObject,  MAX_FIELD_OBJECTS> fieldObjects_{};
-    std::array<Emitter,      MAX_EMITTERS>   emitters_{};
-    FieldGrid fieldGrid_;
+    std::array<Emitter,      MAX_EMITTERS>      emitters_{};
+    FieldGrid                                   fieldGrid_;
+
+    // ── Timbral Anchors (Phase 2: two hardcoded; Phase 3+: user-placed) ──────
+    static constexpr int NUM_ANCHORS = 2;
+    std::array<TimbralAnchor, NUM_ANCHORS> timbralAnchors_{};
 
     uint64_t tickIndex_        = 0;
     double   simulationTimeMs_ = 0.0;

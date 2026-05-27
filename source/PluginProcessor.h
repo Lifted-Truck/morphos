@@ -85,5 +85,19 @@ private:
     // Current sample rate — set in prepareToPlay, read in processBlock
     double sampleRate_ = 44100.0;
 
+    // ── Phase 2: Additive synthesis voice state ───────────────────────────────
+    // Phasor accumulators for each Morphon slot's additive engine.
+    // Indexed by Morphon slot (not MIDI note) so state is preserved across retrigs.
+    // Reset on each new activation (wasActive false → true transition).
+    static constexpr int NUM_PARTIALS = 20;
+
+    struct AdditiveVoice
+    {
+        std::array<float, NUM_PARTIALS> phases{};
+        bool wasActive = false;
+    };
+
+    std::array<AdditiveVoice, MAX_MORPHONS> voices_{};
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MorphosProcessor)
 };

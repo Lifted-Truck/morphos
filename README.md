@@ -135,16 +135,19 @@ is shipped — DAW automation is keyed to these strings.
 ## Phase progress
 
 - [x] **Phase 0** — Plugin skeleton: CMake, JUCE, threading model, parameter system, state hooks
-- [ ] **Phase 1** — Physics core: Morphon integration, Attractor/Repeller/Vortex, precomputed field grid
-- [ ] **Phase 2** — First sound: additive engine, two Timbral Anchors, RBF blending, ADSR
+- [x] **Phase 1** — Physics core: Morphon integration, Attractor/Repeller/Vortex, precomputed field grid
+- [x] **Phase 2** — First sound: additive engine (20 partials), two Timbral Anchors, IDW blending, full ADSR
 - [ ] **Phase 3** — Manifold authoring: drag-and-drop Anchors, Emitter placement, parameter panels
 - [ ] **Phase 4** — Polyphony & key-tracking: voice management, Terminus, MIDI mapping
 - [ ] **Phase 5** — Full field model: Effect Zones, Flux Gates, Path Objects
-- [ ] **Phase 6** — Modulation: mod matrix, MIDI sources, Morphon state sources, MPE
-- [ ] **Phase 7** — Additional engines: FM, wavetable, Transient Objects, heterogeneous blending
+- [ ] **Phase 6** — Modulation: mod matrix, MIDI sources, Morphon state sources, MPE. Priority destinations: Emitter position XY, launch angle, launch speed (keytracking these to MIDI pitch is the canonical Morphos expressive relationship). All field object XY positions must be both sources and destinations.
+- [ ] **Phase 7** — Additional engines: FM, wavetable, heterogeneous blending. **Transient Objects**: percussive event synthesis layer triggered by Emitter generation, Terminus arrival, Event Horizon absorption, and Flux Gate crossings. Emitter-tethered transient (on note-on) is the first implementation target.
 - [ ] **Phase 8** — Scaling: spatial hash, SIMD, engine LOD, physics quality settings
 - [ ] **Phase 9** — Advanced: granular, physical model, spectral engines, full mod matrix
 - [ ] **Phase 10** — Product: preset system, GUI polish, factory patches, code signing
+
+**UI wishlist (Phase 10+):**
+- Piano keyboard strip at the bottom of the window — lights active MIDI notes and is clickable for in-VST testing. JUCE provides `MidiKeyboardComponent` as a baseline; will likely want a custom-skinned version to match the Morphos visual language.
 
 ---
 

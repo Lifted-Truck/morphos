@@ -1,6 +1,17 @@
 #include "PluginEditor.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
+// UI WISHLIST (logged here for Phase 10):
+//
+//  • Piano keyboard strip along the bottom of the window.
+//    - Displays currently active MIDI notes (keys light up).
+//    - Clickable: lets you trigger notes from inside the VST without a controller.
+//    - Useful both for live testing and for preset auditioning in Ableton.
+//    JUCE provides MidiKeyboardComponent for a quick baseline; may want a custom
+//    skinned version to match the Morphos visual language.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Palette — colours matching the design spec object taxonomy
 // ─────────────────────────────────────────────────────────────────────────────
 namespace Colour
@@ -111,8 +122,8 @@ void MorphosEditor::drawGrid(juce::Graphics& g, juce::Rectangle<int> canvas) con
         const float t = static_cast<float>(i) / DIVISIONS;
         const float x = cf.getX() + t * cf.getWidth();
         const float y = cf.getY() + t * cf.getHeight();
-        g.drawVerticalLine  (static_cast<int>(x), canvas.getY(), canvas.getBottom());
-        g.drawHorizontalLine(static_cast<int>(y), canvas.getX(), canvas.getRight());
+        g.drawVerticalLine  (static_cast<int>(x), cf.getY(), cf.getBottom());
+        g.drawHorizontalLine(static_cast<int>(y), cf.getX(), cf.getRight());
     }
 
     // Canvas border

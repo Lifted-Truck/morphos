@@ -49,15 +49,23 @@ PhysicsEngine::PhysicsEngine()
     fieldObjects_[2].active   = true;
 
     // ── Default emitter ───────────────────────────────────────────────────────
-    emitters_[0].x           = 0.50f;
-    emitters_[0].y           = 0.50f;
-    emitters_[0].launchSpeed = 0.0f;   // Stationary start; field carries the Morphon
-    emitters_[0].spawnMass   = 1.0f;
-    emitters_[0].spawnDrag   = 0.015f;
-    emitters_[0].attackTime  = 0.05f;
-    emitters_[0].releaseTime = 0.35f;
-    emitters_[0].boundary    = BoundaryBehavior::Wrap;
-    emitters_[0].active      = true;
+    emitters_[0].x            = 0.50f;
+    emitters_[0].y            = 0.50f;
+    emitters_[0].launchSpeed  = 0.0f;   // Stationary start; field carries the Morphon
+    emitters_[0].spawnMass    = 1.0f;
+    emitters_[0].spawnDrag    = 0.015f;
+    emitters_[0].attackTime   = 0.05f;
+    emitters_[0].decayTime    = 0.15f;
+    emitters_[0].sustainLevel = 0.70f;
+    emitters_[0].releaseTime  = 0.35f;
+    emitters_[0].boundary     = BoundaryBehavior::Wrap;
+    emitters_[0].active       = true;
+
+    // ── Timbral Anchors for Phase 2 demonstration ─────────────────────────────
+    // Anchor 0 — upper-left: dark (low rolloff brightness) and purely harmonic
+    timbralAnchors_[0] = { 0.15f, 0.15f, 0.05f, 0.00f };
+    // Anchor 1 — lower-right: bright (flat spectrum) and heavily inharmonic
+    timbralAnchors_[1] = { 0.85f, 0.85f, 0.92f, 0.80f };
 
     fieldGrid_.dirty = true;  // Will be rebuilt on first tick
 }
@@ -188,8 +196,9 @@ void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
     if (existing >= 0)
     {
         morphons_[existing].noteReleased = false;
-        morphons_[existing].age         = 0.0f;
-        morphons_[existing].x           = emitters_[0].x;
+        morphons_[existing].envStage     = EnvelopeStage::Attack;
+        morphons_[existing].age          = 0.0f;
+        morphons_[existing].x            = emitters_[0].x;
         morphons_[existing].y           = emitters_[0].y;
         morphons_[existing].vx          = std::cosf(emitters_[0].launchAngle)
                                           * emitters_[0].launchSpeed;
@@ -201,22 +210,23 @@ void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
     const int slot = findFreeSlot();
     if (slot < 0) return;   // Polyphony cap reached — Phase 4 adds voice stealing
 
-    auto& m        = morphons_[slot];
-    m.active       = true;
-    m.noteReleased = false;
-    m.midiNote     = note;
-    m.midiChannel  = channel;
-    m.x            = emitters_[0].x;
-    m.y            = emitters_[0].y;
-    m.vx           = std::cosf(emitters_[0].launchAngle) * emitters_[0].launchSpeed;
-    m.vy           = std::sinf(emitters_[0].launchAngle) * emitters_[0].launchSpeed;
-    m.mass         = emitters_[0].spawnMass;
-    m.drag         = emitters_[0].spawnDrag;
-    m.boundary     = emitters_[0].boundary;
-    m.amplitude    = 0.0f;
-    m.age          = 0.0f;
-    m.timbreX      = emitters_[0].x;
-    m.timbreY      = emitters_[0].y;
+    auto& m         = morphons_[slot];
+    m.active        = true;
+    m.noteReleased  = false;
+    m.envStage      = EnvelopeStage::Attack;
+    m.midiNote      = note;
+    m.midiChannel   = channel;
+    m.x             = emitters_[0].x;
+    m.y             = emitters_[0].y;
+    m.vx            = std::cosf(emitters_[0].launchAngle) * emitters_[0].launchSpeed;
+    m.vy            = std::sinf(emitters_[0].launchAngle) * emitters_[0].launchSpeed;
+    m.mass          = emitters_[0].spawnMass;
+    m.drag          = emitters_[0].spawnDrag;
+    m.boundary      = emitters_[0].boundary;
+    m.amplitude     = 0.0f;
+    m.age           = 0.0f;
+    m.timbreX       = 0.5f;
+    m.timbreY       = 0.0f;
     m.fundamentalHz = midiNoteToHz(note);
 }
 
@@ -288,10 +298,12 @@ void PhysicsEngine::integrateMorphons(double dt)
 
         applyBoundary(m);
 
-        // Update timbral parameters from position.
-        // Phase 2+: replaced by Timbral Anchor RBF blending.
-        m.timbreX = m.x;
-        m.timbreY = m.y;
+        // Blend Timbral Anchors at current Manifold position.
+        // timbreX → spectral rolloff [0,1]; timbreY → inharmonicity [0,1].
+        // Phase 3+: anchors become user-placed objects; blending upgrades to RBF.
+        blendAnchors(m.x, m.y,
+                     timbralAnchors_.data(), NUM_ANCHORS,
+                     m.timbreX, m.timbreY);
     }
 }
 
@@ -327,32 +339,66 @@ void PhysicsEngine::applyBoundary(MorphonState& m) const noexcept
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Envelope — simple attack / release (Phase 2+: full ADSR)
+// Envelope — full ADSR state machine
+//
+// Note-off transitions the Morphon immediately to Release regardless of current
+// stage. On retrigger (NoteOn to an already-active slot) envStage is reset to
+// Attack by handleNoteOn before this function runs.
 // ─────────────────────────────────────────────────────────────────────────────
 
 void PhysicsEngine::updateEnvelopes(double dt)
 {
-    const float dtF         = static_cast<float>(dt);
-    const auto& emitter     = emitters_[0];
+    const float dtF = static_cast<float>(dt);
+    const auto& emitter = emitters_[0];
 
     const float attackRate  = (emitter.attackTime  > 0.0f)
                               ? dtF / emitter.attackTime  : 1.0f;
+    const float decayRate   = (emitter.decayTime   > 0.0f)
+                              ? dtF / emitter.decayTime   : 1.0f;
     const float releaseRate = (emitter.releaseTime > 0.0f)
                               ? dtF / emitter.releaseTime : 1.0f;
+    const float sustainLvl  = emitter.sustainLevel;
 
     for (auto& m : morphons_)
     {
         if (!m.active) continue;
 
-        if (!m.noteReleased)
+        // Note-off forces Release regardless of current stage
+        if (m.noteReleased && m.envStage != EnvelopeStage::Release)
+            m.envStage = EnvelopeStage::Release;
+
+        switch (m.envStage)
         {
-            m.amplitude = std::min(1.0f, m.amplitude + attackRate);
-        }
-        else
-        {
-            m.amplitude = std::max(0.0f, m.amplitude - releaseRate);
-            if (m.amplitude <= 0.0f)
-                m.active = false;
+            case EnvelopeStage::Attack:
+                m.amplitude += attackRate;
+                if (m.amplitude >= 1.0f)
+                {
+                    m.amplitude = 1.0f;
+                    m.envStage  = EnvelopeStage::Decay;
+                }
+                break;
+
+            case EnvelopeStage::Decay:
+                m.amplitude -= decayRate;
+                if (m.amplitude <= sustainLvl)
+                {
+                    m.amplitude = sustainLvl;
+                    m.envStage  = EnvelopeStage::Sustain;
+                }
+                break;
+
+            case EnvelopeStage::Sustain:
+                m.amplitude = sustainLvl;
+                break;
+
+            case EnvelopeStage::Release:
+                m.amplitude -= releaseRate;
+                if (m.amplitude <= 0.0f)
+                {
+                    m.amplitude = 0.0f;
+                    m.active    = false;
+                }
+                break;
         }
     }
 }
