@@ -21,6 +21,7 @@ namespace Colour
     static const juce::Colour Attractor   { 0xFF378ADD };
     static const juce::Colour Repeller    { 0xFFE24B4A };
     static const juce::Colour Vortex      { 0xFF7F77DD };
+    static const juce::Colour Emitter     { 0xFFD9A63A };  // Amber — spawn / generation
     static const juce::Colour MorphonDot  { 0xFFE8E4DC };
     static const juce::Colour TrailBase   { 0xFFB0AB9E };
     static const juce::Colour StatusText  { 0xFF888880 };
@@ -97,6 +98,7 @@ void MorphosEditor::paint(juce::Graphics& g)
 
     drawGrid        (g, canvas);
     drawFieldObjects(g, state, canvas);
+    drawEmitters    (g, state, canvas);
     drawTrails      (g, canvas);
     drawMorphons    (g, state, canvas);
     drawStatusBar   (g, state);
@@ -179,6 +181,70 @@ void MorphosEditor::drawFieldObjects(juce::Graphics& g,
             // Simple "+" centre marker — arrow drawn in Phase 3+
             g.drawLine(centre.x - 3.5f, centre.y, centre.x + 3.5f, centre.y, 1.5f);
             g.drawLine(centre.x, centre.y - 3.5f, centre.x, centre.y + 3.5f, 1.5f);
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Draw — Emitters
+//
+// Amber circle with an outward arrow showing launch angle/speed.
+// Drawn above field objects so it's never obscured.
+//
+// BACKBURNER — field-line visualisation:
+//   Draw streamlines by tracing the precomputed FieldGrid from a grid of seed
+//   points (e.g. 24×24), advancing each N steps via FieldGrid::sample().
+//   FieldGrid::sample() is O(1) bilinear — 576 seeds × 60 steps = 34,560
+//   lookups per frame, well within budget on the UI thread.
+//   Threading concern: FieldGrid is rebuilt on the physics thread when dirty.
+//   For Phase 3+ (user edits field objects), either double-buffer the grid
+//   or render into an Image on the physics thread after rebuild and hand the
+//   Image to the UI via the snapshot.
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MorphosEditor::drawEmitters(juce::Graphics& g,
+                                 const PhysicsStateSnapshot& state,
+                                 juce::Rectangle<int> canvas) const
+{
+    for (int i = 0; i < MAX_EMITTERS; ++i)
+    {
+        const auto& e = state.emitters[i];
+        if (!e.active) continue;
+
+        const auto centre = manifoldToCanvas(e.x, e.y, canvas);
+
+        // Outer ring — distinguishes emitter from field-object glyphs
+        constexpr float RING_R = 11.0f;
+        g.setColour(Colour::Emitter.withAlpha(0.30f));
+        g.drawEllipse(centre.x - RING_R, centre.y - RING_R,
+                      RING_R * 2.0f, RING_R * 2.0f, 1.2f);
+
+        // Filled centre dot
+        constexpr float GLYPH_R = 5.0f;
+        g.setColour(Colour::Emitter.withAlpha(0.88f));
+        g.fillEllipse(centre.x - GLYPH_R, centre.y - GLYPH_R,
+                      GLYPH_R * 2.0f, GLYPH_R * 2.0f);
+
+        // Launch-direction arrow (only when launchSpeed > 0)
+        if (e.launchSpeed > 0.001f)
+        {
+            // Arrow length scales with speed; minimum 12 px, max ~26 px
+            const float arrowLen = 12.0f + std::min(e.launchSpeed, 0.5f) * 28.0f;
+            const float tipX = centre.x + std::cos(e.launchAngle) * arrowLen;
+            const float tipY = centre.y + std::sin(e.launchAngle) * arrowLen;
+
+            g.setColour(Colour::Emitter.withAlpha(0.70f));
+            g.drawLine(centre.x, centre.y, tipX, tipY, 1.5f);
+
+            // Small arrowhead: two short lines at ±140° from the tip
+            constexpr float HEAD_LEN   = 5.0f;
+            constexpr float HEAD_ANGLE = 2.44f;  // ~140°
+            const float a = e.launchAngle + HEAD_ANGLE;
+            const float b = e.launchAngle - HEAD_ANGLE;
+            g.drawLine(tipX, tipY, tipX + std::cos(a) * HEAD_LEN,
+                                   tipY + std::sin(a) * HEAD_LEN, 1.5f);
+            g.drawLine(tipX, tipY, tipX + std::cos(b) * HEAD_LEN,
+                                   tipY + std::sin(b) * HEAD_LEN, 1.5f);
         }
     }
 }

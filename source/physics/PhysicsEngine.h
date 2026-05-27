@@ -15,8 +15,6 @@
 // is implemented in Phase 3. This struct holds only the parameters needed
 // to spawn and initialise a Morphon from a MIDI note-on event.
 // ─────────────────────────────────────────────────────────────────────────────
-static constexpr int MAX_EMITTERS = 8;
-
 struct Emitter
 {
     float           x            = 0.5f;    // Spawn position on Manifold

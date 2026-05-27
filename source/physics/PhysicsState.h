@@ -14,7 +14,8 @@
 //   UI thread       → reads a relaxed copy for display (~30 Hz)
 // ─────────────────────────────────────────────────────────────────────────────
 
-static constexpr int MAX_MORPHONS = 256;
+static constexpr int MAX_MORPHONS  = 256;
+static constexpr int MAX_EMITTERS  = 8;
 
 // Boundary behaviour when a Morphon exits the [0,1]×[0,1] Manifold.
 enum class BoundaryBehavior : uint8_t { Wrap, Reflect, Terminate };
@@ -66,6 +67,18 @@ struct MorphonState
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// EmitterSnapshot — Emitter position and launch params for UI rendering
+// ─────────────────────────────────────────────────────────────────────────────
+struct EmitterSnapshot
+{
+    float x           = 0.5f;
+    float y           = 0.5f;
+    float launchAngle = 0.0f;   // radians; used to draw direction arrow
+    float launchSpeed = 0.0f;   // scales arrow length
+    bool  active      = false;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FieldObjectSnapshot — lightweight field object data for UI rendering
 // ─────────────────────────────────────────────────────────────────────────────
 struct FieldObjectSnapshot
@@ -85,8 +98,9 @@ struct FieldObjectSnapshot
 // ─────────────────────────────────────────────────────────────────────────────
 struct PhysicsStateSnapshot
 {
-    std::array<MorphonState,       MAX_MORPHONS>       morphons{};
-    std::array<FieldObjectSnapshot, MAX_FIELD_OBJECTS> fieldObjects{};
+    std::array<MorphonState,        MAX_MORPHONS>       morphons{};
+    std::array<FieldObjectSnapshot, MAX_FIELD_OBJECTS>  fieldObjects{};
+    std::array<EmitterSnapshot,     MAX_EMITTERS>       emitters{};
 
     int      activeMorphonCount  = 0;
     int      activeFieldObjCount = 0;

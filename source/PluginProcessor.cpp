@@ -67,7 +67,8 @@ void MorphosProcessor::prepareToPlay(double sampleRate, int /*samplesPerBlock*/)
     for (auto& v : voices_)
     {
         v.phases.fill(0.0f);
-        v.wasActive = false;
+        v.prevAmplitude = 0.0f;
+        v.wasActive     = false;
     }
 }
 
@@ -150,15 +151,27 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                 continue;
             }
 
-            // Detect new spawn (inactive → active): reset phase accumulators
+            // Detect new spawn (inactive → active): reset phasors and prev amplitude
             if (!voice.wasActive)
             {
                 voice.phases.fill(0.0f);
+                voice.prevAmplitude = 0.0f;
                 voice.wasActive = true;
             }
 
-            const float amplitude = m.amplitude * VOICE_SCALE;
-            if (amplitude < 1e-5f) continue;  // Skip inaudible voices
+            // ── Amplitude ramp — eliminates clicks at buffer boundaries ──────────
+            // The physics snapshot is a point-in-time read; amplitude can jump
+            // discontinuously between processBlock calls. Lerping from the previous
+            // buffer's end amplitude to the current snapshot value smooths the step
+            // into a ramp across the buffer, which the ear cannot distinguish.
+            const float targetAmp = m.amplitude * VOICE_SCALE;
+            const float startAmp  = voice.prevAmplitude;
+            voice.prevAmplitude   = targetAmp;  // Store for next buffer
+
+            if (targetAmp < 1e-5f && startAmp < 1e-5f) continue;  // Fully silent
+
+            const float ampStep = (targetAmp - startAmp)
+                                  / static_cast<float>(std::max(numSamples, 1));
 
             // ── Timbral parameters (written by physics thread via anchor blending) ─
             // timbreX = spectral rolloff [0..1]: 0 = dark, 1 = bright
@@ -166,8 +179,8 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             const float rolloffExp   = 3.5f - m.timbreX * 3.2f;  // [0,1] → [3.5, 0.3]
             const float stretchCoeff = 0.012f * m.timbreY;        // partial k stretches by k*coeff
 
-            // ── Precompute per-partial frequency and amplitude (once per buffer) ──
-            // Pull std::pow out of the per-sample loop entirely.
+            // ── Precompute per-partial frequency and normalised shape (once per buffer)
+            // std::pow is called 20× per voice here, not 20× per sample.
             float partialFreqs[NUM_PARTIALS];
             float partialAmps [NUM_PARTIALS];
             float ampSum = 0.0f;
@@ -185,11 +198,10 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                 ampSum += pa;
             }
 
-            // Normalise so total spectral power is constant across rolloff settings,
-            // then bake in voice amplitude so the sample loop is multiply-only.
-            const float normScale = (ampSum > 0.0f) ? amplitude / ampSum : 0.0f;
+            // Normalise spectral shape to unit sum; amplitude applied per-sample below.
+            const float normFactor = (ampSum > 0.0f) ? 1.0f / ampSum : 0.0f;
             for (int k = 0; k < NUM_PARTIALS; ++k)
-                partialAmps[k] *= normScale;
+                partialAmps[k] *= normFactor;
 
             // ── Sample loop: advance phasors, accumulate into all output channels ─
             // Cache write pointers outside the sample loop.
@@ -201,6 +213,9 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
             for (int s = 0; s < numSamples; ++s)
             {
+                // Per-sample amplitude: linear ramp from startAmp to targetAmp
+                const float amp = startAmp + ampStep * static_cast<float>(s);
+
                 float sample = 0.0f;
 
                 for (int k = 0; k < NUM_PARTIALS; ++k)
@@ -209,6 +224,8 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                     if (voice.phases[k] >= 1.0f) voice.phases[k] -= 1.0f;
                     sample += partialAmps[k] * std::sin(voice.phases[k] * twoPi);
                 }
+
+                sample *= amp;
 
                 for (int ch = 0; ch < clampedCh; ++ch)
                     channelPtrs[ch][s] += sample;

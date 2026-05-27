@@ -40,10 +40,12 @@ private:
                                         juce::Rectangle<int> canvas) const;
 
     // Draw calls (called from paint())
-    void drawGrid      (juce::Graphics&, juce::Rectangle<int> canvas) const;
+    void drawGrid        (juce::Graphics&, juce::Rectangle<int> canvas) const;
     void drawFieldObjects(juce::Graphics&, const PhysicsStateSnapshot&,
                           juce::Rectangle<int> canvas) const;
-    void drawTrails    (juce::Graphics&, juce::Rectangle<int> canvas) const;
+    void drawEmitters    (juce::Graphics&, const PhysicsStateSnapshot&,
+                          juce::Rectangle<int> canvas) const;
+    void drawTrails      (juce::Graphics&, juce::Rectangle<int> canvas) const;
     void drawMorphons  (juce::Graphics&, const PhysicsStateSnapshot&,
                         juce::Rectangle<int> canvas) const;
     void drawStatusBar (juce::Graphics&, const PhysicsStateSnapshot&) const;

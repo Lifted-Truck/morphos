@@ -451,5 +451,17 @@ void PhysicsEngine::writeSnapshot()
     }
     snap.activeFieldObjCount = activeObjs;
 
+    // Copy emitters for UI rendering
+    for (int i = 0; i < MAX_EMITTERS; ++i)
+    {
+        const auto& src = emitters_[i];
+        auto&       dst = snap.emitters[i];
+        dst.x           = src.x;
+        dst.y           = src.y;
+        dst.launchAngle = src.launchAngle;
+        dst.launchSpeed = src.launchSpeed;
+        dst.active      = src.active;
+    }
+
     bridge_.publish();
 }

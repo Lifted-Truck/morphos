@@ -94,7 +94,8 @@ private:
     struct AdditiveVoice
     {
         std::array<float, NUM_PARTIALS> phases{};
-        bool wasActive = false;
+        float prevAmplitude = 0.0f;  // Amplitude at end of last buffer; lerped to avoid clicks
+        bool  wasActive     = false;
     };
 
     std::array<AdditiveVoice, MAX_MORPHONS> voices_{};
