@@ -46,22 +46,24 @@ Open the **Visual Studio Installer** → **Modify** on your VS 2026 installation
 
 ## Build
 
-```bat
-# From the plugin/ directory:
-cmake -B build
-cmake --build build --config Debug
+```powershell
+# From the plugin/ directory — first time or after wiping build/:
+cmake --preset debug
+
+# Subsequent builds:
+cmake --build --preset debug
+
+# Release:
+cmake --preset release
+cmake --build --preset release
 ```
 
 First configure downloads JUCE via FetchContent (~300 MB, one time only).
+Generator is locked to `Visual Studio 18 2026 / x64` via `CMakePresets.json` — no need to specify `-G` manually.
 
 **Plugin output:** `build\Morphos_artefacts\Debug\VST3\Morphos.vst3`
 
 **Load in Ableton:** Preferences → Plug-Ins → VST3 Custom Folder → add the path above → Rescan.
-
-For Release builds:
-```bat
-cmake --build build --config Release
-```
 
 ---
 
