@@ -137,7 +137,7 @@ is shipped — DAW automation is keyed to these strings.
 - [x] **Phase 0** — Plugin skeleton: CMake, JUCE, threading model, parameter system, state hooks
 - [x] **Phase 1** — Physics core: Morphon integration, Attractor/Repeller/Vortex, precomputed field grid
 - [x] **Phase 2** — First sound: additive engine (20 partials), two Timbral Anchors, IDW blending, full ADSR
-- [ ] **Phase 3** — Manifold authoring: drag-and-drop Anchors, Emitter placement, parameter panels
+- [x] **Phase 3** — Manifold authoring: drag-and-drop Anchors, Emitter placement, parameter panels
 - [ ] **Phase 4** — Polyphony & key-tracking: voice management, Terminus, MIDI mapping
 - [ ] **Phase 5** — Full field model: Effect Zones, Flux Gates, Path Objects
 - [ ] **Phase 6** — Modulation: mod matrix, MIDI sources, Morphon state sources, MPE. Priority destinations: Emitter position XY, launch angle, launch speed (keytracking these to MIDI pitch is the canonical Morphos expressive relationship). All field object XY positions must be both sources and destinations.
