@@ -1,0 +1,19 @@
+# Build output
+build/
+out/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.aps
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+
+# OS
+.DS_Store
+Thumbs.db
