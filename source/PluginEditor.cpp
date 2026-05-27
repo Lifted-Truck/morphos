@@ -184,11 +184,16 @@ void MorphosEditor::drawFieldObjects(juce::Graphics& g,
             // chirality > 0 → CW in screen coords (Y-down); < 0 → CCW
             const float cw = (obj.chirality >= 0.0f) ? 1.0f : -1.0f;
 
-            // 270° arc: starts at 12 o'clock (-π/2), sweeps CW to 9 o'clock (π)
-            // or CCW to 3 o'clock (-2π).  JUCE addArc is CW when from < to.
-            const float startAngle = -juce::MathConstants<float>::halfPi;
-            const float endAngle   = startAngle
-                                     + cw * 1.5f * juce::MathConstants<float>::pi;
+            // ── JUCE addArc coordinate convention ────────────────────────────
+            // angle 0 = 12 o'clock (top), increases clockwise.
+            // Position on arc: x = cx + R·sinθ,  y = cy − R·cosθ
+            //   (NOT standard trig: x = cx + R·cosθ, y = cy + R·sinθ)
+            //
+            // 270° arc from top (0):
+            //   CW  → toAngle =  3π/2  → left  (9 o'clock); from < to → CW in JUCE
+            //   CCW → toAngle = −3π/2  → right (3 o'clock); from > to → CCW in JUCE
+            const float startAngle = 0.0f;
+            const float endAngle   = cw * 1.5f * juce::MathConstants<float>::pi;
 
             juce::Path arc;
             arc.addArc(centre.x - ARROW_R, centre.y - ARROW_R,
@@ -198,13 +203,14 @@ void MorphosEditor::drawFieldObjects(juce::Graphics& g,
             g.setColour(juce::Colours::white.withAlpha(0.55f));
             g.strokePath(arc, juce::PathStrokeType(1.5f));
 
-            // Arrowhead at the arc terminus
-            const float tipX = centre.x + ARROW_R * std::cos(endAngle);
-            const float tipY = centre.y + ARROW_R * std::sin(endAngle);
+            // Arrowhead — use JUCE position formula, not standard trig
+            const float tipX = centre.x + ARROW_R * std::sin(endAngle);
+            const float tipY = centre.y - ARROW_R * std::cos(endAngle);
 
-            // Tangent direction of arc motion at tip: (-cw·sinθ, cw·cosθ)
-            const float motionAngle = std::atan2( cw * std::cos(endAngle),
-                                                 -cw * std::sin(endAngle));
+            // CW tangent at θ: d/dθ(sinθ, −cosθ) = (cosθ, sinθ) in screen coords.
+            // CCW: negate. Combined: (cw·cosθ, cw·sinθ).
+            const float motionAngle = std::atan2(cw * std::sin(endAngle),
+                                                 cw * std::cos(endAngle));
             g.drawLine(tipX, tipY,
                        tipX + std::cos(motionAngle + HEAD_ANGLE) * HEAD_LEN,
                        tipY + std::sin(motionAngle + HEAD_ANGLE) * HEAD_LEN, 1.5f);
