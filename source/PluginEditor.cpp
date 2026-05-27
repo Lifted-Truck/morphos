@@ -100,17 +100,33 @@ void MorphosEditor::resized()
 
 void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
 {
-    constexpr int HEADER_H  = 26;
-    constexpr int LABEL_H   = 14;
-    constexpr int SLIDER_H  = 20;
-    constexpr int ROW_H     = LABEL_H + SLIDER_H + 2;   // label + slider + small gap
+    constexpr int SPAWN_H    = 24;   // height of spawn button row
+    constexpr int HEADER_H   = 24;
+    constexpr int LABEL_H    = 13;
+    constexpr int SLIDER_H   = 20;
+    constexpr int ROW_H      = LABEL_H + SLIDER_H + 2;
     constexpr int SECTION_GAP = 6;
+    constexpr int BTN_ROW_H  = 22;
 
-    int y = panel.getY();
+    int y = panel.getY() + 4;
     const int x = panel.getX();
     const int w = panel.getWidth();
 
-    lblPanelHeader_.setBounds(x, y, w, HEADER_H);
+    // ── Spawn row — 5 equal-width buttons ────────────────────────────────────
+    {
+        const int bw = w / 5;
+        btnAddAtt_ .setBounds(x + bw * 0, y, bw, SPAWN_H);
+        btnAddRep_ .setBounds(x + bw * 1, y, bw, SPAWN_H);
+        btnAddVor_ .setBounds(x + bw * 2, y, bw, SPAWN_H);
+        btnAddEmit_.setBounds(x + bw * 3, y, bw, SPAWN_H);
+        btnAddAnch_.setBounds(x + bw * 4, y, w - bw * 4, SPAWN_H);
+    }
+    y += SPAWN_H + 6;
+
+    // ── Header: name label + remove button ────────────────────────────────────
+    constexpr int REMOVE_W = 20;
+    lblPanelHeader_.setBounds(x, y, w - REMOVE_W - 2, HEADER_H);
+    btnRemove_     .setBounds(x + w - REMOVE_W, y, REMOVE_W, HEADER_H);
     y += HEADER_H + SECTION_GAP;
 
     auto layoutRow = [&](juce::Label& lbl, juce::Slider& sld)
@@ -120,24 +136,35 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
         y += ROW_H;
     };
 
-    // Anchor section
+    // ── Anchor section ────────────────────────────────────────────────────────
     layoutRow(lblBrightness_,    sldBrightness_);
     layoutRow(lblInharmonicity_, sldInharmonicity_);
     y += SECTION_GAP;
 
-    // Field object section
+    // ── Field object section ──────────────────────────────────────────────────
     layoutRow(lblFOStrength_,  sldFOStrength_);
     layoutRow(lblFORadius_,    sldFORadius_);
     layoutRow(lblFOChirality_, sldFOChirality_);
     y += SECTION_GAP;
 
-    // Emitter section
+    // ── Emitter section ───────────────────────────────────────────────────────
     layoutRow(lblEmitAngle_,   sldEmitAngle_);
     layoutRow(lblEmitSpeed_,   sldEmitSpeed_);
     layoutRow(lblEmitAttack_,  sldEmitAttack_);
     layoutRow(lblEmitDecay_,   sldEmitDecay_);
     layoutRow(lblEmitSustain_, sldEmitSustain_);
     layoutRow(lblEmitRelease_, sldEmitRelease_);
+
+    // Boundary row: label + 4 equal-width toggle buttons
+    lblBoundary_.setBounds(x, y, w, LABEL_H);
+    y += LABEL_H;
+    {
+        const int bw = w / 4;
+        btnBoundWrap_     .setBounds(x + bw * 0, y, bw,         BTN_ROW_H);
+        btnBoundReflect_  .setBounds(x + bw * 1, y, bw,         BTN_ROW_H);
+        btnBoundTerminate_.setBounds(x + bw * 2, y, bw,         BTN_ROW_H);
+        btnBoundKlein_    .setBounds(x + bw * 3, y, w - bw * 3, BTN_ROW_H);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -169,11 +196,63 @@ void MorphosEditor::setupSliders()
         l.setVisible(false);
     };
 
-    // ── Panel header ───────────────────────────────────────────────────────────
+    auto styleSpawnBtn = [](juce::TextButton& b)
+    {
+        b.setColour(juce::TextButton::buttonColourId,   juce::Colour(0xFF252522));
+        b.setColour(juce::TextButton::textColourOffId,  juce::Colour(0xFF888880));
+        b.setColour(juce::TextButton::textColourOnId,   juce::Colour(0xFFE8E4DC));
+    };
+
+    auto styleBoundBtn = [](juce::TextButton& b)
+    {
+        b.setClickingTogglesState(false);
+        b.setColour(juce::TextButton::buttonColourId,    juce::Colour(0xFF252522));
+        b.setColour(juce::TextButton::buttonOnColourId,  juce::Colour(0xFF3DC9B0));
+        b.setColour(juce::TextButton::textColourOffId,   juce::Colour(0xFF888880));
+        b.setColour(juce::TextButton::textColourOnId,    juce::Colour(0xFF1A1A18));
+    };
+
+    // ── Spawn buttons (always visible) ─────────────────────────────────────────
+    styleSpawnBtn(btnAddAtt_);   addAndMakeVisible(btnAddAtt_);
+    styleSpawnBtn(btnAddRep_);   addAndMakeVisible(btnAddRep_);
+    styleSpawnBtn(btnAddVor_);   addAndMakeVisible(btnAddVor_);
+    styleSpawnBtn(btnAddEmit_);  addAndMakeVisible(btnAddEmit_);
+    styleSpawnBtn(btnAddAnch_);  addAndMakeVisible(btnAddAnch_);
+
+    btnAddAtt_.onClick  = [this]{ sendEdit(ManifoldEdit::Type::AddAttractor,    0, 0.5f, 0.5f); };
+    btnAddRep_.onClick  = [this]{ sendEdit(ManifoldEdit::Type::AddRepeller,     0, 0.5f, 0.5f); };
+    btnAddVor_.onClick  = [this]{ sendEdit(ManifoldEdit::Type::AddVortex,       0, 0.5f, 0.5f); };
+    btnAddEmit_.onClick = [this]{ sendEdit(ManifoldEdit::Type::AddEmitter,      0, 0.5f, 0.5f); };
+    btnAddAnch_.onClick = [this]{ sendEdit(ManifoldEdit::Type::AddTimbralAnchor,0, 0.5f, 0.5f); };
+
+    // ── Panel header + remove button ──────────────────────────────────────────
     lblPanelHeader_.setText("No Selection", juce::dontSendNotification);
     lblPanelHeader_.setFont(juce::FontOptions(13.0f));
     lblPanelHeader_.setColour(juce::Label::textColourId, juce::Colour(0xFFD0CBC2));
     addAndMakeVisible(lblPanelHeader_);
+
+    btnRemove_.setColour(juce::TextButton::buttonColourId,  juce::Colour(0xFF252522));
+    btnRemove_.setColour(juce::TextButton::textColourOffId, juce::Colour(0xFFE24B4A));
+    btnRemove_.setVisible(false);
+    addAndMakeVisible(btnRemove_);
+
+    btnRemove_.onClick = [this]
+    {
+        if (!selection_.valid()) return;
+        ManifoldEdit::Type t;
+        switch (selection_.kind)
+        {
+            case ObjectKind::FieldObject:   t = ManifoldEdit::Type::RemoveFieldObject;   break;
+            case ObjectKind::Emitter:       t = ManifoldEdit::Type::RemoveEmitter;       break;
+            case ObjectKind::TimbralAnchor: t = ManifoldEdit::Type::RemoveTimbralAnchor; break;
+            default: return;
+        }
+        sendEdit(t, selection_.index, 0.0f, 0.0f);
+        selection_ = {};
+        drag_.active = false;
+        updatePanel();
+        repaint();
+    };
 
     // ── Anchor sliders ─────────────────────────────────────────────────────────
     styleLabel (lblBrightness_,    "Brightness");
@@ -229,12 +308,26 @@ void MorphosEditor::setupSliders()
     styleLabel (lblEmitSustain_, "Sustain");
     styleLabel (lblEmitRelease_, "Release (s)");
 
-    const double PI = juce::MathConstants<double>::pi;
-    styleSlider(sldEmitAngle_,   -PI,   PI);
-    styleSlider(sldEmitSpeed_,    0.0,  0.8);
+    // Launch angle: wide range [-100π, 100π] so dragging never hits a boundary.
+    // textFromValueFunction displays the normalised angle in degrees [-180, 180].
+    // The onValueChange callback wraps the raw value into [-π, π] before sending.
+    const double bigRange = 100.0 * juce::MathConstants<double>::pi;
+    styleSlider(sldEmitAngle_,   -bigRange, bigRange);
+    sldEmitAngle_.textFromValueFunction = [](double v) -> juce::String
+    {
+        // Normalise to [-π, π] then display as degrees
+        const double pi  = juce::MathConstants<double>::pi;
+        const double two = 2.0 * pi;
+        double a = std::fmod(v + pi, two);
+        if (a < 0.0) a += two;
+        a -= pi;
+        return juce::String(a * 180.0 / pi, 1) + juce::String::fromUTF8("\xc2\xb0");
+    };
+
+    styleSlider(sldEmitSpeed_,    0.0,   0.8);
     styleSlider(sldEmitAttack_,   0.001, 5.0);
     styleSlider(sldEmitDecay_,    0.001, 5.0);
-    styleSlider(sldEmitSustain_,  0.0,  1.0);
+    styleSlider(sldEmitSustain_,  0.0,   1.0);
     styleSlider(sldEmitRelease_,  0.001, 10.0);
 
     addAndMakeVisible(lblEmitAngle_);   addAndMakeVisible(sldEmitAngle_);
@@ -244,10 +337,16 @@ void MorphosEditor::setupSliders()
     addAndMakeVisible(lblEmitSustain_); addAndMakeVisible(sldEmitSustain_);
     addAndMakeVisible(lblEmitRelease_); addAndMakeVisible(sldEmitRelease_);
 
-    sldEmitAngle_.onValueChange = [this] {
-        if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetEmitterLaunchAngle,
-                     selection_.index, (float)sldEmitAngle_.getValue());
+    sldEmitAngle_.onValueChange = [this]
+    {
+        if (ignoreSliderCallbacks_) return;
+        const double pi  = juce::MathConstants<double>::pi;
+        const double two = 2.0 * pi;
+        double a = std::fmod(sldEmitAngle_.getValue() + pi, two);
+        if (a < 0.0) a += two;
+        a -= pi;
+        sendEdit(ManifoldEdit::Type::SetEmitterLaunchAngle,
+                 selection_.index, (float)a);
     };
     sldEmitSpeed_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
@@ -274,6 +373,39 @@ void MorphosEditor::setupSliders()
             sendEdit(ManifoldEdit::Type::SetEmitterRelease,
                      selection_.index, (float)sldEmitRelease_.getValue());
     };
+
+    // ── Boundary toggle row (emitter section) ──────────────────────────────────
+    styleLabel(lblBoundary_, "Boundary");
+    addAndMakeVisible(lblBoundary_);
+
+    styleBoundBtn(btnBoundWrap_);      addAndMakeVisible(btnBoundWrap_);
+    styleBoundBtn(btnBoundReflect_);   addAndMakeVisible(btnBoundReflect_);
+    styleBoundBtn(btnBoundTerminate_); addAndMakeVisible(btnBoundTerminate_);
+    styleBoundBtn(btnBoundKlein_);     addAndMakeVisible(btnBoundKlein_);
+
+    // All boundary buttons hidden by default (shown only when Emitter selected)
+    lblBoundary_.setVisible(false);
+    btnBoundWrap_.setVisible(false);
+    btnBoundReflect_.setVisible(false);
+    btnBoundTerminate_.setVisible(false);
+    btnBoundKlein_.setVisible(false);
+
+    auto boundaryClick = [this](BoundaryBehavior b)
+    {
+        if (!selection_.valid() || selection_.kind != ObjectKind::Emitter) return;
+        sendEdit(ManifoldEdit::Type::SetEmitterBoundary,
+                 selection_.index, static_cast<float>(static_cast<uint8_t>(b)));
+        // Update toggle state immediately without waiting for next snapshot poll
+        btnBoundWrap_     .setToggleState(b == BoundaryBehavior::Wrap,        juce::dontSendNotification);
+        btnBoundReflect_  .setToggleState(b == BoundaryBehavior::Reflect,     juce::dontSendNotification);
+        btnBoundTerminate_.setToggleState(b == BoundaryBehavior::Terminate,   juce::dontSendNotification);
+        btnBoundKlein_    .setToggleState(b == BoundaryBehavior::KleinBottle, juce::dontSendNotification);
+    };
+
+    btnBoundWrap_     .onClick = [boundaryClick]{ boundaryClick(BoundaryBehavior::Wrap);        };
+    btnBoundReflect_  .onClick = [boundaryClick]{ boundaryClick(BoundaryBehavior::Reflect);     };
+    btnBoundTerminate_.onClick = [boundaryClick]{ boundaryClick(BoundaryBehavior::Terminate);   };
+    btnBoundKlein_    .onClick = [boundaryClick]{ boundaryClick(BoundaryBehavior::KleinBottle); };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -298,8 +430,16 @@ void MorphosEditor::updatePanel()
     lblEmitDecay_.setVisible(false);     sldEmitDecay_.setVisible(false);
     lblEmitSustain_.setVisible(false);   sldEmitSustain_.setVisible(false);
     lblEmitRelease_.setVisible(false);   sldEmitRelease_.setVisible(false);
+    lblBoundary_.setVisible(false);
+    btnBoundWrap_.setVisible(false);
+    btnBoundReflect_.setVisible(false);
+    btnBoundTerminate_.setVisible(false);
+    btnBoundKlein_.setVisible(false);
 
-    if (!selection_.valid())
+    const bool hasSelection = selection_.valid();
+    btnRemove_.setVisible(hasSelection);
+
+    if (!hasSelection)
     {
         lblPanelHeader_.setText("No Selection", juce::dontSendNotification);
         return;
@@ -363,6 +503,8 @@ void MorphosEditor::updatePanel()
 
         lblPanelHeader_.setText("Emitter " + juce::String(i), juce::dontSendNotification);
 
+        // Angle slider: set to the raw angle value (in [-π, π]).
+        // The textFromValueFunction will display it correctly in degrees.
         sldEmitAngle_.setValue  (e.launchAngle,  juce::dontSendNotification);
         sldEmitSpeed_.setValue  (e.launchSpeed,  juce::dontSendNotification);
         sldEmitAttack_.setValue (e.attackTime,   juce::dontSendNotification);
@@ -376,6 +518,19 @@ void MorphosEditor::updatePanel()
         lblEmitDecay_.setVisible(true);     sldEmitDecay_.setVisible(true);
         lblEmitSustain_.setVisible(true);   sldEmitSustain_.setVisible(true);
         lblEmitRelease_.setVisible(true);   sldEmitRelease_.setVisible(true);
+
+        // Boundary radio buttons
+        const auto b = e.boundary;
+        btnBoundWrap_     .setToggleState(b == BoundaryBehavior::Wrap,        juce::dontSendNotification);
+        btnBoundReflect_  .setToggleState(b == BoundaryBehavior::Reflect,     juce::dontSendNotification);
+        btnBoundTerminate_.setToggleState(b == BoundaryBehavior::Terminate,   juce::dontSendNotification);
+        btnBoundKlein_    .setToggleState(b == BoundaryBehavior::KleinBottle, juce::dontSendNotification);
+
+        lblBoundary_.setVisible(true);
+        btnBoundWrap_.setVisible(true);
+        btnBoundReflect_.setVisible(true);
+        btnBoundTerminate_.setVisible(true);
+        btnBoundKlein_.setVisible(true);
     }
 
     ignoreSliderCallbacks_ = false;
@@ -915,9 +1070,14 @@ void MorphosEditor::drawPanelBackground(juce::Graphics& g) const
                        static_cast<float>(panel.getY()),
                        static_cast<float>(panel.getBottom()));
 
-    // Horizontal rule under the panel header
-    const int headerBottom = panel.getY() + 26 + 6;   // matches layoutPanel offsets
+    // Horizontal rule below the spawn row
+    const int spawnBottom  = panel.getY() + 4 + 24 + 4;     // top pad + SPAWN_H + gap
     g.setColour(Colour::Divider);
+    g.drawHorizontalLine(spawnBottom, static_cast<float>(panel.getX()),
+                         static_cast<float>(panel.getRight()));
+
+    // Horizontal rule under the selection header
+    const int headerBottom = spawnBottom + 4 + 24 + 6;       // gap + HEADER_H + section gap
     g.drawHorizontalLine(headerBottom, static_cast<float>(panel.getX()),
                          static_cast<float>(panel.getRight()));
 }

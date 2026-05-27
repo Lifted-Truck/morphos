@@ -28,7 +28,7 @@ struct Emitter
     float           sustainLevel = 0.70f;   // Sustain amplitude [0..1]
     float           releaseTime  = 0.30f;   // Envelope release, seconds (after note-off)
     BoundaryBehavior boundary    = BoundaryBehavior::Wrap;
-    bool            active       = true;
+    bool            active       = false;   // Slots are inactive by default; constructor enables [0]
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -313,6 +313,13 @@ void PhysicsEngine::drainEditCommands()
                         emitters_[idx].releaseTime = e.x;
                     break;
 
+                // ── Emitter boundary ──────────────────────────────────────────
+                case ManifoldEdit::Type::SetEmitterBoundary:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].boundary = static_cast<BoundaryBehavior>(
+                            static_cast<uint8_t>(static_cast<int>(e.x)));
+                    break;
+
                 // ── Timbral Anchor property edits ─────────────────────────────
                 case ManifoldEdit::Type::SetTimbralAnchorTimbreX:
                     if (idx >= 0 && idx < activeAnchorCount_)
@@ -322,6 +329,97 @@ void PhysicsEngine::drainEditCommands()
                 case ManifoldEdit::Type::SetTimbralAnchorTimbreY:
                     if (idx >= 0 && idx < activeAnchorCount_)
                         timbralAnchors_[idx].timbreY = e.x;
+                    break;
+
+                // ── Spawn / add ────────────────────────────────────────────────
+                case ManifoldEdit::Type::AddAttractor:
+                case ManifoldEdit::Type::AddRepeller:
+                case ManifoldEdit::Type::AddVortex:
+                {
+                    // Find first inactive field-object slot
+                    int slot = -1;
+                    for (int k = 0; k < MAX_FIELD_OBJECTS; ++k)
+                        if (!fieldObjects_[k].active) { slot = k; break; }
+                    if (slot < 0) break;
+
+                    auto& obj    = fieldObjects_[slot];
+                    obj.x        = e.x;
+                    obj.y        = e.y;
+                    obj.strength = 0.25f;
+                    obj.radius   = 0.45f;
+                    obj.chirality = 1.0f;
+                    obj.active   = true;
+
+                    if (e.type == ManifoldEdit::Type::AddAttractor)
+                        obj.type = FieldObjectType::Attractor;
+                    else if (e.type == ManifoldEdit::Type::AddRepeller)
+                        obj.type = FieldObjectType::Repeller;
+                    else
+                        obj.type = FieldObjectType::Vortex;
+
+                    fieldGrid_.dirty = true;
+                    break;
+                }
+
+                case ManifoldEdit::Type::AddEmitter:
+                {
+                    int slot = -1;
+                    for (int k = 0; k < MAX_EMITTERS; ++k)
+                        if (!emitters_[k].active) { slot = k; break; }
+                    if (slot < 0) break;
+
+                    auto& em        = emitters_[slot];
+                    em.x            = e.x;
+                    em.y            = e.y;
+                    em.launchAngle  = 0.0f;
+                    em.launchSpeed  = 0.18f;
+                    em.spawnMass    = 1.0f;
+                    em.spawnDrag    = 0.001f;
+                    em.attackTime   = 0.05f;
+                    em.decayTime    = 0.15f;
+                    em.sustainLevel = 0.70f;
+                    em.releaseTime  = 0.35f;
+                    em.boundary     = BoundaryBehavior::Wrap;
+                    em.active       = true;
+                    break;
+                }
+
+                case ManifoldEdit::Type::AddTimbralAnchor:
+                    if (activeAnchorCount_ < MAX_TIMBRAL_ANCHORS)
+                    {
+                        auto& a  = timbralAnchors_[activeAnchorCount_];
+                        a.x      = e.x;
+                        a.y      = e.y;
+                        a.timbreX = 0.5f;
+                        a.timbreY = 0.0f;
+                        a.active  = true;
+                        ++activeAnchorCount_;
+                    }
+                    break;
+
+                // ── Remove / deactivate ────────────────────────────────────────
+                case ManifoldEdit::Type::RemoveFieldObject:
+                    if (idx >= 0 && idx < MAX_FIELD_OBJECTS)
+                    {
+                        fieldObjects_[idx].active = false;
+                        fieldGrid_.dirty = true;
+                    }
+                    break;
+
+                case ManifoldEdit::Type::RemoveEmitter:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].active = false;
+                    break;
+
+                case ManifoldEdit::Type::RemoveTimbralAnchor:
+                    if (idx >= 0 && idx < activeAnchorCount_)
+                    {
+                        // Maintain compaction: swap with last active anchor
+                        --activeAnchorCount_;
+                        if (idx < activeAnchorCount_)
+                            timbralAnchors_[idx] = timbralAnchors_[activeAnchorCount_];
+                        timbralAnchors_[activeAnchorCount_].active = false;
+                    }
                     break;
             }
         }
@@ -478,6 +576,26 @@ void PhysicsEngine::applyBoundary(MorphonState& m) const noexcept
             if (m.x < 0.0f || m.x > 1.0f || m.y < 0.0f || m.y > 1.0f)
                 m.active = false;
             break;
+
+        case BoundaryBehavior::KleinBottle:
+            // X wraps normally (cylinder identification on the X axis).
+            m.x = wrap(m.x);
+            // Y wraps with X-flip: crossing the top/bottom edge mirrors x to (1-x)
+            // and negates vx — the Klein bottle identification.
+            // Use while loops to handle corner cases where |vy| > 1 in a tick.
+            while (m.y > 1.0f)
+            {
+                m.y  -= 1.0f;
+                m.x   = 1.0f - m.x;
+                m.vx  = -m.vx;
+            }
+            while (m.y < 0.0f)
+            {
+                m.y  += 1.0f;
+                m.x   = 1.0f - m.x;
+                m.vx  = -m.vx;
+            }
+            break;
     }
 }
 
@@ -594,6 +712,7 @@ void PhysicsEngine::writeSnapshot()
         dst.decayTime    = src.decayTime;
         dst.sustainLevel = src.sustainLevel;
         dst.releaseTime  = src.releaseTime;
+        dst.boundary     = src.boundary;
         dst.active       = src.active;
     }
 

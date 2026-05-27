@@ -19,7 +19,12 @@ static constexpr int MAX_MORPHONS  = 256;
 static constexpr int MAX_EMITTERS  = 8;
 
 // Boundary behaviour when a Morphon exits the [0,1]×[0,1] Manifold.
-enum class BoundaryBehavior : uint8_t { Wrap, Reflect, Terminate };
+//
+// KleinBottle: Y axis wraps with X-flip (non-orientable surface).
+//   Crossing y=1 from below → re-enters at y=0 with x mirrored to (1-x).
+//   X axis wraps normally. A Morphon orbiting this topology will appear on
+//   the "other side" of the canvas with its trajectory mirrored.
+enum class BoundaryBehavior : uint8_t { Wrap, Reflect, Terminate, KleinBottle };
 
 // Amplitude envelope state machine stages (ADSR)
 enum class EnvelopeStage : uint8_t { Attack, Decay, Sustain, Release };
@@ -72,15 +77,16 @@ struct MorphonState
 // ─────────────────────────────────────────────────────────────────────────────
 struct EmitterSnapshot
 {
-    float x            = 0.5f;
-    float y            = 0.5f;
-    float launchAngle  = 0.0f;   // radians; used to draw direction arrow
-    float launchSpeed  = 0.0f;   // scales arrow length
-    float attackTime   = 0.05f;
-    float decayTime    = 0.15f;
-    float sustainLevel = 0.70f;
-    float releaseTime  = 0.30f;
-    bool  active       = false;
+    float          x            = 0.5f;
+    float          y            = 0.5f;
+    float          launchAngle  = 0.0f;   // radians; used to draw direction arrow
+    float          launchSpeed  = 0.0f;   // scales arrow length
+    float          attackTime   = 0.05f;
+    float          decayTime    = 0.15f;
+    float          sustainLevel = 0.70f;
+    float          releaseTime  = 0.30f;
+    BoundaryBehavior boundary   = BoundaryBehavior::Wrap;
+    bool           active       = false;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -141,12 +147,12 @@ struct ManifoldEdit
 {
     enum class Type : uint8_t
     {
-        // Position edits — x,y carry new Manifold coords [0,1]
+        // ── Position edits — x,y carry new Manifold coords [0,1] ─────────────
         MoveFieldObject,
         MoveEmitter,
         MoveTimbralAnchor,
 
-        // Scalar property edits — x carries new value, y unused
+        // ── Scalar property edits — x carries new value, y unused ────────────
         SetFieldObjectStrength,
         SetFieldObjectRadius,
         SetFieldObjectChirality,
@@ -156,8 +162,19 @@ struct ManifoldEdit
         SetEmitterDecay,
         SetEmitterSustain,
         SetEmitterRelease,
+        SetEmitterBoundary,    // x = (float)cast of BoundaryBehavior uint8_t
         SetTimbralAnchorTimbreX,
         SetTimbralAnchorTimbreY,
+
+        // ── Spawn / remove — x,y = initial position for Add types ────────────
+        AddAttractor,          // Spawn a new Attractor at (x,y) with defaults
+        AddRepeller,           // Spawn a new Repeller  at (x,y) with defaults
+        AddVortex,             // Spawn a new Vortex    at (x,y) with defaults
+        AddEmitter,            // Spawn a new Emitter   at (x,y) with defaults
+        AddTimbralAnchor,      // Spawn a new TimbralAnchor at (x,y)
+        RemoveFieldObject,     // Deactivate field object[index]
+        RemoveEmitter,         // Deactivate emitter[index]
+        RemoveTimbralAnchor,   // Deactivate anchor[index] (physics re-compacts array)
     };
 
     Type  type  = Type::MoveFieldObject;

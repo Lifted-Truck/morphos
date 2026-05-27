@@ -102,7 +102,17 @@ private:
     bool ignoreSliderCallbacks_ = false;
 
     // ── Panel components ───────────────────────────────────────────────────────
-    juce::Label lblPanelHeader_;   // "No Selection" / "Anchor 0" / "Attractor 2" …
+
+    // Spawn row — always visible; add new objects at canvas centre
+    juce::TextButton btnAddAtt_  { "+Att"  };
+    juce::TextButton btnAddRep_  { "+Rep"  };
+    juce::TextButton btnAddVor_  { "+Vor"  };
+    juce::TextButton btnAddEmit_ { "+Emit" };
+    juce::TextButton btnAddAnch_ { "+Anch" };
+
+    // Panel header: object type+index label, plus Remove button on the right
+    juce::Label      lblPanelHeader_;
+    juce::TextButton btnRemove_  { "×" };
 
     // Anchor section (visible when a TimbralAnchor is selected)
     juce::Label  lblBrightness_,    lblInharmonicity_;
@@ -113,10 +123,20 @@ private:
     juce::Slider sldFOStrength_,    sldFORadius_,    sldFOChirality_;
 
     // Emitter section (visible when an Emitter is selected)
+    // sldEmitAngle_ uses a wide range [-100π, 100π] + degree display so the
+    // slider never hits its boundary during normal use — giving continuous
+    // 360° rotation without a jump at ±π.
     juce::Label  lblEmitAngle_,     lblEmitSpeed_;
     juce::Label  lblEmitAttack_,    lblEmitDecay_,   lblEmitSustain_,  lblEmitRelease_;
     juce::Slider sldEmitAngle_,     sldEmitSpeed_;
     juce::Slider sldEmitAttack_,    sldEmitDecay_,   sldEmitSustain_,  sldEmitRelease_;
+
+    // Boundary behaviour radio row (visible in emitter section)
+    juce::Label      lblBoundary_;
+    juce::TextButton btnBoundWrap_      { "Wrap"      };
+    juce::TextButton btnBoundReflect_   { "Reflect"   };
+    juce::TextButton btnBoundTerminate_ { "Terminate" };
+    juce::TextButton btnBoundKlein_     { "Klein"     };
 
     // ── Per-Morphon trail buffer ───────────────────────────────────────────────
     struct Trail
