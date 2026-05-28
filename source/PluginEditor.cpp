@@ -29,6 +29,26 @@ namespace Colour
     static const juce::Colour TrailBase   { 0xFFB0AB9E };
     static const juce::Colour StatusText  { 0xFF888880 };
     static const juce::Colour SelectRing  { 0xFFFFFFFF };   // Selection highlight ring
+
+    // Effect zone colours — keyed by ZoneTarget
+    static const juce::Colour ZoneTimbreX  { 0xFF5B6ECA };  // Blue/indigo — spectral rolloff
+    static const juce::Colour ZoneTimbreY  { 0xFF4CAF72 };  // Green       — inharmonicity
+    static const juce::Colour ZoneAmp      { 0xFFD4A84B };  // Gold        — amplitude
+    static const juce::Colour ZonePan      { 0xFFCA5B8A };  // Pink        — stereo pan
+    static const juce::Colour ZonePitch    { 0xFF9B5BCA };  // Purple      — pitch shift
+}
+
+static juce::Colour zoneColour(ZoneTarget t) noexcept
+{
+    switch (t)
+    {
+        case ZoneTarget::TimbreX:   return Colour::ZoneTimbreX;
+        case ZoneTarget::TimbreY:   return Colour::ZoneTimbreY;
+        case ZoneTarget::Amplitude: return Colour::ZoneAmp;
+        case ZoneTarget::Pan:       return Colour::ZonePan;
+        case ZoneTarget::Pitch:     return Colour::ZonePitch;
+        default:                    return Colour::ZoneTimbreX;
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,14 +132,15 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     const int x = panel.getX();
     const int w = panel.getWidth();
 
-    // ── Spawn row — 5 equal-width buttons ────────────────────────────────────
+    // ── Spawn row — 6 equal-width buttons ────────────────────────────────────
     {
-        const int bw = w / 5;
+        const int bw = w / 6;
         btnAddAtt_ .setBounds(x + bw * 0, y, bw, SPAWN_H);
         btnAddRep_ .setBounds(x + bw * 1, y, bw, SPAWN_H);
         btnAddVor_ .setBounds(x + bw * 2, y, bw, SPAWN_H);
         btnAddEmit_.setBounds(x + bw * 3, y, bw, SPAWN_H);
-        btnAddAnch_.setBounds(x + bw * 4, y, w - bw * 4, SPAWN_H);
+        btnAddAnch_.setBounds(x + bw * 4, y, bw, SPAWN_H);
+        btnAddZone_.setBounds(x + bw * 5, y, w - bw * 5, SPAWN_H);
     }
     y += SPAWN_H + 4;
 
@@ -139,12 +160,18 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     lblPolyMode_.setBounds(x, y, w, LABEL_H);
     y += LABEL_H;
     {
-        const int bw = w / 3;
+        const int bw = w / 4;
         btnPoly_  .setBounds(x + bw * 0, y, bw,         BTN_ROW_H);
         btnMono_  .setBounds(x + bw * 1, y, bw,         BTN_ROW_H);
-        btnLegato_.setBounds(x + bw * 2, y, w - bw * 2, BTN_ROW_H);
+        btnLegato_.setBounds(x + bw * 2, y, bw,         BTN_ROW_H);
+        btnSlur_  .setBounds(x + bw * 3, y, w - bw * 3, BTN_ROW_H);
     }
-    y += BTN_ROW_H + 4;
+    y += BTN_ROW_H + 2;
+
+    // ── Glide time — portamento rate; always visible ───────────────────────────
+    lblGlideTime_.setBounds(x, y,           w, LABEL_H);
+    sldGlideTime_.setBounds(x, y + LABEL_H, w, SLIDER_H);
+    y += ROW_H + 4;
 
     // ── Header: name label + remove button ────────────────────────────────────
     constexpr int REMOVE_W = 20;
@@ -191,6 +218,35 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     // Strength + radius shown only when Terminus is enabled (hidden otherwise)
     layoutRow(lblTerminusStrength_, sldTerminusStrength_);
     layoutRow(lblTerminusRadius_,   sldTerminusRadius_);
+
+    // ── Effect zone section ───────────────────────────────────────────────────
+    layoutRow(lblZoneRadius_, sldZoneRadius_);
+    layoutRow(lblZoneDepth_,  sldZoneDepth_);
+    y += SECTION_GAP;
+
+    lblZoneTarget_.setBounds(x, y, w, LABEL_H);
+    y += LABEL_H;
+    {
+        const int bw = w / 3;
+        btnZoneTimbreX_.setBounds(x + bw * 0, y, bw,         BTN_ROW_H);
+        btnZoneTimbreY_.setBounds(x + bw * 1, y, bw,         BTN_ROW_H);
+        btnZoneAmp_    .setBounds(x + bw * 2, y, w - bw * 2, BTN_ROW_H);
+    }
+    y += BTN_ROW_H + 2;
+    {
+        const int bw = w / 2;
+        btnZonePan_  .setBounds(x + bw * 0, y, bw,         BTN_ROW_H);
+        btnZonePitch_.setBounds(x + bw * 1, y, w - bw * 1, BTN_ROW_H);
+    }
+    y += BTN_ROW_H + 2;
+
+    lblZoneFalloff_.setBounds(x, y, w, LABEL_H);
+    y += LABEL_H;
+    {
+        const int bw = w / 2;
+        btnZoneFalloffLinear_  .setBounds(x + bw * 0, y, bw,         BTN_ROW_H);
+        btnZoneFalloffGaussian_.setBounds(x + bw * 1, y, w - bw * 1, BTN_ROW_H);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -244,12 +300,14 @@ void MorphosEditor::setupSliders()
     styleSpawnBtn(btnAddVor_);   addAndMakeVisible(btnAddVor_);
     styleSpawnBtn(btnAddEmit_);  addAndMakeVisible(btnAddEmit_);
     styleSpawnBtn(btnAddAnch_);  addAndMakeVisible(btnAddAnch_);
+    styleSpawnBtn(btnAddZone_);  addAndMakeVisible(btnAddZone_);
 
     btnAddAtt_.onClick  = [this]{ sendEdit(ManifoldEdit::Type::AddAttractor,    0, 0.5f, 0.5f); };
     btnAddRep_.onClick  = [this]{ sendEdit(ManifoldEdit::Type::AddRepeller,     0, 0.5f, 0.5f); };
     btnAddVor_.onClick  = [this]{ sendEdit(ManifoldEdit::Type::AddVortex,       0, 0.5f, 0.5f); };
     btnAddEmit_.onClick = [this]{ sendEdit(ManifoldEdit::Type::AddEmitter,      0, 0.5f, 0.5f); };
     btnAddAnch_.onClick = [this]{ sendEdit(ManifoldEdit::Type::AddTimbralAnchor,0, 0.5f, 0.5f); };
+    btnAddZone_.onClick = [this]{ sendEdit(ManifoldEdit::Type::AddEffectZone,   0, 0.5f, 0.5f); };
 
     // ── Panel header + remove button ──────────────────────────────────────────
     lblPanelHeader_.setText("No Selection", juce::dontSendNotification);
@@ -271,6 +329,7 @@ void MorphosEditor::setupSliders()
             case ObjectKind::FieldObject:   t = ManifoldEdit::Type::RemoveFieldObject;   break;
             case ObjectKind::Emitter:       t = ManifoldEdit::Type::RemoveEmitter;       break;
             case ObjectKind::TimbralAnchor: t = ManifoldEdit::Type::RemoveTimbralAnchor; break;
+            case ObjectKind::EffectZone:    t = ManifoldEdit::Type::RemoveEffectZone;    break;
             default: return;
         }
         sendEdit(t, selection_.index, 0.0f, 0.0f);
@@ -505,6 +564,84 @@ void MorphosEditor::setupSliders()
                      selection_.index, (float)sldEmitRelease_.getValue());
     };
 
+    // ── Effect zone controls ───────────────────────────────────────────────────
+    styleLabel (lblZoneRadius_, "Radius");
+    styleLabel (lblZoneDepth_,  "Depth");
+    styleSlider(sldZoneRadius_, 0.02, 0.75);
+    styleSlider(sldZoneDepth_,  -1.0, 1.0);
+    sldZoneRadius_.setNumDecimalPlacesToDisplay(2);
+    sldZoneDepth_ .setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblZoneRadius_); addAndMakeVisible(sldZoneRadius_);
+    addAndMakeVisible(lblZoneDepth_);  addAndMakeVisible(sldZoneDepth_);
+
+    sldZoneRadius_.onValueChange = [this]
+    {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEffectZoneRadius,
+                     selection_.index, (float)sldZoneRadius_.getValue());
+    };
+    sldZoneDepth_.onValueChange = [this]
+    {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEffectZoneDepth,
+                     selection_.index, (float)sldZoneDepth_.getValue());
+    };
+
+    styleLabel(lblZoneTarget_,  "Target");
+    styleLabel(lblZoneFalloff_, "Falloff");
+    addAndMakeVisible(lblZoneTarget_);  addAndMakeVisible(lblZoneFalloff_);
+
+    // Target buttons
+    for (auto* b : { &btnZoneTimbreX_, &btnZoneTimbreY_, &btnZoneAmp_,
+                     &btnZonePan_, &btnZonePitch_ })
+    {
+        styleBoundBtn(*b);
+        addAndMakeVisible(*b);
+    }
+
+    auto zoneTargetClick = [this](ZoneTarget t)
+    {
+        const bool isPitch = (t == ZoneTarget::Pitch);
+        if (isPitch)
+        {
+            sldZoneDepth_.setRange(-24.0, 24.0, 0.0);
+            lblZoneDepth_.setText("Depth (semi)", juce::dontSendNotification);
+        }
+        else
+        {
+            sldZoneDepth_.setRange(-1.0, 1.0, 0.0);
+            lblZoneDepth_.setText("Depth", juce::dontSendNotification);
+        }
+        sendEdit(ManifoldEdit::Type::SetEffectZoneTarget, selection_.index,
+                 static_cast<float>(static_cast<uint8_t>(t)));
+        btnZoneTimbreX_.setToggleState(t == ZoneTarget::TimbreX,   juce::dontSendNotification);
+        btnZoneTimbreY_.setToggleState(t == ZoneTarget::TimbreY,   juce::dontSendNotification);
+        btnZoneAmp_    .setToggleState(t == ZoneTarget::Amplitude, juce::dontSendNotification);
+        btnZonePan_    .setToggleState(t == ZoneTarget::Pan,       juce::dontSendNotification);
+        btnZonePitch_  .setToggleState(t == ZoneTarget::Pitch,     juce::dontSendNotification);
+    };
+
+    btnZoneTimbreX_.onClick = [zoneTargetClick]{ zoneTargetClick(ZoneTarget::TimbreX);   };
+    btnZoneTimbreY_.onClick = [zoneTargetClick]{ zoneTargetClick(ZoneTarget::TimbreY);   };
+    btnZoneAmp_    .onClick = [zoneTargetClick]{ zoneTargetClick(ZoneTarget::Amplitude); };
+    btnZonePan_    .onClick = [zoneTargetClick]{ zoneTargetClick(ZoneTarget::Pan);       };
+    btnZonePitch_  .onClick = [zoneTargetClick]{ zoneTargetClick(ZoneTarget::Pitch);     };
+
+    // Falloff buttons
+    styleBoundBtn(btnZoneFalloffLinear_);   addAndMakeVisible(btnZoneFalloffLinear_);
+    styleBoundBtn(btnZoneFalloffGaussian_); addAndMakeVisible(btnZoneFalloffGaussian_);
+
+    auto zoneFalloffClick = [this](ZoneFalloff f)
+    {
+        sendEdit(ManifoldEdit::Type::SetEffectZoneFalloff, selection_.index,
+                 static_cast<float>(static_cast<uint8_t>(f)));
+        btnZoneFalloffLinear_  .setToggleState(f == ZoneFalloff::Linear,   juce::dontSendNotification);
+        btnZoneFalloffGaussian_.setToggleState(f == ZoneFalloff::Gaussian, juce::dontSendNotification);
+    };
+
+    btnZoneFalloffLinear_  .onClick = [zoneFalloffClick]{ zoneFalloffClick(ZoneFalloff::Linear);   };
+    btnZoneFalloffGaussian_.onClick = [zoneFalloffClick]{ zoneFalloffClick(ZoneFalloff::Gaussian); };
+
     // ── Global topology row — always visible ──────────────────────────────────
     styleLabel(lblBoundary_, "Topology");
     addAndMakeVisible(lblBoundary_);
@@ -540,6 +677,7 @@ void MorphosEditor::setupSliders()
     styleBoundBtn(btnPoly_);    addAndMakeVisible(btnPoly_);
     styleBoundBtn(btnMono_);    addAndMakeVisible(btnMono_);
     styleBoundBtn(btnLegato_);  addAndMakeVisible(btnLegato_);
+    styleBoundBtn(btnSlur_);    addAndMakeVisible(btnSlur_);
 
     btnPoly_.setToggleState(true, juce::dontSendNotification);  // Default: Polyphonic
 
@@ -549,12 +687,30 @@ void MorphosEditor::setupSliders()
                  static_cast<float>(static_cast<uint8_t>(p)));
         btnPoly_  .setToggleState(p == PolyMode::Polyphonic, juce::dontSendNotification);
         btnMono_  .setToggleState(p == PolyMode::Mono,       juce::dontSendNotification);
-        btnLegato_.setToggleState(p == PolyMode::Legato,      juce::dontSendNotification);
+        btnLegato_.setToggleState(p == PolyMode::Legato,     juce::dontSendNotification);
+        btnSlur_  .setToggleState(p == PolyMode::LegatoSlur, juce::dontSendNotification);
     };
 
     btnPoly_  .onClick = [polyClick]{ polyClick(PolyMode::Polyphonic); };
     btnMono_  .onClick = [polyClick]{ polyClick(PolyMode::Mono);       };
     btnLegato_.onClick = [polyClick]{ polyClick(PolyMode::Legato);     };
+    btnSlur_  .onClick = [polyClick]{ polyClick(PolyMode::LegatoSlur); };
+
+    // ── Glide time — portamento rate; always visible ───────────────────────────
+    // Applies during Legato / Slur retarget: fundamentalHz slides exponentially
+    // (in log-frequency space) from the old pitch toward the new one.
+    // 0 = instant (no glide).  glideTime is the RC time-constant in seconds
+    // (63 % of the way there after glideTime seconds, ~99% after 5×glideTime).
+    styleLabel(lblGlideTime_, "Glide (s)");
+    styleSlider(sldGlideTime_, 0.0, 5.0);
+    sldGlideTime_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblGlideTime_);   // Override styleLabel's setVisible(false)
+    addAndMakeVisible(sldGlideTime_);   // Override styleSlider's setVisible(false)
+    sldGlideTime_.onValueChange = [this]
+    {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetGlideTime, 0, (float)sldGlideTime_.getValue());
+    };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -578,7 +734,12 @@ void MorphosEditor::updatePanel()
         const auto p = state.globalPolyMode;
         btnPoly_  .setToggleState(p == PolyMode::Polyphonic, juce::dontSendNotification);
         btnMono_  .setToggleState(p == PolyMode::Mono,       juce::dontSendNotification);
-        btnLegato_.setToggleState(p == PolyMode::Legato,      juce::dontSendNotification);
+        btnLegato_.setToggleState(p == PolyMode::Legato,     juce::dontSendNotification);
+        btnSlur_  .setToggleState(p == PolyMode::LegatoSlur, juce::dontSendNotification);
+
+        ignoreSliderCallbacks_ = true;
+        sldGlideTime_.setValue(state.globalGlideTime, juce::dontSendNotification);
+        ignoreSliderCallbacks_ = false;
     }
 
     // Hide every per-selection slider group first
@@ -604,6 +765,14 @@ void MorphosEditor::updatePanel()
     lblEmitDecay_.setVisible(false);     sldEmitDecay_.setVisible(false);
     lblEmitSustain_.setVisible(false);   sldEmitSustain_.setVisible(false);
     lblEmitRelease_.setVisible(false);   sldEmitRelease_.setVisible(false);
+
+    lblZoneRadius_.setVisible(false);       sldZoneRadius_.setVisible(false);
+    lblZoneDepth_.setVisible(false);        sldZoneDepth_.setVisible(false);
+    lblZoneTarget_.setVisible(false);       lblZoneFalloff_.setVisible(false);
+    btnZoneTimbreX_.setVisible(false);      btnZoneTimbreY_.setVisible(false);
+    btnZoneAmp_.setVisible(false);          btnZonePan_.setVisible(false);
+    btnZonePitch_.setVisible(false);
+    btnZoneFalloffLinear_.setVisible(false); btnZoneFalloffGaussian_.setVisible(false);
 
     const bool hasSelection = selection_.valid();
     btnRemove_.setVisible(hasSelection);
@@ -706,6 +875,49 @@ void MorphosEditor::updatePanel()
         lblEmitSustain_.setVisible(true);   sldEmitSustain_.setVisible(true);
         lblEmitRelease_.setVisible(true);   sldEmitRelease_.setVisible(true);
     }
+    else if (selection_.kind == ObjectKind::EffectZone)
+    {
+        const int i = selection_.index;
+        if (i >= MAX_EFFECT_ZONES || !state.effectZones[i].active)
+        {
+            selection_ = {}; ignoreSliderCallbacks_ = false; return;
+        }
+        const auto& z = state.effectZones[i];
+
+        lblPanelHeader_.setText("Zone " + juce::String(i), juce::dontSendNotification);
+
+        sldZoneRadius_.setValue(z.radius, juce::dontSendNotification);
+
+        // Depth slider range depends on target
+        if (z.target == ZoneTarget::Pitch)
+        {
+            sldZoneDepth_.setRange(-24.0, 24.0, 0.0);
+            lblZoneDepth_.setText("Depth (semi)", juce::dontSendNotification);
+        }
+        else
+        {
+            sldZoneDepth_.setRange(-1.0, 1.0, 0.0);
+            lblZoneDepth_.setText("Depth", juce::dontSendNotification);
+        }
+        sldZoneDepth_.setValue(z.depth, juce::dontSendNotification);
+
+        btnZoneTimbreX_.setToggleState(z.target == ZoneTarget::TimbreX,   juce::dontSendNotification);
+        btnZoneTimbreY_.setToggleState(z.target == ZoneTarget::TimbreY,   juce::dontSendNotification);
+        btnZoneAmp_    .setToggleState(z.target == ZoneTarget::Amplitude, juce::dontSendNotification);
+        btnZonePan_    .setToggleState(z.target == ZoneTarget::Pan,       juce::dontSendNotification);
+        btnZonePitch_  .setToggleState(z.target == ZoneTarget::Pitch,     juce::dontSendNotification);
+
+        btnZoneFalloffLinear_  .setToggleState(z.falloff == ZoneFalloff::Linear,   juce::dontSendNotification);
+        btnZoneFalloffGaussian_.setToggleState(z.falloff == ZoneFalloff::Gaussian, juce::dontSendNotification);
+
+        lblZoneRadius_.setVisible(true);        sldZoneRadius_.setVisible(true);
+        lblZoneDepth_.setVisible(true);         sldZoneDepth_.setVisible(true);
+        lblZoneTarget_.setVisible(true);        lblZoneFalloff_.setVisible(true);
+        btnZoneTimbreX_.setVisible(true);       btnZoneTimbreY_.setVisible(true);
+        btnZoneAmp_.setVisible(true);           btnZonePan_.setVisible(true);
+        btnZonePitch_.setVisible(true);
+        btnZoneFalloffLinear_.setVisible(true); btnZoneFalloffGaussian_.setVisible(true);
+    }
 
     ignoreSliderCallbacks_ = false;
 }
@@ -782,6 +994,15 @@ MorphosEditor::Selection MorphosEditor::hitTest(juce::Point<float> canvasPt,
             return { ObjectKind::FieldObject, i };
     }
 
+    // Priority 4: Effect zones (hit on centre glyph only, not the influence circle)
+    for (int i = 0; i < MAX_EFFECT_ZONES; ++i)
+    {
+        const auto& z = state.effectZones[i];
+        if (!z.active) continue;
+        if (canvasPt.getDistanceFrom(manifoldToCanvas(z.x, z.y, canvas)) <= HIT_PX)
+            return { ObjectKind::EffectZone, i };
+    }
+
     return { ObjectKind::None, -1 };
 }
 
@@ -815,6 +1036,10 @@ void MorphosEditor::mouseDown(const juce::MouseEvent& event)
                 drag_.pendingX = state.fieldObjects[hit.index].x;
                 drag_.pendingY = state.fieldObjects[hit.index].y;
                 break;
+            case ObjectKind::EffectZone:
+                drag_.pendingX = state.effectZones[hit.index].x;
+                drag_.pendingY = state.effectZones[hit.index].y;
+                break;
             default: break;
         }
     }
@@ -845,6 +1070,7 @@ void MorphosEditor::mouseDrag(const juce::MouseEvent& event)
         case ObjectKind::TimbralAnchor: moveType = ManifoldEdit::Type::MoveTimbralAnchor; break;
         case ObjectKind::Emitter:       moveType = ManifoldEdit::Type::MoveEmitter;        break;
         case ObjectKind::FieldObject:   moveType = ManifoldEdit::Type::MoveFieldObject;    break;
+        case ObjectKind::EffectZone:    moveType = ManifoldEdit::Type::MoveEffectZone;     break;
         default: return;
     }
 
@@ -870,6 +1096,7 @@ void MorphosEditor::paint(juce::Graphics& g)
     const auto& state = processor_.getPhysicsStateForUI();
 
     drawGrid            (g, canvas);
+    drawEffectZones     (g, state, canvas);    // Behind all other objects
     drawFieldObjects    (g, state, canvas);
     drawEmitters        (g, state, canvas);
     drawTimbralAnchors  (g, state, canvas);
@@ -901,6 +1128,74 @@ void MorphosEditor::drawGrid(juce::Graphics& g, juce::Rectangle<int> canvas) con
     // Canvas border
     g.setColour(Colour::GridLine.brighter(0.3f));
     g.drawRect(canvas, 1);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Draw — Effect zones
+//
+// Drawn behind all other canvas objects so they don't obscure glyphs.
+// Each zone is a dashed circle (colour-coded by target) with a small centre
+// glyph carrying a single letter identifying the target type.
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MorphosEditor::drawEffectZones(juce::Graphics& g,
+                                    const PhysicsStateSnapshot& state,
+                                    juce::Rectangle<int> canvas) const
+{
+    static const char* targetLabels[] = { "X", "Y", "A", "P", "F" };
+
+    for (int i = 0; i < MAX_EFFECT_ZONES; ++i)
+    {
+        const auto& z = state.effectZones[i];
+        if (!z.active) continue;
+
+        float px = z.x, py = z.y;
+        if (drag_.active && selection_.kind == ObjectKind::EffectZone && selection_.index == i)
+        {
+            px = drag_.pendingX;
+            py = drag_.pendingY;
+        }
+
+        const auto          centre = manifoldToCanvas(px, py, canvas);
+        const float         sr     = z.radius * canvas.getWidth();
+        const juce::Colour  c      = zoneColour(z.target);
+
+        // Influence fill — very transparent to stay out of the way
+        g.setColour(c.withAlpha(0.07f));
+        g.fillEllipse(centre.x - sr, centre.y - sr, sr * 2.0f, sr * 2.0f);
+
+        // Dashed border
+        {
+            juce::Path circlePath;
+            circlePath.addEllipse(centre.x - sr, centre.y - sr, sr * 2.0f, sr * 2.0f);
+            float dashes[] = { 6.0f, 4.0f };
+            juce::Path dashedPath;
+            juce::PathStrokeType(1.4f).createDashedStroke(dashedPath, circlePath, dashes, 2);
+            g.setColour(c.withAlpha(0.45f));
+            g.fillPath(dashedPath);
+        }
+
+        // Centre glyph — filled circle
+        constexpr float GLYPH_R = 6.0f;
+        g.setColour(c.withAlpha(0.85f));
+        g.fillEllipse(centre.x - GLYPH_R, centre.y - GLYPH_R,
+                      GLYPH_R * 2.0f, GLYPH_R * 2.0f);
+
+        // Target letter (X/Y/A/P/F)
+        g.setColour(juce::Colours::black.withAlpha(0.80f));
+        g.setFont(juce::FontOptions(8.0f));
+        g.drawText(juce::String(targetLabels[static_cast<int>(z.target)]),
+                   juce::Rectangle<float>(centre.x - 5.0f, centre.y - 4.5f, 10.0f, 9.0f),
+                   juce::Justification::centred, false);
+
+        // Selection ring
+        if (selection_.kind == ObjectKind::EffectZone && selection_.index == i)
+        {
+            g.setColour(Colour::SelectRing.withAlpha(0.8f));
+            g.drawEllipse(centre.x - GLYPH_R - 3.0f, centre.y - GLYPH_R - 3.0f,
+                          (GLYPH_R + 3.0f) * 2.0f, (GLYPH_R + 3.0f) * 2.0f, 1.5f);
+        }
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1062,6 +1357,17 @@ void MorphosEditor::drawEmitters(juce::Graphics& g,
             g.setColour(Colour::SelectRing.withAlpha(0.8f));
             g.drawEllipse(centre.x - RING_R - 3.0f, centre.y - RING_R - 3.0f,
                           (RING_R + 3.0f) * 2.0f, (RING_R + 3.0f) * 2.0f, 1.5f);
+        }
+
+        // Terminus arrival radius — faint ring shows the zone where Terminus activates.
+        // Drawn below the selection ring so it doesn't obscure the glyph itself.
+        if (e.terminusEnabled)
+        {
+            const float arrivalR = e.terminusArrivalRadius
+                                   * static_cast<float>(canvas.getWidth());
+            g.setColour(Colour::Emitter.withAlpha(0.35f));
+            g.drawEllipse(centre.x - arrivalR, centre.y - arrivalR,
+                          arrivalR * 2.0f, arrivalR * 2.0f, 1.0f);
         }
 
         // Launch-direction arrow (only when launchSpeed > 0)
@@ -1277,7 +1583,9 @@ void MorphosEditor::drawStatusBar(juce::Graphics& g,
            << state.activeFieldObjCount << " field object"
            << (state.activeFieldObjCount != 1 ? "s" : "") << "  |  "
            << state.activeTimbralAnchorCount << " anchor"
-           << (state.activeTimbralAnchorCount != 1 ? "s" : "");
+           << (state.activeTimbralAnchorCount != 1 ? "s" : "") << "  |  "
+           << state.activeEffectZoneCount << " zone"
+           << (state.activeEffectZoneCount != 1 ? "s" : "");
 
     const auto statusRect = getLocalBounds()
                                 .removeFromBottom(28)

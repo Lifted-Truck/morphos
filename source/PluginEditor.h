@@ -58,13 +58,17 @@ private:
     void drawStatusBar      (juce::Graphics&, const PhysicsStateSnapshot&) const;
     void drawPanelBackground(juce::Graphics&) const;
 
+    // ── Draw calls (additional) ───────────────────────────────────────────────
+    void drawEffectZones    (juce::Graphics&, const PhysicsStateSnapshot&,
+                             juce::Rectangle<int> canvas) const;
+
     // ── Mouse interaction (drag-and-drop) ─────────────────────────────────────
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp  (const juce::MouseEvent&) override;
 
     // ── Selection / drag state ─────────────────────────────────────────────────
-    enum class ObjectKind { None, FieldObject, Emitter, TimbralAnchor };
+    enum class ObjectKind { None, FieldObject, Emitter, TimbralAnchor, EffectZone };
 
     struct Selection
     {
@@ -109,6 +113,7 @@ private:
     juce::TextButton btnAddVor_  { "+Vor"  };
     juce::TextButton btnAddEmit_ { "+Emit" };
     juce::TextButton btnAddAnch_ { "+Anch" };
+    juce::TextButton btnAddZone_ { "+Zon"  };
 
     // Panel header: object type+index label, plus Remove button on the right
     juce::Label      lblPanelHeader_;
@@ -150,7 +155,24 @@ private:
     juce::Label      lblPolyMode_;
     juce::TextButton btnPoly_   { "Poly"   };
     juce::TextButton btnMono_   { "Mono"   };
-    juce::TextButton btnLegato_ { "Legato" };
+    juce::TextButton btnLegato_ { "Legato" };  // Gap-sensitive: retargets only if note still held
+    juce::TextButton btnSlur_   { "Slur"   };  // Always-retarget: connects even across note gaps
+
+    // Glide (portamento) — always visible; applies in Legato + Slur modes
+    juce::Label  lblGlideTime_;
+    juce::Slider sldGlideTime_;
+
+    // Effect zone section (visible when an EffectZone is selected)
+    juce::Label  lblZoneRadius_,     lblZoneDepth_;
+    juce::Slider sldZoneRadius_,     sldZoneDepth_;
+    juce::Label  lblZoneTarget_,     lblZoneFalloff_;
+    juce::TextButton btnZoneTimbreX_ { "TmbrX" };
+    juce::TextButton btnZoneTimbreY_ { "TmbrY" };
+    juce::TextButton btnZoneAmp_     { "Amp"   };
+    juce::TextButton btnZonePan_     { "Pan"   };
+    juce::TextButton btnZonePitch_   { "Pitch" };
+    juce::TextButton btnZoneFalloffLinear_   { "Linear"   };
+    juce::TextButton btnZoneFalloffGaussian_ { "Gauss"    };
 
     // ── Per-Morphon trail buffer ───────────────────────────────────────────────
     struct Trail

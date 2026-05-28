@@ -180,6 +180,7 @@ void PhysicsEngine::tick(double dtSeconds)
     rebuildFieldGridIfDirty();
     integrateMorphons(dtSeconds);
     updateEnvelopes(dtSeconds);
+    applyEffectZones();       // After envelope so amplitude modulation is applied last
     writeSnapshot();
 
     ++tickIndex_;
@@ -379,6 +380,10 @@ void PhysicsEngine::drainEditCommands()
                         timbralAnchors_[idx].timbreY = e.x;
                     break;
 
+                case ManifoldEdit::Type::SetGlideTime:
+                    globalGlideTimeSec_ = juce::jlimit(0.0f, 5.0f, e.x);
+                    break;
+
                 // ── Spawn / add ────────────────────────────────────────────────
                 case ManifoldEdit::Type::AddAttractor:
                 case ManifoldEdit::Type::AddRepeller:
@@ -468,6 +473,62 @@ void PhysicsEngine::drainEditCommands()
                         timbralAnchors_[activeAnchorCount_].active = false;
                     }
                     break;
+
+                // ── Effect zone position edits ─────────────────────────────────
+                case ManifoldEdit::Type::MoveEffectZone:
+                    if (idx >= 0 && idx < MAX_EFFECT_ZONES)
+                    {
+                        effectZones_[idx].x = e.x;
+                        effectZones_[idx].y = e.y;
+                    }
+                    break;
+
+                // ── Effect zone property edits ─────────────────────────────────
+                case ManifoldEdit::Type::SetEffectZoneRadius:
+                    if (idx >= 0 && idx < MAX_EFFECT_ZONES)
+                        effectZones_[idx].radius = juce::jlimit(0.01f, 0.75f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetEffectZoneDepth:
+                    if (idx >= 0 && idx < MAX_EFFECT_ZONES)
+                        effectZones_[idx].depth = e.x;
+                    break;
+
+                case ManifoldEdit::Type::SetEffectZoneTarget:
+                    if (idx >= 0 && idx < MAX_EFFECT_ZONES)
+                        effectZones_[idx].target = static_cast<ZoneTarget>(
+                            static_cast<uint8_t>(static_cast<int>(e.x)));
+                    break;
+
+                case ManifoldEdit::Type::SetEffectZoneFalloff:
+                    if (idx >= 0 && idx < MAX_EFFECT_ZONES)
+                        effectZones_[idx].falloff = static_cast<ZoneFalloff>(
+                            static_cast<uint8_t>(static_cast<int>(e.x)));
+                    break;
+
+                // ── Effect zone spawn / remove ─────────────────────────────────
+                case ManifoldEdit::Type::AddEffectZone:
+                {
+                    int slot = -1;
+                    for (int k = 0; k < MAX_EFFECT_ZONES; ++k)
+                        if (!effectZones_[k].active) { slot = k; break; }
+                    if (slot < 0) break;
+
+                    auto& z   = effectZones_[slot];
+                    z.x       = e.x;
+                    z.y       = e.y;
+                    z.radius  = 0.15f;
+                    z.depth   = 0.5f;
+                    z.target  = ZoneTarget::TimbreX;
+                    z.falloff = ZoneFalloff::Gaussian;
+                    z.active  = true;
+                    break;
+                }
+
+                case ManifoldEdit::Type::RemoveEffectZone:
+                    if (idx >= 0 && idx < MAX_EFFECT_ZONES)
+                        effectZones_[idx].active = false;
+                    break;
             }
         }
     };
@@ -479,35 +540,48 @@ void PhysicsEngine::drainEditCommands()
 
 void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
 {
-    // ── Legato ────────────────────────────────────────────────────────────────
-    // Find any active Morphon on this channel; retarget it without moving.
-    // Falls through to normal spawn if none exists.
-    if (globalPolyMode_ == PolyMode::Legato)
+    // ── Legato / Slur retarget ────────────────────────────────────────────────
+    // Legato (gap-sensitive): only retargets a voice that is still held.
+    //   If the previous note was released before this note-on arrives, the voice
+    //   is in Release — we skip it and fall through to a fresh spawn, just like
+    //   pressing a completely new note.
+    // LegatoSlur (always): retargets any active voice, even one in Release.
+    //   Preserves the "always-connected" glide behaviour regardless of timing.
+    // Both: keep Manifold position + velocity; only pitch and envelope change.
+    //   If glide time > 0, fundamentalHz slides toward the new target rather than
+    //   snapping instantly.
+    if (globalPolyMode_ == PolyMode::Legato || globalPolyMode_ == PolyMode::LegatoSlur)
     {
         for (auto& m : morphons_)
         {
             if (!m.active || m.midiChannel != channel) continue;
-            // Keep position and velocity — only update pitch and envelope
-            {
-                const int ei = m.emitterIndex;
-                const float xp = (ei >= 0 && ei < MAX_EMITTERS)
-                    ? std::pow(2.0f, emitters_[ei].transposeOct
-                                   + emitters_[ei].transposeSemi / 12.0f
-                                   + emitters_[ei].transposeCents / 1200.0f)
-                    : 1.0f;
-                m.fundamentalHz = midiNoteToHz(note) * xp;
-            }
-            m.midiNote      = note;
-            m.noteReleased  = false;
-            m.envStage      = EnvelopeStage::Attack;
-            m.age           = 0.0f;
-            return;   // One voice in legato; done
+            if (globalPolyMode_ == PolyMode::Legato && m.noteReleased)
+                continue;   // Gap: voice released before new note — spawn fresh
+
+            const int   ei = m.emitterIndex;
+            const float xp = (ei >= 0 && ei < MAX_EMITTERS)
+                ? std::pow(2.0f, emitters_[ei].transposeOct
+                               + emitters_[ei].transposeSemi / 12.0f
+                               + emitters_[ei].transposeCents / 1200.0f)
+                : 1.0f;
+            const float newHz         = midiNoteToHz(note) * xp;
+            m.targetFundamentalHz     = newHz;
+            if (globalGlideTimeSec_ <= 0.0f)
+                m.fundamentalHz = newHz;   // Instant pitch when glide is off
+            // else: integrateMorphons() slides fundamentalHz → targetFundamentalHz
+
+            m.midiNote     = note;
+            m.noteReleased = false;
+            m.envStage     = EnvelopeStage::Attack;
+            m.age          = 0.0f;
+            return;
         }
-        // No active Morphon — fall through to spawn the first note normally
+        // No retargetable voice found — fall through to spawn
     }
 
-    // ── Mono: release every active Morphon before spawning ───────────────────
-    if (globalPolyMode_ == PolyMode::Mono || globalPolyMode_ == PolyMode::Legato)
+    // ── Release all active voices on this channel before spawning ────────────
+    // Covers Mono (always), Legato (gap case), and LegatoSlur (gap case).
+    if (globalPolyMode_ != PolyMode::Polyphonic)
     {
         for (auto& m : morphons_)
             if (m.active && m.midiChannel == channel)
@@ -521,38 +595,36 @@ void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
         if (!em.active)                            continue;
         if (note < em.keyLow || note > em.keyHigh) continue;
 
-        // In polyphonic mode check for a same-note retrigger from this Emitter
+        // In polyphonic mode, check for a same-note retrigger from this Emitter.
+        // Release the existing voice gracefully so its envelope can tail out, then
+        // fall through to spawn a fresh Morphon from the Emitter origin.
+        // Previously we recycled the slot in-place (position snap + envelope reset),
+        // which caused a click. The new voice gets its own slot and a clean Attack.
         if (globalPolyMode_ == PolyMode::Polyphonic)
         {
-            int existing = -1;
             for (int i = 0; i < MAX_MORPHONS; ++i)
             {
-                const auto& m = morphons_[i];
+                auto& m = morphons_[i];
                 if (m.active && m.midiNote == note
                     && m.midiChannel == channel && m.emitterIndex == ei)
-                { existing = i; break; }
+                {
+                    m.noteReleased  = true;   // Graceful release — envelope tails out
+                    m.terminusArmed = false;  // Don't pull toward Terminus on retrigger-release
+                    break;
+                }
             }
-            if (existing >= 0)
-            {
-                auto& m        = morphons_[existing];
-                m.noteReleased = false;
-                m.envStage     = EnvelopeStage::Attack;
-                m.age          = 0.0f;
-                m.x            = em.x;
-                m.y            = em.y;
-                m.vx           = std::cosf(em.launchAngle) * em.launchSpeed;
-                m.vy           = std::sinf(em.launchAngle) * em.launchSpeed;
-                continue;
-            }
+            // Fall through — findFreeSlot() spawns the new voice below
         }
 
         const int slot = findFreeSlot();
         if (slot < 0) break;   // Pool full
 
-        auto& m         = morphons_[slot];
-        m.active        = true;
-        m.noteReleased  = false;
-        m.envStage      = EnvelopeStage::Attack;
+        auto& m           = morphons_[slot];
+        m.active          = true;
+        m.noteReleased    = false;
+        m.terminusArmed   = false;
+        m.terminusReached = false;
+        m.envStage        = EnvelopeStage::Attack;
         m.midiNote      = note;
         m.midiChannel   = channel;
         m.emitterIndex  = ei;
@@ -562,17 +634,23 @@ void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
         m.vy            = std::sinf(em.launchAngle) * em.launchSpeed;
         m.mass          = em.spawnMass;
         m.drag          = em.spawnDrag;
-        m.amplitude     = 0.0f;
-        m.age           = 0.0f;
-        m.timbreX       = 0.5f;
-        m.timbreY       = 0.0f;
-        m.pan           = em.pan;
-        m.fundamentalHz = midiNoteToHz(note)
-            * std::pow(2.0f, em.transposeOct
-                           + em.transposeSemi / 12.0f
-                           + em.transposeCents / 1200.0f);
+        m.amplitude          = 0.0f;
+        m.age                = 0.0f;
+        m.timbreX            = 0.5f;
+        m.timbreY            = 0.0f;
+        m.basePan            = em.pan;
+        m.pan                = em.pan;
+        m.pitchZoneSemitones = 0.0f;
+        {
+            const float newHz = midiNoteToHz(note)
+                * std::pow(2.0f, em.transposeOct
+                               + em.transposeSemi / 12.0f
+                               + em.transposeCents / 1200.0f);
+            m.fundamentalHz       = newHz;  // Fresh spawn: always instant (no glide)
+            m.targetFundamentalHz = newHz;
+        }
 
-        // Mono/Legato: one voice total — stop after first successful spawn
+        // Mono/Legato/Slur: one voice total — stop after first successful spawn
         if (globalPolyMode_ != PolyMode::Polyphonic) break;
     }
 }
@@ -582,8 +660,31 @@ void PhysicsEngine::handleNoteOff(int channel, int note)
     // Release ALL Morphons matching this note+channel — there may be one per
     // Emitter if multiple Emitters had overlapping key ranges covering `note`.
     for (auto& m : morphons_)
-        if (m.active && m.midiNote == note && m.midiChannel == channel)
-            m.noteReleased = true;
+    {
+        if (!m.active || m.midiNote != note || m.midiChannel != channel) continue;
+
+        m.noteReleased = true;
+
+        // Arm Terminus only if the morphon is currently OUTSIDE the arrival zone.
+        // This prevents the "immediate-fire" click that occurred when the morphon
+        // was already inside the radius at the moment of note-off — the terminus
+        // should only activate on a crossing event (outside → inside), not a
+        // state check (already inside at note-off).
+        const int ei = m.emitterIndex;
+        if (ei >= 0 && ei < MAX_EMITTERS && emitters_[ei].terminusEnabled)
+        {
+            const auto& em    = emitters_[ei];
+            const float dx    = m.x - em.x;
+            const float dy    = m.y - em.y;
+            const float dist2 = dx * dx + dy * dy;
+            const float ar    = em.terminusArrivalRadius;
+            m.terminusArmed   = (dist2 >= ar * ar);  // Armed only if currently outside
+        }
+        else
+        {
+            m.terminusArmed = false;
+        }
+    }
 }
 
 int PhysicsEngine::findFreeSlot() const noexcept
@@ -623,8 +724,11 @@ void PhysicsEngine::integrateMorphons(double dt)
         fieldGrid_.sample(m.x, m.y, fx, fy);
 
         // ── Terminus pull ─────────────────────────────────────────────────────
-        // Active only after note-off. Phase 4: target = Emitter origin.
-        if (m.noteReleased)
+        // Active only after note-off AND when the morphon was outside the arrival
+        // zone at note-off time (terminusArmed). This implements a crossing-event
+        // model: Terminus fires only when the morphon travels from outside → inside,
+        // never when it was already sitting inside the zone when the note was released.
+        if (m.noteReleased && m.terminusArmed)
         {
             const int ei = m.emitterIndex;
             if (ei >= 0 && ei < MAX_EMITTERS && emitters_[ei].terminusEnabled)
@@ -637,7 +741,17 @@ void PhysicsEngine::integrateMorphons(double dt)
 
                 if (dist2 < ar * ar)
                 {
-                    m.active = false;   // Absorbed — skip rest of integration
+                    // Pin at Terminus position with zero velocity.
+                    // Do NOT deactivate here — let updateEnvelopes() drain
+                    // the Release stage to zero cleanly (prevents click on
+                    // arrival and preserves the configured release tail).
+                    // terminusReached tells updateEnvelopes() to apply the
+                    // arrival speed-up multiplier for a snappier fade-out.
+                    m.x              = em.x;
+                    m.y              = em.y;
+                    m.vx             = 0.0f;
+                    m.vy             = 0.0f;
+                    m.terminusReached = true;
                     continue;
                 }
 
@@ -669,6 +783,20 @@ void PhysicsEngine::integrateMorphons(double dt)
         blendAnchors(m.x, m.y,
                      timbralAnchors_.data(), activeAnchorCount_,
                      m.timbreX, m.timbreY);
+
+        // ── Pitch glide ───────────────────────────────────────────────────────
+        // Exponential approach in log-frequency space so the slide rate is
+        // perceptually constant regardless of interval size (semitones/sec).
+        // Only runs when glide is on and the voice hasn't reached its target.
+        // Threshold ≈ 0.01 cents — inaudible, prevents infinite asymptote.
+        if (globalGlideTimeSec_ > 0.0f && m.fundamentalHz != m.targetFundamentalHz)
+        {
+            const float logRatio = std::log(m.targetFundamentalHz / m.fundamentalHz);
+            if (std::abs(logRatio) > 0.0001f)
+                m.fundamentalHz *= std::exp(logRatio * dtF / globalGlideTimeSec_);
+            else
+                m.fundamentalHz = m.targetFundamentalHz;
+        }
     }
 }
 
@@ -698,7 +826,18 @@ void PhysicsEngine::applyBoundary(MorphonState& m) const noexcept
 
         case BoundaryBehavior::Terminate:
             if (m.x < 0.0f || m.x > 1.0f || m.y < 0.0f || m.y > 1.0f)
-                m.active = false;
+            {
+                // Trigger the release envelope — same pattern as Terminus:
+                // do NOT set m.active = false here (instant amplitude cut = click).
+                // updateEnvelopes() will deactivate cleanly when amplitude reaches 0.
+                m.noteReleased = true;
+                // Pin to the boundary edge and stop so the Morphon stays visible
+                // during its release tail instead of flying off-canvas.
+                m.x  = juce::jlimit(0.0f, 1.0f, m.x);
+                m.y  = juce::jlimit(0.0f, 1.0f, m.y);
+                m.vx = 0.0f;
+                m.vy = 0.0f;
+            }
             break;
 
         case BoundaryBehavior::KleinBottle:
@@ -748,8 +887,15 @@ void PhysicsEngine::updateEnvelopes(double dt)
                                   ? dtF / emitter.attackTime  : 1.0f;
         const float decayRate   = (emitter.decayTime   > 0.0f)
                                   ? dtF / emitter.decayTime   : 1.0f;
-        const float releaseRate = (emitter.releaseTime > 0.0f)
-                                  ? dtF / emitter.releaseTime : 1.0f;
+        // Terminus arrival speeds up the release by this factor so the morphon
+        // fades out snappily once it lands on the zone, regardless of the
+        // configured release time. Adjust the constant to taste.
+        constexpr float TERMINUS_RELEASE_MULT = 8.0f;
+        const float effectiveRelease = (m.terminusReached)
+                                       ? emitter.releaseTime / TERMINUS_RELEASE_MULT
+                                       : emitter.releaseTime;
+        const float releaseRate = (effectiveRelease > 0.0f)
+                                  ? dtF / effectiveRelease : 1.0f;
         const float sustainLvl  = emitter.sustainLevel;
 
         // Note-off forces Release regardless of current stage
@@ -788,6 +934,77 @@ void PhysicsEngine::updateEnvelopes(double dt)
                     m.active    = false;
                 }
                 break;
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Effect zones — spatial modulation applied after envelope update
+//
+// Each tick: reset live pan and pitch contribution to their base values, then
+// accumulate all active zone deltas weighted by proximity.
+//
+// Pan and timbre targets are clamped to their parameter ranges after accumulation.
+// Pitch accumulates freely in semitones (no clamp — extreme detuning is valid).
+// Amplitude is clamped to [0,1] so zones cannot push beyond envelope bounds.
+// ─────────────────────────────────────────────────────────────────────────────
+
+void PhysicsEngine::applyEffectZones()
+{
+    for (auto& m : morphons_)
+    {
+        if (!m.active) continue;
+
+        // Reset live modulation contributions — zones re-accumulate from scratch each tick
+        m.pan                = m.basePan;
+        m.pitchZoneSemitones = 0.0f;
+
+        for (int zi = 0; zi < MAX_EFFECT_ZONES; ++zi)
+        {
+            const auto& z = effectZones_[zi];
+            if (!z.active) continue;
+
+            const float dx   = m.x - z.x;
+            const float dy   = m.y - z.y;
+            const float dist = std::sqrt(dx * dx + dy * dy);
+
+            if (dist >= z.radius) continue;
+
+            float w;
+            if (z.falloff == ZoneFalloff::Linear)
+            {
+                w = 1.0f - dist / z.radius;
+            }
+            else  // Gaussian: sigma = radius/3 so w ≈ 0.01 at the zone edge
+            {
+                const float sigma = z.radius * 0.333f;
+                w = std::exp(-(dist * dist) / (2.0f * sigma * sigma));
+            }
+
+            const float delta = w * z.depth;
+
+            switch (z.target)
+            {
+                case ZoneTarget::TimbreX:
+                    m.timbreX = juce::jlimit(0.0f, 1.0f, m.timbreX + delta);
+                    break;
+
+                case ZoneTarget::TimbreY:
+                    m.timbreY = juce::jlimit(0.0f, 1.0f, m.timbreY + delta);
+                    break;
+
+                case ZoneTarget::Amplitude:
+                    m.amplitude = juce::jlimit(0.0f, 1.0f, m.amplitude + delta);
+                    break;
+
+                case ZoneTarget::Pan:
+                    m.pan = juce::jlimit(-1.0f, 1.0f, m.pan + delta);
+                    break;
+
+                case ZoneTarget::Pitch:
+                    m.pitchZoneSemitones += delta;  // Depth in semitones; applied in processBlock
+                    break;
+            }
         }
     }
 }
@@ -852,8 +1069,26 @@ void PhysicsEngine::writeSnapshot()
         dst.active                 = src.active;
     }
 
-    snap.globalBoundary = globalBoundary_;
-    snap.globalPolyMode = globalPolyMode_;
+    snap.globalBoundary  = globalBoundary_;
+    snap.globalPolyMode  = globalPolyMode_;
+    snap.globalGlideTime = globalGlideTimeSec_;
+
+    // Copy effect zones for UI rendering
+    int activeZones = 0;
+    for (int i = 0; i < MAX_EFFECT_ZONES; ++i)
+    {
+        const auto& src = effectZones_[i];
+        auto&       dst = snap.effectZones[i];
+        dst.x       = src.x;
+        dst.y       = src.y;
+        dst.radius  = src.radius;
+        dst.depth   = src.depth;
+        dst.target  = src.target;
+        dst.falloff = src.falloff;
+        dst.active  = src.active;
+        if (src.active) ++activeZones;
+    }
+    snap.activeEffectZoneCount = activeZones;
 
     // Copy timbral anchors for UI rendering
     snap.activeTimbralAnchorCount = activeAnchorCount_;

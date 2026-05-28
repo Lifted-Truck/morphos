@@ -5,6 +5,7 @@
 #include <juce_core/juce_core.h>
 
 #include "PhysicsState.h"
+#include "EffectZone.h"
 #include "FieldObject.h"
 #include "synthesis/TimbralAnchor.h"
 
@@ -91,6 +92,7 @@ private:
     void integrateMorphons(double dt);
     void updateEnvelopes(double dt);
     void applyBoundary(MorphonState& m) const noexcept;
+    void applyEffectZones();
     void writeSnapshot();
 
     // ── Note handling (physics thread only) ──────────────────────────────────
@@ -115,8 +117,9 @@ private:
     std::atomic<float> globalTimeScale_{ 1.0f };
 
     // ── Global manifold topology (physics thread; set via ManifoldEdit queue) ──
-    BoundaryBehavior globalBoundary_ = BoundaryBehavior::Wrap;
-    PolyMode         globalPolyMode_ = PolyMode::Polyphonic;
+    BoundaryBehavior globalBoundary_    = BoundaryBehavior::Wrap;
+    PolyMode         globalPolyMode_    = PolyMode::Polyphonic;
+    float            globalGlideTimeSec_ = 0.0f;   // Portamento time in seconds
 
     // ── Simulation state (physics thread only) ────────────────────────────────
     std::array<MorphonState, MAX_MORPHONS>      morphons_{};
@@ -125,11 +128,11 @@ private:
     FieldGrid                                   fieldGrid_;
 
     // ── Timbral Anchors ───────────────────────────────────────────────────────
-    // Phase 2: two hardcoded anchors at indices 0–1.
-    // Phase 3+: user-placed via drag; active count tracked separately.
-    // Active anchors are always compacted at the front of the array (no gaps).
     int activeAnchorCount_ = 2;
     std::array<TimbralAnchor, MAX_TIMBRAL_ANCHORS> timbralAnchors_{};
+
+    // ── Effect Zones ──────────────────────────────────────────────────────────
+    std::array<EffectZone, MAX_EFFECT_ZONES> effectZones_{};
 
     uint64_t tickIndex_        = 0;
     double   simulationTimeMs_ = 0.0;

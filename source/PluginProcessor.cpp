@@ -67,6 +67,7 @@ void MorphosProcessor::prepareToPlay(double sampleRate, int /*samplesPerBlock*/)
     for (auto& v : voices_)
     {
         v.phases.fill(0.0f);
+        v.prevPartialAmps.fill(0.0f);
         v.prevAmplitude = 0.0f;
         v.wasActive     = false;
     }
@@ -151,10 +152,11 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                 continue;
             }
 
-            // Detect new spawn (inactive → active): reset phasors and prev amplitude
+            // Detect new spawn (inactive → active): reset phasors and prev state
             if (!voice.wasActive)
             {
                 voice.phases.fill(0.0f);
+                voice.prevPartialAmps.fill(0.0f);
                 voice.prevAmplitude = 0.0f;
                 voice.wasActive = true;
             }
@@ -173,11 +175,17 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             const float ampStep = (targetAmp - startAmp)
                                   / static_cast<float>(std::max(numSamples, 1));
 
-            // ── Timbral parameters (written by physics thread via anchor blending) ─
+            // ── Timbral parameters (written by physics thread via anchor blending + zones) ─
             // timbreX = spectral rolloff [0..1]: 0 = dark, 1 = bright
             // timbreY = inharmonicity    [0..1]: 0 = harmonic, 1 = stretched partials
             const float rolloffExp   = 3.5f - m.timbreX * 3.2f;  // [0,1] → [3.5, 0.3]
             const float stretchCoeff = 0.012f * m.timbreY;        // partial k stretches by k*coeff
+
+            // Pitch zone shift (semitones accumulated by applyEffectZones); applied
+            // multiplicatively so it doesn't corrupt the glide-target fundamentalHz.
+            const float pitchMult = (m.pitchZoneSemitones != 0.0f)
+                ? std::pow(2.0f, m.pitchZoneSemitones / 12.0f)
+                : 1.0f;
 
             // ── Precompute per-partial frequency and normalised shape (once per buffer)
             // std::pow is called 20× per voice here, not 20× per sample.
@@ -187,8 +195,9 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
             for (int k = 1; k <= NUM_PARTIALS; ++k)
             {
-                // Inharmonic partial: f_k = f0 * k * (1 + k * stretch)
+                // Inharmonic partial: f_k = f0 * pitchMult * k * (1 + k * stretch)
                 partialFreqs[k - 1] = m.fundamentalHz
+                                      * pitchMult
                                       * static_cast<float>(k)
                                       * (1.0f + static_cast<float>(k) * stretchCoeff);
 
@@ -204,17 +213,31 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                 partialAmps[k] *= normFactor;
 
             // ── Sample loop: advance phasors, accumulate into all output channels ─
-            // Cache write pointers outside the sample loop.
+            // Cache write pointers and pan coefficients outside the sample loop.
             constexpr int MAX_CH = 8;
             float* channelPtrs[MAX_CH] = {};
             const int clampedCh = std::min(numChannels, MAX_CH);
             for (int ch = 0; ch < clampedCh; ++ch)
                 channelPtrs[ch] = buffer.getWritePointer(ch);
 
+            // Pan is set at spawn and never changes mid-note — hoist trig outside.
+            const float panAngle = (m.pan + 1.0f) * (juce::MathConstants<float>::pi * 0.25f);
+            const float panL     = std::cos(panAngle);
+            const float panR     = std::sin(panAngle);
+
+            // Reciprocal buffer length for spectral lerp fraction.
+            const float invN = 1.0f / static_cast<float>(std::max(numSamples, 1));
+
             for (int s = 0; s < numSamples; ++s)
             {
                 // Per-sample amplitude: linear ramp from startAmp to targetAmp
                 const float amp = startAmp + ampStep * static_cast<float>(s);
+
+                // Lerp spectral shape from previous buffer's shape to this buffer's
+                // shape.  Prevents clicks when timbreX/Y jump discontinuously at a
+                // Manifold boundary crossing (Wrap / Klein bottle).  At steady state
+                // prevPartialAmps == partialAmps, so the lerp is a no-op.
+                const float tFrac = static_cast<float>(s) * invN;
 
                 float sample = 0.0f;
 
@@ -222,17 +245,14 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                 {
                     voice.phases[k] += partialFreqs[k] * invSampleRate;
                     if (voice.phases[k] >= 1.0f) voice.phases[k] -= 1.0f;
-                    sample += partialAmps[k] * std::sin(voice.phases[k] * twoPi);
+                    const float pa = voice.prevPartialAmps[k]
+                                   + (partialAmps[k] - voice.prevPartialAmps[k]) * tFrac;
+                    sample += pa * std::sin(voice.phases[k] * twoPi);
                 }
 
                 sample *= amp;
 
-                // Equal-power pan: θ maps pan [-1,+1] → [0, π/2]
-                // L = cos(θ), R = sin(θ)
-                const float panAngle = (m.pan + 1.0f) * (juce::MathConstants<float>::pi * 0.25f);
-                const float panL     = std::cos(panAngle);
-                const float panR     = std::sin(panAngle);
-
+                // Equal-power pan: θ maps pan [-1,+1] → [0, π/2]; L=cos(θ), R=sin(θ)
                 if (clampedCh >= 2)
                 {
                     channelPtrs[0][s] += sample * panL;
@@ -244,6 +264,11 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                         channelPtrs[ch][s] += sample;
                 }
             }
+
+            // Store spectral shape for next buffer — enables smooth lerp on the
+            // next call even if timbreX/Y change significantly (e.g. boundary wrap).
+            for (int k = 0; k < NUM_PARTIALS; ++k)
+                voice.prevPartialAmps[k] = partialAmps[k];
         }
     }
 

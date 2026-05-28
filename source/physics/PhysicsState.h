@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 
+#include "EffectZone.h"
 #include "FieldObject.h"
 #include "synthesis/TimbralAnchor.h"   // for MAX_TIMBRAL_ANCHORS
 
@@ -33,10 +34,12 @@ enum class EnvelopeStage : uint8_t { Attack, Decay, Sustain, Release };
 // Polyphonic: each note spawns its own Morphon(s), unlimited voices.
 // Mono:       all existing Morphons are released before a new one spawns;
 //             at most one active Morphon at a time.
-// Legato:     like Mono, but an existing active Morphon keeps its Manifold
-//             position and velocity — only its pitch and envelope are updated.
-//             On first note (no active Morphon) it spawns normally.
-enum class PolyMode : uint8_t { Polyphonic, Mono, Legato };
+// Legato:     gap-sensitive. Retargets an existing held Morphon (keeps position,
+//             updates pitch + envelope). If the previous note was released before
+//             the new note arrives, falls through to a fresh spawn.
+// LegatoSlur: always-retarget. Like Legato but retargets even across note gaps
+//             (previous voice in Release is picked up rather than discarded).
+enum class PolyMode : uint8_t { Polyphonic, Mono, Legato, LegatoSlur };
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MorphonState — per-Morphon data shared between physics, audio, and UI
@@ -55,8 +58,10 @@ struct MorphonState
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
     float            age          = 0.0f;   // Seconds alive
-    bool             active       = false;
-    bool             noteReleased = false;  // true after note-off; triggers Release stage
+    bool             active          = false;
+    bool             noteReleased    = false;  // true after note-off; triggers Release stage
+    bool             terminusArmed   = false;  // true if morphon was outside arrival zone at note-off
+    bool             terminusReached = false;  // true once morphon enters arrival zone; speeds up release
 
     // ── Envelope state ────────────────────────────────────────────────────────
     EnvelopeStage envStage = EnvelopeStage::Attack;
@@ -71,7 +76,8 @@ struct MorphonState
     float amplitude = 0.0f;   // 0..1, authoritative value for synthesis scaling
 
     // ── Spatial ───────────────────────────────────────────────────────────────
-    float pan = 0.0f;   // Stereo position [-1 L, 0 C, +1 R]; set at spawn from Emitter
+    float pan     = 0.0f;   // Live stereo position [-1 L, 0 C, +1 R]; reset to basePan each tick
+    float basePan = 0.0f;   // Spawn-time pan from Emitter; zones add on top each tick
 
     // ── Timbral parameters ────────────────────────────────────────────────────
     // Output of Timbral Anchor RBF blending at current Manifold position.
@@ -80,8 +86,16 @@ struct MorphonState
     float timbreX = 0.5f;
     float timbreY = 0.5f;
 
-    // Fundamental frequency derived from midiNote (Hz)
-    float fundamentalHz = 440.0f;
+    // Fundamental frequency derived from midiNote (Hz).
+    // When glide time > 0, fundamentalHz interpolates toward targetFundamentalHz
+    // each physics tick; otherwise they are always equal.
+    float fundamentalHz       = 440.0f;
+    float targetFundamentalHz = 440.0f;
+
+    // ── Zone modulation (written each tick by applyEffectZones) ───────────────
+    // pitchZoneSemitones is applied multiplicatively in processBlock so it does
+    // not corrupt fundamentalHz (which is the glide target).
+    float pitchZoneSemitones = 0.0f;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -122,6 +136,20 @@ struct TimbralAnchorSnapshot
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// EffectZoneSnapshot — zone data for UI rendering
+// ─────────────────────────────────────────────────────────────────────────────
+struct EffectZoneSnapshot
+{
+    float       x       = 0.5f;
+    float       y       = 0.5f;
+    float       radius  = 0.15f;
+    float       depth   = 0.5f;
+    ZoneTarget  target  = ZoneTarget::TimbreX;
+    ZoneFalloff falloff = ZoneFalloff::Gaussian;
+    bool        active  = false;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FieldObjectSnapshot — lightweight field object data for UI rendering
 // ─────────────────────────────────────────────────────────────────────────────
 struct FieldObjectSnapshot
@@ -145,12 +173,15 @@ struct PhysicsStateSnapshot
     std::array<FieldObjectSnapshot,    MAX_FIELD_OBJECTS>    fieldObjects{};
     std::array<EmitterSnapshot,        MAX_EMITTERS>         emitters{};
     std::array<TimbralAnchorSnapshot,  MAX_TIMBRAL_ANCHORS>  timbralAnchors{};
+    std::array<EffectZoneSnapshot,     MAX_EFFECT_ZONES>     effectZones{};
 
     int              activeMorphonCount       = 0;
     int              activeFieldObjCount      = 0;
     int              activeTimbralAnchorCount = 0;
+    int              activeEffectZoneCount    = 0;
     BoundaryBehavior globalBoundary           = BoundaryBehavior::Wrap;
     PolyMode         globalPolyMode           = PolyMode::Polyphonic;
+    float            globalGlideTime          = 0.0f;   // Portamento seconds [0, 5]
     uint64_t         tickIndex                = 0;
     double           simulationTimeMs         = 0.0;
 };
@@ -197,6 +228,7 @@ struct ManifoldEdit
         SetPolyMode,           // x = (float)cast of PolyMode uint8_t; index unused
         SetTimbralAnchorTimbreX,
         SetTimbralAnchorTimbreY,
+        SetGlideTime,          // x = portamento time in seconds [0, 5]; index unused
 
         // ── Spawn / remove — x,y = initial position for Add types ────────────
         AddAttractor,          // Spawn a new Attractor at (x,y) with defaults
@@ -204,9 +236,18 @@ struct ManifoldEdit
         AddVortex,             // Spawn a new Vortex    at (x,y) with defaults
         AddEmitter,            // Spawn a new Emitter   at (x,y) with defaults
         AddTimbralAnchor,      // Spawn a new TimbralAnchor at (x,y)
+        AddEffectZone,         // Spawn a new EffectZone at (x,y) with defaults
         RemoveFieldObject,     // Deactivate field object[index]
         RemoveEmitter,         // Deactivate emitter[index]
         RemoveTimbralAnchor,   // Deactivate anchor[index] (physics re-compacts array)
+        RemoveEffectZone,      // Deactivate effect zone[index]
+
+        // ── Effect zone property edits ────────────────────────────────────────
+        MoveEffectZone,           // x,y carry new Manifold coords [0,1]
+        SetEffectZoneRadius,      // x = radius [0.01, 0.75]
+        SetEffectZoneDepth,       // x = depth (units: [-1,+1] or semitones [-24,+24] for Pitch)
+        SetEffectZoneTarget,      // x = (float)cast of ZoneTarget uint8_t
+        SetEffectZoneFalloff,     // x = (float)cast of ZoneFalloff uint8_t
     };
 
     Type  type  = Type::MoveFieldObject;
