@@ -179,6 +179,8 @@ void PhysicsEngine::tick(double dtSeconds)
     drainEditCommands();      // Apply UI edits before rebuilding grid / integrating
     rebuildFieldGridIfDirty();
     integrateMorphons(dtSeconds);
+    applyPathConstraints();   // Snap pinned Morphons before gates so crossings
+                              // see the post-snap trajectory (prev→snapped pos).
     applyFluxGates();         // Detect crossings before envelope update so the
                               // snap-to-Attack takes effect in this same tick.
     updateEnvelopes(dtSeconds);
@@ -582,6 +584,54 @@ void PhysicsEngine::drainEditCommands()
                             -juce::MathConstants<float>::pi,
                              juce::MathConstants<float>::pi, e.x);
                     break;
+
+                // ── Path object spawn / remove / edits ────────────────────────
+                case ManifoldEdit::Type::AddPathObject:
+                {
+                    int slot = -1;
+                    for (int k = 0; k < MAX_PATH_OBJECTS; ++k)
+                        if (!pathObjects_[k].active) { slot = k; break; }
+                    if (slot < 0) break;
+
+                    auto& p      = pathObjects_[slot];
+                    p.shape      = PathShape::Circle;
+                    p.x          = e.x;
+                    p.y          = e.y;
+                    p.radius     = 0.15f;
+                    p.snapRadius = 0.04f;
+                    p.active     = true;
+                    break;
+                }
+
+                case ManifoldEdit::Type::RemovePathObject:
+                    if (idx >= 0 && idx < MAX_PATH_OBJECTS)
+                    {
+                        pathObjects_[idx].active = false;
+                        // Unpin any Morphons attached to this path so they
+                        // don't snap to a deactivated curve next tick.
+                        for (auto& m : morphons_)
+                            if (m.pathIndex == idx)
+                                m.pathIndex = -1;
+                    }
+                    break;
+
+                case ManifoldEdit::Type::MovePathObject:
+                    if (idx >= 0 && idx < MAX_PATH_OBJECTS)
+                    {
+                        pathObjects_[idx].x = e.x;
+                        pathObjects_[idx].y = e.y;
+                    }
+                    break;
+
+                case ManifoldEdit::Type::SetPathObjectRadius:
+                    if (idx >= 0 && idx < MAX_PATH_OBJECTS)
+                        pathObjects_[idx].radius = juce::jlimit(0.02f, 0.45f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetPathObjectSnapRadius:
+                    if (idx >= 0 && idx < MAX_PATH_OBJECTS)
+                        pathObjects_[idx].snapRadius = juce::jlimit(0.005f, 0.15f, e.x);
+                    break;
             }
         }
     };
@@ -696,6 +746,7 @@ void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
         m.basePan            = em.pan;
         m.pan                = em.pan;
         m.pitchZoneSemitones = 0.0f;
+        m.pathIndex          = -1;   // Fresh voice starts unpinned
         {
             const float newHz = midiNoteToHz(note)
                 * std::pow(2.0f, em.transposeOct
@@ -1080,6 +1131,91 @@ void PhysicsEngine::updateEnvelopes(double dt)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Path constraints — rail pinning + tangent projection
+//
+// Two passes per tick after integration:
+//   1. Each unpinned active Morphon is checked against every active path; if
+//      its post-integration position is within a path's snap radius, the
+//      Morphon pins to that path (pathIndex = i).
+//   2. Each pinned Morphon has its position snapped to the closest point on
+//      its path and its velocity projected onto the local tangent. Field
+//      forces still applied through the integrator survive only in their
+//      tangential component, so the Morphon walks along the rail.
+//
+// If a path is deleted (active = false), drainEditCommands clears pathIndex
+// for all Morphons attached to it, so they resume free motion the next tick.
+// ─────────────────────────────────────────────────────────────────────────────
+
+void PhysicsEngine::applyPathConstraints()
+{
+    // Cheap activity check — skip per-Morphon iteration if no paths are active.
+    bool anyActive = false;
+    for (const auto& p : pathObjects_)
+        if (p.active) { anyActive = true; break; }
+    if (!anyActive)
+    {
+        // Still need to unpin any Morphons whose paths got removed without
+        // the edit command running this tick. (Defensive — drainEditCommands
+        // already handles RemovePathObject, but if all paths went away another
+        // way, this keeps state consistent.)
+        for (auto& m : morphons_)
+            if (m.pathIndex >= 0)
+                m.pathIndex = -1;
+        return;
+    }
+
+    // Pass 1: pin Morphons that entered any path's snap zone this tick.
+    for (auto& m : morphons_)
+    {
+        if (!m.active || m.pathIndex >= 0) continue;
+
+        for (int i = 0; i < MAX_PATH_OBJECTS; ++i)
+        {
+            const auto& p = pathObjects_[i];
+            if (!p.active) continue;
+
+            float px, py, tx, ty;
+            pathClosestPoint(p, m.x, m.y, px, py, tx, ty);
+
+            const float dx = m.x - px;
+            const float dy = m.y - py;
+            if (dx * dx + dy * dy <= p.snapRadius * p.snapRadius)
+            {
+                m.pathIndex = i;
+                m.x = px;
+                m.y = py;
+                // Project current velocity onto tangent; discard normal component.
+                const float vDotT = m.vx * tx + m.vy * ty;
+                m.vx = tx * vDotT;
+                m.vy = ty * vDotT;
+                break;
+            }
+        }
+    }
+
+    // Pass 2: snap pinned Morphons to their path each tick.
+    for (auto& m : morphons_)
+    {
+        if (!m.active || m.pathIndex < 0) continue;
+
+        const auto& p = pathObjects_[m.pathIndex];
+        if (!p.active)
+        {
+            m.pathIndex = -1;  // Path deactivated mid-flight — release the pin.
+            continue;
+        }
+
+        float px, py, tx, ty;
+        pathClosestPoint(p, m.x, m.y, px, py, tx, ty);
+        m.x = px;
+        m.y = py;
+        const float vDotT = m.vx * tx + m.vy * ty;
+        m.vx = tx * vDotT;
+        m.vy = ty * vDotT;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Flux Gates — crossing detection + envelope re-trigger
 //
 // For each active Morphon, the per-tick trajectory is the line segment from
@@ -1292,6 +1428,22 @@ void PhysicsEngine::writeSnapshot()
     }
     snap.activeFluxGateCount = activeGates;
 
+    // Copy path objects for UI rendering
+    int activePaths = 0;
+    for (int i = 0; i < MAX_PATH_OBJECTS; ++i)
+    {
+        const auto& src = pathObjects_[i];
+        auto&       dst = snap.pathObjects[i];
+        dst.shape      = src.shape;
+        dst.x          = src.x;
+        dst.y          = src.y;
+        dst.radius     = src.radius;
+        dst.snapRadius = src.snapRadius;
+        dst.active     = src.active;
+        if (src.active) ++activePaths;
+    }
+    snap.activePathObjectCount = activePaths;
+
     // Copy timbral anchors for UI rendering
     snap.activeTimbralAnchorCount = activeAnchorCount_;
     for (int i = 0; i < MAX_TIMBRAL_ANCHORS; ++i)
@@ -1325,6 +1477,7 @@ void PhysicsEngine::applyPatch(const PatchState& patch)
     timbralAnchors_     = patch.timbralAnchors;
     effectZones_        = patch.effectZones;
     fluxGates_          = patch.fluxGates;
+    pathObjects_        = patch.pathObjects;
     activeAnchorCount_  = patch.activeAnchorCount;
     globalBoundary_     = patch.boundary;
     globalGlideTimeSec_ = patch.glideTimeSec;

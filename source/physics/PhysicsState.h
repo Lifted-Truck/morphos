@@ -6,6 +6,7 @@
 #include "EffectZone.h"
 #include "FieldObject.h"
 #include "FluxGate.h"
+#include "PathObject.h"
 #include "synthesis/TimbralAnchor.h"   // for MAX_TIMBRAL_ANCHORS
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,6 +104,12 @@ struct MorphonState
     // pitchZoneSemitones is applied multiplicatively in processBlock so it does
     // not corrupt fundamentalHz (which is the glide target).
     float pitchZoneSemitones = 0.0f;
+
+    // Path Object pin index — set by applyPathConstraints when the Morphon
+    // enters a PathObject's snap zone. While pinned, the Morphon's position
+    // snaps to the path each tick and its velocity is projected onto the
+    // local tangent. -1 = not pinned (free motion).
+    int pathIndex = -1;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -172,6 +179,19 @@ struct FluxGateSnapshot
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PathObjectSnapshot — rail-constraint path data for UI rendering
+// ─────────────────────────────────────────────────────────────────────────────
+struct PathObjectSnapshot
+{
+    PathShape shape      = PathShape::Circle;
+    float     x          = 0.5f;
+    float     y          = 0.5f;
+    float     radius     = 0.15f;
+    float     snapRadius = 0.04f;
+    bool      active     = false;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FieldObjectSnapshot — lightweight field object data for UI rendering
 // ─────────────────────────────────────────────────────────────────────────────
 struct FieldObjectSnapshot
@@ -197,12 +217,14 @@ struct PhysicsStateSnapshot
     std::array<TimbralAnchorSnapshot,  MAX_TIMBRAL_ANCHORS>  timbralAnchors{};
     std::array<EffectZoneSnapshot,     MAX_EFFECT_ZONES>     effectZones{};
     std::array<FluxGateSnapshot,       MAX_FLUX_GATES>       fluxGates{};
+    std::array<PathObjectSnapshot,     MAX_PATH_OBJECTS>     pathObjects{};
 
     int              activeMorphonCount       = 0;
     int              activeFieldObjCount      = 0;
     int              activeTimbralAnchorCount = 0;
     int              activeEffectZoneCount    = 0;
     int              activeFluxGateCount      = 0;
+    int              activePathObjectCount    = 0;
     BoundaryBehavior globalBoundary           = BoundaryBehavior::Wrap;
     float            globalGlideTime          = 0.0f;   // Portamento seconds [0, 5]
     uint64_t         tickIndex                = 0;
@@ -279,6 +301,13 @@ struct ManifoldEdit
         MoveFluxGate,             // x,y carry new Manifold coords [0,1] (centre)
         SetFluxGateLength,        // x = length [0.02, 0.9]
         SetFluxGateAngle,         // x = angleRad [-π, +π]
+
+        // ── Path object spawn / remove / edits ────────────────────────────────
+        AddPathObject,            // Spawn a new PathObject at (x,y) with defaults
+        RemovePathObject,         // Deactivate pathObject[index]
+        MovePathObject,           // x,y carry new Manifold coords [0,1] (centre)
+        SetPathObjectRadius,      // x = radius [0.02, 0.45]
+        SetPathObjectSnapRadius,  // x = snap radius [0.005, 0.15]
     };
 
     Type  type  = Type::MoveFieldObject;

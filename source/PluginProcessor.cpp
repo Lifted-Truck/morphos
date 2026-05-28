@@ -393,6 +393,19 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         manifoldData.appendChild(node, nullptr);
     }
 
+    for (int i = 0; i < MAX_PATH_OBJECTS; ++i)
+    {
+        const auto& p = snap.pathObjects[i];
+        if (!p.active) continue;
+        auto node = juce::ValueTree("Path");
+        node.setProperty("shape",      (int)p.shape, nullptr);
+        node.setProperty("x",          p.x,          nullptr);
+        node.setProperty("y",          p.y,          nullptr);
+        node.setProperty("radius",     p.radius,     nullptr);
+        node.setProperty("snapRadius", p.snapRadius, nullptr);
+        manifoldData.appendChild(node, nullptr);
+    }
+
     state.appendChild(manifoldData, nullptr);
 
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
@@ -443,7 +456,7 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             ed->setSize(w, h);
     }
 
-    int fieldObjSlot = 0, emitterSlot = 0, anchorSlot = 0, zoneSlot = 0, gateSlot = 0;
+    int fieldObjSlot = 0, emitterSlot = 0, anchorSlot = 0, zoneSlot = 0, gateSlot = 0, pathSlot = 0;
 
     for (int i = 0; i < manifoldData.getNumChildren(); ++i)
     {
@@ -515,6 +528,16 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             fg.length   = (float)child.getProperty("length", 0.20f);
             fg.angleRad = (float)child.getProperty("angle",  0.0f);
             fg.active   = true;
+        }
+        else if (child.hasType("Path") && pathSlot < MAX_PATH_OBJECTS)
+        {
+            auto& p      = patch.pathObjects[pathSlot++];
+            p.shape      = static_cast<PathShape>((int)child.getProperty("shape", 0));
+            p.x          = (float)child.getProperty("x",          0.5f);
+            p.y          = (float)child.getProperty("y",          0.5f);
+            p.radius     = (float)child.getProperty("radius",     0.15f);
+            p.snapRadius = (float)child.getProperty("snapRadius", 0.04f);
+            p.active     = true;
         }
     }
 

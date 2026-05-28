@@ -63,6 +63,8 @@ private:
                              juce::Rectangle<int> canvas) const;
     void drawFluxGates      (juce::Graphics&, const PhysicsStateSnapshot&,
                              juce::Rectangle<int> canvas) const;
+    void drawPathObjects    (juce::Graphics&, const PhysicsStateSnapshot&,
+                             juce::Rectangle<int> canvas) const;
 
     // ── Mouse interaction (drag-and-drop + placement) ─────────────────────────
     void mouseDown(const juce::MouseEvent&) override;
@@ -73,10 +75,10 @@ private:
     bool keyPressed(const juce::KeyPress&) override;
 
     // ── Selection / drag state ─────────────────────────────────────────────────
-    enum class ObjectKind { None, FieldObject, Emitter, TimbralAnchor, EffectZone, FluxGate };
+    enum class ObjectKind { None, FieldObject, Emitter, TimbralAnchor, EffectZone, FluxGate, PathObject };
 
     // ── Placement mode — arm a type, then click canvas to place ───────────────
-    enum class SpawnKind { None, Attractor, Repeller, Vortex, Emitter, TimbralAnchor, EffectZone, FluxGate };
+    enum class SpawnKind { None, Attractor, Repeller, Vortex, Emitter, TimbralAnchor, EffectZone, FluxGate, PathObject };
 
     SpawnKind pendingSpawn_ = SpawnKind::None;
 
@@ -137,6 +139,7 @@ private:
     juce::TextButton btnAddAnch_ { "+Anch" };
     juce::TextButton btnAddZone_ { "+Zon"  };
     juce::TextButton btnAddFlux_ { "+Gate" };
+    juce::TextButton btnAddPath_ { "+Path" };
 
     // Panel header: object type+index label, plus Remove button on the right
     juce::Label      lblPanelHeader_;
@@ -200,6 +203,10 @@ private:
     // Flux gate section (visible when a FluxGate is selected)
     juce::Label  lblGateLength_, lblGateAngle_;
     juce::Slider sldGateLength_, sldGateAngle_;
+
+    // Path object section (visible when a PathObject is selected)
+    juce::Label  lblPathRadius_, lblPathSnap_;
+    juce::Slider sldPathRadius_, sldPathSnap_;
 
     // ── Per-Morphon trail buffer ───────────────────────────────────────────────
     struct Trail

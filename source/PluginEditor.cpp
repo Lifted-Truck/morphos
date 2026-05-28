@@ -40,6 +40,10 @@ namespace Colour
     // Flux Gate — crossing-triggered envelope re-trigger. Distinct hue from
     // Repeller red and Emitter amber; reads as a "tripwire" cue.
     static const juce::Colour FluxGate     { 0xFF38CFE6 };  // Cyan
+
+    // Path Object — rail-constraint curve. Sage / olive green reads as
+    // "track / rail" without colliding with Anchor teal or Zone greens.
+    static const juce::Colour PathObject   { 0xFF8DBC72 };  // Sage green
 }
 
 static juce::Colour zoneColour(ZoneTarget t) noexcept
@@ -138,23 +142,23 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     const int x = panel.getX();
     const int w = panel.getWidth();
 
-    // ── Spawn rows — 4 + 3 two-row split ─────────────────────────────────────
-    // Single row is too cramped at 7 buttons / panel width = 260.
+    // ── Spawn rows — 4 + 4 two-row split ─────────────────────────────────────
     // Phase 10's right-click context menu will subsume these buttons; until
-    // then, two rows keeps each label readable.
+    // then, two rows of 4 keeps each label readable at panel width = 260.
     {
         const int bw4 = w / 4;
-        btnAddAtt_ .setBounds(x + bw4 * 0, y, bw4,           SPAWN_H);
-        btnAddRep_ .setBounds(x + bw4 * 1, y, bw4,           SPAWN_H);
-        btnAddVor_ .setBounds(x + bw4 * 2, y, bw4,           SPAWN_H);
-        btnAddEmit_.setBounds(x + bw4 * 3, y, w - bw4 * 3,   SPAWN_H);
+        btnAddAtt_ .setBounds(x + bw4 * 0, y, bw4,         SPAWN_H);
+        btnAddRep_ .setBounds(x + bw4 * 1, y, bw4,         SPAWN_H);
+        btnAddVor_ .setBounds(x + bw4 * 2, y, bw4,         SPAWN_H);
+        btnAddEmit_.setBounds(x + bw4 * 3, y, w - bw4 * 3, SPAWN_H);
     }
     y += SPAWN_H + 2;
     {
-        const int bw3 = w / 3;
-        btnAddAnch_.setBounds(x + bw3 * 0, y, bw3,         SPAWN_H);
-        btnAddZone_.setBounds(x + bw3 * 1, y, bw3,         SPAWN_H);
-        btnAddFlux_.setBounds(x + bw3 * 2, y, w - bw3 * 2, SPAWN_H);
+        const int bw4 = w / 4;
+        btnAddAnch_.setBounds(x + bw4 * 0, y, bw4,         SPAWN_H);
+        btnAddZone_.setBounds(x + bw4 * 1, y, bw4,         SPAWN_H);
+        btnAddFlux_.setBounds(x + bw4 * 2, y, bw4,         SPAWN_H);
+        btnAddPath_.setBounds(x + bw4 * 3, y, w - bw4 * 3, SPAWN_H);
     }
     y += SPAWN_H + 4;
 
@@ -279,6 +283,11 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     y = sectionTopY;
     layoutRow(lblGateLength_, sldGateLength_);
     layoutRow(lblGateAngle_,  sldGateAngle_);
+
+    // ── Path object section ───────────────────────────────────────────────────
+    y = sectionTopY;
+    layoutRow(lblPathRadius_, sldPathRadius_);
+    layoutRow(lblPathSnap_,   sldPathSnap_);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -334,6 +343,7 @@ void MorphosEditor::setupSliders()
     styleSpawnBtn(btnAddAnch_);  addAndMakeVisible(btnAddAnch_);
     styleSpawnBtn(btnAddZone_);  addAndMakeVisible(btnAddZone_);
     styleSpawnBtn(btnAddFlux_);  addAndMakeVisible(btnAddFlux_);
+    styleSpawnBtn(btnAddPath_);  addAndMakeVisible(btnAddPath_);
 
     // Spawn buttons arm placement mode — click canvas to place at desired position.
     // Clicking the same button again disarms without placing anything.
@@ -347,6 +357,7 @@ void MorphosEditor::setupSliders()
         btnAddAnch_.setToggleState(pendingSpawn_ == SpawnKind::TimbralAnchor,juce::dontSendNotification);
         btnAddZone_.setToggleState(pendingSpawn_ == SpawnKind::EffectZone,   juce::dontSendNotification);
         btnAddFlux_.setToggleState(pendingSpawn_ == SpawnKind::FluxGate,     juce::dontSendNotification);
+        btnAddPath_.setToggleState(pendingSpawn_ == SpawnKind::PathObject,   juce::dontSendNotification);
         repaint();
     };
 
@@ -357,6 +368,7 @@ void MorphosEditor::setupSliders()
     btnAddAnch_.onClick = [armSpawn]{ armSpawn(SpawnKind::TimbralAnchor);};
     btnAddZone_.onClick = [armSpawn]{ armSpawn(SpawnKind::EffectZone);   };
     btnAddFlux_.onClick = [armSpawn]{ armSpawn(SpawnKind::FluxGate);     };
+    btnAddPath_.onClick = [armSpawn]{ armSpawn(SpawnKind::PathObject);   };
 
     // ── Panel header + remove button ──────────────────────────────────────────
     lblPanelHeader_.setText("No Selection", juce::dontSendNotification);
@@ -380,6 +392,7 @@ void MorphosEditor::setupSliders()
             case ObjectKind::TimbralAnchor: t = ManifoldEdit::Type::RemoveTimbralAnchor; break;
             case ObjectKind::EffectZone:    t = ManifoldEdit::Type::RemoveEffectZone;    break;
             case ObjectKind::FluxGate:      t = ManifoldEdit::Type::RemoveFluxGate;      break;
+            case ObjectKind::PathObject:    t = ManifoldEdit::Type::RemovePathObject;    break;
             default: return;
         }
         sendEdit(t, selection_.index, 0.0f, 0.0f);
@@ -720,6 +733,27 @@ void MorphosEditor::setupSliders()
                      selection_.index, (float)sldGateAngle_.getValue());
     };
 
+    // ── Path object sliders ────────────────────────────────────────────────────
+    styleLabel(lblPathRadius_, "Radius");
+    styleLabel(lblPathSnap_,   "Snap Radius");
+    styleSlider(sldPathRadius_, 0.02, 0.45);
+    styleSlider(sldPathSnap_,   0.005, 0.15);
+    sldPathRadius_.setNumDecimalPlacesToDisplay(2);
+    sldPathSnap_  .setNumDecimalPlacesToDisplay(3);
+    addAndMakeVisible(lblPathRadius_); addAndMakeVisible(sldPathRadius_);
+    addAndMakeVisible(lblPathSnap_);   addAndMakeVisible(sldPathSnap_);
+
+    sldPathRadius_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetPathObjectRadius,
+                     selection_.index, (float)sldPathRadius_.getValue());
+    };
+    sldPathSnap_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetPathObjectSnapRadius,
+                     selection_.index, (float)sldPathSnap_.getValue());
+    };
+
     // ── Global topology row — always visible ──────────────────────────────────
     styleLabel(lblBoundary_, "Topology");
     addAndMakeVisible(lblBoundary_);
@@ -869,6 +903,9 @@ void MorphosEditor::updatePanel()
 
     lblGateLength_.setVisible(false);       sldGateLength_.setVisible(false);
     lblGateAngle_.setVisible(false);        sldGateAngle_.setVisible(false);
+
+    lblPathRadius_.setVisible(false);       sldPathRadius_.setVisible(false);
+    lblPathSnap_.setVisible(false);         sldPathSnap_.setVisible(false);
 
     const bool hasSelection = selection_.valid();
     btnRemove_.setVisible(hasSelection);
@@ -1040,6 +1077,23 @@ void MorphosEditor::updatePanel()
         lblGateLength_.setVisible(true); sldGateLength_.setVisible(true);
         lblGateAngle_ .setVisible(true); sldGateAngle_ .setVisible(true);
     }
+    else if (selection_.kind == ObjectKind::PathObject)
+    {
+        const int i = selection_.index;
+        if (i >= MAX_PATH_OBJECTS || !state.pathObjects[i].active)
+        {
+            selection_ = {}; ignoreSliderCallbacks_ = false; return;
+        }
+        const auto& p = state.pathObjects[i];
+
+        lblPanelHeader_.setText("Path " + juce::String(i), juce::dontSendNotification);
+
+        sldPathRadius_.setValue(p.radius,     juce::dontSendNotification);
+        sldPathSnap_  .setValue(p.snapRadius, juce::dontSendNotification);
+
+        lblPathRadius_.setVisible(true); sldPathRadius_.setVisible(true);
+        lblPathSnap_  .setVisible(true); sldPathSnap_  .setVisible(true);
+    }
 
     ignoreSliderCallbacks_ = false;
 }
@@ -1073,6 +1127,7 @@ void MorphosEditor::clearPlacementMode()
     btnAddAnch_.setToggleState(false, juce::dontSendNotification);
     btnAddZone_.setToggleState(false, juce::dontSendNotification);
     btnAddFlux_.setToggleState(false, juce::dontSendNotification);
+    btnAddPath_.setToggleState(false, juce::dontSendNotification);
 }
 
 juce::Colour MorphosEditor::pendingSpawnColour() const noexcept
@@ -1086,6 +1141,7 @@ juce::Colour MorphosEditor::pendingSpawnColour() const noexcept
         case SpawnKind::TimbralAnchor: return Colour::Anchor;
         case SpawnKind::EffectZone:    return Colour::ZoneTimbreX;
         case SpawnKind::FluxGate:      return Colour::FluxGate;
+        case SpawnKind::PathObject:    return Colour::PathObject;
         default:                       return juce::Colours::white;
     }
 }
@@ -1117,6 +1173,7 @@ bool MorphosEditor::keyPressed(const juce::KeyPress& key)
             case ObjectKind::TimbralAnchor: t = ManifoldEdit::Type::RemoveTimbralAnchor; break;
             case ObjectKind::EffectZone:    t = ManifoldEdit::Type::RemoveEffectZone;    break;
             case ObjectKind::FluxGate:      t = ManifoldEdit::Type::RemoveFluxGate;      break;
+            case ObjectKind::PathObject:    t = ManifoldEdit::Type::RemovePathObject;    break;
             default: return false;
         }
         sendEdit(t, selection_.index, 0.0f, 0.0f);
@@ -1196,7 +1253,24 @@ MorphosEditor::Selection MorphosEditor::hitTest(juce::Point<float> canvasPt,
             return { ObjectKind::EffectZone, i };
     }
 
-    // Priority 5: Flux gates — hit on the line segment itself, using point-to-
+    // Priority 5: Path objects — hit on the curve itself (closest-point check).
+    // Highest among non-glyph objects so dragging a Path doesn't accidentally
+    // grab a Zone underneath.
+    for (int i = 0; i < MAX_PATH_OBJECTS; ++i)
+    {
+        const auto& p = state.pathObjects[i];
+        if (!p.active) continue;
+
+        // Circle (v1): pixel distance from cursor to the nearest point on the
+        // circumference is |distance(cursor, centre) − radiusPx|.
+        const auto  centrePx = manifoldToCanvas(p.x, p.y, canvas);
+        const float radiusPx = p.radius * canvas.getWidth();
+        const float dToCentre = canvasPt.getDistanceFrom(centrePx);
+        if (std::abs(dToCentre - radiusPx) <= HIT_PX)
+            return { ObjectKind::PathObject, i };
+    }
+
+    // Priority 6: Flux gates — hit on the line segment itself, using point-to-
     // segment distance so the whole tripwire is grabbable (not just the centre).
     for (int i = 0; i < MAX_FLUX_GATES; ++i)
     {
@@ -1253,6 +1327,7 @@ void MorphosEditor::mouseDown(const juce::MouseEvent& event)
             case SpawnKind::TimbralAnchor: addType = ManifoldEdit::Type::AddTimbralAnchor; break;
             case SpawnKind::EffectZone:    addType = ManifoldEdit::Type::AddEffectZone;    break;
             case SpawnKind::FluxGate:      addType = ManifoldEdit::Type::AddFluxGate;      break;
+            case SpawnKind::PathObject:    addType = ManifoldEdit::Type::AddPathObject;    break;
             default: clearPlacementMode(); return;
         }
 
@@ -1294,6 +1369,10 @@ void MorphosEditor::mouseDown(const juce::MouseEvent& event)
             case ObjectKind::FluxGate:
                 drag_.pendingX = state.fluxGates[hit.index].x;
                 drag_.pendingY = state.fluxGates[hit.index].y;
+                break;
+            case ObjectKind::PathObject:
+                drag_.pendingX = state.pathObjects[hit.index].x;
+                drag_.pendingY = state.pathObjects[hit.index].y;
                 break;
             default: break;
         }
@@ -1337,6 +1416,7 @@ void MorphosEditor::mouseDrag(const juce::MouseEvent& event)
         case ObjectKind::FieldObject:   moveType = ManifoldEdit::Type::MoveFieldObject;    break;
         case ObjectKind::EffectZone:    moveType = ManifoldEdit::Type::MoveEffectZone;     break;
         case ObjectKind::FluxGate:      moveType = ManifoldEdit::Type::MoveFluxGate;       break;
+        case ObjectKind::PathObject:    moveType = ManifoldEdit::Type::MovePathObject;     break;
         default: return;
     }
 
@@ -1374,7 +1454,7 @@ void MorphosEditor::paint(juce::Graphics& g)
 
         // "Click to place: Type" hint in top-left corner of canvas
         static const char* spawnNames[] = {
-            "", "Attractor", "Repeller", "Vortex", "Emitter", "Anchor", "Zone", "Gate"
+            "", "Attractor", "Repeller", "Vortex", "Emitter", "Anchor", "Zone", "Gate", "Path"
         };
         g.setFont(juce::FontOptions(11.0f));
         g.setColour(c.withAlpha(0.80f));
@@ -1384,7 +1464,8 @@ void MorphosEditor::paint(juce::Graphics& g)
     }
 
     drawEffectZones     (g, state, canvas);    // Behind all other objects
-    drawFluxGates       (g, state, canvas);    // Above zones, beneath fields
+    drawPathObjects     (g, state, canvas);    // Above zones, beneath gates
+    drawFluxGates       (g, state, canvas);    // Above paths, beneath fields
     drawFieldObjects    (g, state, canvas);
     drawEmitters        (g, state, canvas);
     drawTimbralAnchors  (g, state, canvas);
@@ -1482,6 +1563,76 @@ void MorphosEditor::drawEffectZones(juce::Graphics& g,
             g.setColour(Colour::SelectRing.withAlpha(0.8f));
             g.drawEllipse(centre.x - GLYPH_R - 3.0f, centre.y - GLYPH_R - 3.0f,
                           (GLYPH_R + 3.0f) * 2.0f, (GLYPH_R + 3.0f) * 2.0f, 1.5f);
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Draw — path objects (rail curve + snap-zone fill + direction arrowhead)
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MorphosEditor::drawPathObjects(juce::Graphics& g,
+                                    const PhysicsStateSnapshot& state,
+                                    juce::Rectangle<int> canvas) const
+{
+    const juce::Colour c = Colour::PathObject;
+
+    for (int i = 0; i < MAX_PATH_OBJECTS; ++i)
+    {
+        const auto& p = state.pathObjects[i];
+        if (!p.active) continue;
+
+        float cx = p.x, cy = p.y;
+        if (drag_.active && selection_.kind == ObjectKind::PathObject && selection_.index == i)
+        {
+            cx = drag_.pendingX;
+            cy = drag_.pendingY;
+        }
+
+        const auto  centre   = manifoldToCanvas(cx, cy, canvas);
+        const float radiusPx = p.radius * canvas.getWidth();
+        const float snapPx   = p.snapRadius * canvas.getWidth();
+
+        // Snap zone — translucent annulus from (radius - snap) to (radius + snap).
+        // Reads as "the catchment area around the rail".
+        {
+            const float outer = radiusPx + snapPx;
+            const float inner = juce::jmax(0.0f, radiusPx - snapPx);
+            juce::Path annulus;
+            annulus.addEllipse(centre.x - outer, centre.y - outer, outer * 2.0f, outer * 2.0f);
+            juce::Path hole;
+            hole.addEllipse(centre.x - inner, centre.y - inner, inner * 2.0f, inner * 2.0f);
+            annulus.setUsingNonZeroWinding(false);
+            annulus.addPath(hole);
+            g.setColour(c.withAlpha(0.10f));
+            g.fillPath(annulus);
+        }
+
+        // Rail line itself
+        g.setColour(c.withAlpha(0.85f));
+        g.drawEllipse(centre.x - radiusPx, centre.y - radiusPx,
+                      radiusPx * 2.0f, radiusPx * 2.0f, 2.0f);
+
+        // Direction arrowhead at the right-most point, pointing CCW (downward).
+        {
+            const float ax = centre.x + radiusPx;
+            const float ay = centre.y;
+            constexpr float AR = 5.0f;   // arrowhead size
+            juce::Path arrow;
+            arrow.startNewSubPath(ax,        ay + AR);          // tip (CCW direction = +Y)
+            arrow.lineTo        (ax - AR,    ay);               // back-left
+            arrow.lineTo        (ax + AR,    ay);               // back-right
+            arrow.closeSubPath();
+            g.setColour(c);
+            g.fillPath(arrow);
+        }
+
+        // Selection ring — thicker re-stroke of the rail
+        if (selection_.kind == ObjectKind::PathObject && selection_.index == i)
+        {
+            g.setColour(Colour::SelectRing.withAlpha(0.70f));
+            g.drawEllipse(centre.x - radiusPx, centre.y - radiusPx,
+                          radiusPx * 2.0f, radiusPx * 2.0f, 1.0f);
         }
     }
 }
@@ -1922,7 +2073,9 @@ void MorphosEditor::drawStatusBar(juce::Graphics& g,
            << state.activeEffectZoneCount << " zone"
            << (state.activeEffectZoneCount != 1 ? "s" : "") << "  |  "
            << state.activeFluxGateCount << " gate"
-           << (state.activeFluxGateCount != 1 ? "s" : "");
+           << (state.activeFluxGateCount != 1 ? "s" : "") << "  |  "
+           << state.activePathObjectCount << " path"
+           << (state.activePathObjectCount != 1 ? "s" : "");
 
     const auto statusRect = getLocalBounds()
                                 .removeFromBottom(28)
