@@ -156,6 +156,10 @@ is shipped — DAW automation is keyed to these strings.
 
 ---
 
+## Far-future concepts
+
+- **Morphogenetic MIDI Generator** — a sibling panel / plugin that runs the same Manifold physics engine as a *generative MIDI source*: Morphon positions trigger notes, Flux Gate crossings fire rhythmic events, Trigger Anchors define pitch mappings. The most powerful form shares geometry with the synthesis Manifold so field objects simultaneously shape timbres and generate melodies. Closed-loop routing (generator output → Morphos input) creates self-sustaining generative systems. Full spec in `morphos_orientation.md`.
+
 ## Future concepts (not in current scope)
 
 - **Morph Surface** — 2D wavetable Anchor engine: interpolation at waveform data level rather than audio output level. Tabled until core system is audible.
