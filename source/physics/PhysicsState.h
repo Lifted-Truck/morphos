@@ -101,9 +101,12 @@ struct EmitterSnapshot
     int            keyHigh       = 127;   // Highest MIDI note this Emitter responds to
     int            transposeOct  = 0;
     int            transposeSemi = 0;
-    float          transposeCents= 0.0f;
-    float          pan           = 0.0f;
-    bool           active        = false;
+    float          transposeCents        = 0.0f;
+    float          pan                   = 0.0f;
+    bool           terminusEnabled       = false;
+    float          terminusStrength      = 0.30f;
+    float          terminusArrivalRadius = 0.04f;
+    bool           active                = false;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,7 +189,10 @@ struct ManifoldEdit
         SetEmitterTransposeOct, // x = (float)octave offset [-4, +4]
         SetEmitterTransposeSemi,// x = (float)semitone offset [-12, +12]
         SetEmitterTransposeCents,// x = cents [-100, +100]
-        SetEmitterPan,          // x = pan position [-1, +1]
+        SetEmitterPan,              // x = pan position [-1, +1]
+        SetEmitterTerminusEnabled,  // x = 1.0f enabled, 0.0f disabled
+        SetEmitterTerminusStrength, // x = pull force magnitude
+        SetEmitterTerminusRadius,   // x = arrival radius
         SetGlobalBoundary,     // x = (float)cast of BoundaryBehavior uint8_t; index unused
         SetPolyMode,           // x = (float)cast of PolyMode uint8_t; index unused
         SetTimbralAnchorTimbreX,

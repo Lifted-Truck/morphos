@@ -183,6 +183,14 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     layoutRow(lblEmitDecay_,   sldEmitDecay_);
     layoutRow(lblEmitSustain_, sldEmitSustain_);
     layoutRow(lblEmitRelease_, sldEmitRelease_);
+
+    // Terminus toggle button (full width)
+    btnTerminusEnabled_.setBounds(x, y, w, BTN_ROW_H);
+    y += BTN_ROW_H + 2;
+
+    // Strength + radius shown only when Terminus is enabled (hidden otherwise)
+    layoutRow(lblTerminusStrength_, sldTerminusStrength_);
+    layoutRow(lblTerminusRadius_,   sldTerminusRadius_);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -404,6 +412,42 @@ void MorphosEditor::setupSliders()
                      selection_.index, (float)sldEmitPan_.getValue());
     };
 
+    // ── Terminus ───────────────────────────────────────────────────────────────
+    styleBoundBtn(btnTerminusEnabled_);
+    addAndMakeVisible(btnTerminusEnabled_);
+    btnTerminusEnabled_.onClick = [this]
+    {
+        const bool now = !btnTerminusEnabled_.getToggleState();
+        btnTerminusEnabled_.setToggleState(now, juce::dontSendNotification);
+        sendEdit(ManifoldEdit::Type::SetEmitterTerminusEnabled,
+                 selection_.index, now ? 1.0f : 0.0f);
+        sldTerminusStrength_.setVisible(now);
+        lblTerminusStrength_.setVisible(now);
+        sldTerminusRadius_.setVisible(now);
+        lblTerminusRadius_.setVisible(now);
+    };
+
+    styleLabel(lblTerminusStrength_, "Pull Strength");
+    styleLabel(lblTerminusRadius_,   "Arrival Radius");
+    styleSlider(sldTerminusStrength_, 0.0, 2.0);
+    styleSlider(sldTerminusRadius_,   0.005, 0.25);
+    sldTerminusStrength_.setNumDecimalPlacesToDisplay(2);
+    sldTerminusRadius_.setNumDecimalPlacesToDisplay(3);
+
+    addAndMakeVisible(lblTerminusStrength_); addAndMakeVisible(sldTerminusStrength_);
+    addAndMakeVisible(lblTerminusRadius_);   addAndMakeVisible(sldTerminusRadius_);
+
+    sldTerminusStrength_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterTerminusStrength,
+                     selection_.index, (float)sldTerminusStrength_.getValue());
+    };
+    sldTerminusRadius_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterTerminusRadius,
+                     selection_.index, (float)sldTerminusRadius_.getValue());
+    };
+
     // Launch angle: simple [-π, π] range displayed in degrees.
     // Continuous-rotation mode will be added when automation is implemented.
     {
@@ -550,8 +594,11 @@ void MorphosEditor::updatePanel()
     lblTransposeOct_.setVisible(false);    sldTransposeOct_.setVisible(false);
     lblTransposeSemi_.setVisible(false);   sldTransposeSemi_.setVisible(false);
     lblTransposeCents_.setVisible(false);  sldTransposeCents_.setVisible(false);
-    lblEmitPan_.setVisible(false);         sldEmitPan_.setVisible(false);
-    lblEmitAngle_.setVisible(false);       sldEmitAngle_.setVisible(false);
+    lblEmitPan_.setVisible(false);             sldEmitPan_.setVisible(false);
+    btnTerminusEnabled_.setVisible(false);
+    lblTerminusStrength_.setVisible(false);    sldTerminusStrength_.setVisible(false);
+    lblTerminusRadius_.setVisible(false);      sldTerminusRadius_.setVisible(false);
+    lblEmitAngle_.setVisible(false);           sldEmitAngle_.setVisible(false);
     lblEmitSpeed_.setVisible(false);     sldEmitSpeed_.setVisible(false);
     lblEmitAttack_.setVisible(false);    sldEmitAttack_.setVisible(false);
     lblEmitDecay_.setVisible(false);     sldEmitDecay_.setVisible(false);
@@ -630,8 +677,11 @@ void MorphosEditor::updatePanel()
         sldTransposeOct_.setValue  ((double)e.transposeOct,   juce::dontSendNotification);
         sldTransposeSemi_.setValue ((double)e.transposeSemi,  juce::dontSendNotification);
         sldTransposeCents_.setValue((double)e.transposeCents, juce::dontSendNotification);
-        sldEmitPan_.setValue       ((double)e.pan,            juce::dontSendNotification);
-        sldEmitAngle_.setValue     (e.launchAngle,            juce::dontSendNotification);
+        sldEmitPan_.setValue           ((double)e.pan,                    juce::dontSendNotification);
+        btnTerminusEnabled_.setToggleState(e.terminusEnabled,              juce::dontSendNotification);
+        sldTerminusStrength_.setValue  ((double)e.terminusStrength,        juce::dontSendNotification);
+        sldTerminusRadius_.setValue    ((double)e.terminusArrivalRadius,   juce::dontSendNotification);
+        sldEmitAngle_.setValue         (e.launchAngle,                     juce::dontSendNotification);
         sldEmitSpeed_.setValue  (e.launchSpeed,     juce::dontSendNotification);
         sldEmitAttack_.setValue (e.attackTime,   juce::dontSendNotification);
         sldEmitDecay_.setValue  (e.decayTime,    juce::dontSendNotification);
@@ -643,8 +693,13 @@ void MorphosEditor::updatePanel()
         lblTransposeOct_.setVisible(true);     sldTransposeOct_.setVisible(true);
         lblTransposeSemi_.setVisible(true);    sldTransposeSemi_.setVisible(true);
         lblTransposeCents_.setVisible(true);   sldTransposeCents_.setVisible(true);
-        lblEmitPan_.setVisible(true);          sldEmitPan_.setVisible(true);
-        lblEmitAngle_.setVisible(true);        sldEmitAngle_.setVisible(true);
+        lblEmitPan_.setVisible(true);              sldEmitPan_.setVisible(true);
+        btnTerminusEnabled_.setVisible(true);
+        // Strength + radius only visible when Terminus is enabled
+        const bool termOn = e.terminusEnabled;
+        lblTerminusStrength_.setVisible(termOn); sldTerminusStrength_.setVisible(termOn);
+        lblTerminusRadius_.setVisible(termOn);   sldTerminusRadius_.setVisible(termOn);
+        lblEmitAngle_.setVisible(true);            sldEmitAngle_.setVisible(true);
         lblEmitSpeed_.setVisible(true);     sldEmitSpeed_.setVisible(true);
         lblEmitAttack_.setVisible(true);    sldEmitAttack_.setVisible(true);
         lblEmitDecay_.setVisible(true);     sldEmitDecay_.setVisible(true);

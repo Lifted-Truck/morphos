@@ -32,7 +32,12 @@ struct Emitter
     int             transposeOct  = 0;      // Octave offset [-4, +4]
     int             transposeSemi = 0;      // Semitone offset [-12, +12]
     float           transposeCents= 0.0f;  // Fine offset in cents [-100, +100]
-    float           pan           = 0.0f;  // Stereo position [-1 L, 0 C, +1 R]
+    float           pan            = 0.0f;  // Stereo position [-1 L, 0 C, +1 R]
+    // ── Terminus — key-off attractor ─────────────────────────────────────────
+    // Phase 4: position = Emitter origin (em.x, em.y). Phase 5: Fixed canvas object.
+    bool            terminusEnabled       = false;
+    float           terminusStrength      = 0.30f; // Pull force magnitude (Manifold units/s²)
+    float           terminusArrivalRadius = 0.04f; // Deactivate when within this distance
     bool            active       = false;   // Slots are inactive by default; constructor enables [0]
 };
 

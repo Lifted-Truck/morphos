@@ -342,6 +342,21 @@ void PhysicsEngine::drainEditCommands()
                         emitters_[idx].pan = juce::jlimit(-1.0f, 1.0f, e.x);
                     break;
 
+                case ManifoldEdit::Type::SetEmitterTerminusEnabled:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].terminusEnabled = (e.x >= 0.5f);
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterTerminusStrength:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].terminusStrength = juce::jlimit(0.0f, 2.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterTerminusRadius:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].terminusArrivalRadius = juce::jlimit(0.005f, 0.25f, e.x);
+                    break;
+
                 // ── Global manifold topology ──────────────────────────────────
                 case ManifoldEdit::Type::SetGlobalBoundary:
                     globalBoundary_ = static_cast<BoundaryBehavior>(
@@ -607,6 +622,32 @@ void PhysicsEngine::integrateMorphons(double dt)
         float fx, fy;
         fieldGrid_.sample(m.x, m.y, fx, fy);
 
+        // ── Terminus pull ─────────────────────────────────────────────────────
+        // Active only after note-off. Phase 4: target = Emitter origin.
+        if (m.noteReleased)
+        {
+            const int ei = m.emitterIndex;
+            if (ei >= 0 && ei < MAX_EMITTERS && emitters_[ei].terminusEnabled)
+            {
+                const auto& em   = emitters_[ei];
+                const float dx   = em.x - m.x;
+                const float dy   = em.y - m.y;
+                const float dist2 = dx * dx + dy * dy;
+                const float ar    = em.terminusArrivalRadius;
+
+                if (dist2 < ar * ar)
+                {
+                    m.active = false;   // Absorbed — skip rest of integration
+                    continue;
+                }
+
+                // Constant-magnitude pull toward Emitter origin
+                const float invDist = 1.0f / std::sqrt(dist2 + 1e-12f);
+                fx += em.terminusStrength * dx * invDist;
+                fy += em.terminusStrength * dy * invDist;
+            }
+        }
+
         // F = ma  →  a = F/mass
         const float ax = fx / m.mass;
         const float ay = fy / m.mass;
@@ -693,19 +734,23 @@ void PhysicsEngine::applyBoundary(MorphonState& m) const noexcept
 void PhysicsEngine::updateEnvelopes(double dt)
 {
     const float dtF = static_cast<float>(dt);
-    const auto& emitter = emitters_[0];
-
-    const float attackRate  = (emitter.attackTime  > 0.0f)
-                              ? dtF / emitter.attackTime  : 1.0f;
-    const float decayRate   = (emitter.decayTime   > 0.0f)
-                              ? dtF / emitter.decayTime   : 1.0f;
-    const float releaseRate = (emitter.releaseTime > 0.0f)
-                              ? dtF / emitter.releaseTime : 1.0f;
-    const float sustainLvl  = emitter.sustainLevel;
 
     for (auto& m : morphons_)
     {
         if (!m.active) continue;
+
+        // Each Morphon uses its own Emitter's ADSR rates
+        const int   ei      = (m.emitterIndex >= 0 && m.emitterIndex < MAX_EMITTERS)
+                              ? m.emitterIndex : 0;
+        const auto& emitter = emitters_[ei];
+
+        const float attackRate  = (emitter.attackTime  > 0.0f)
+                                  ? dtF / emitter.attackTime  : 1.0f;
+        const float decayRate   = (emitter.decayTime   > 0.0f)
+                                  ? dtF / emitter.decayTime   : 1.0f;
+        const float releaseRate = (emitter.releaseTime > 0.0f)
+                                  ? dtF / emitter.releaseTime : 1.0f;
+        const float sustainLvl  = emitter.sustainLevel;
 
         // Note-off forces Release regardless of current stage
         if (m.noteReleased && m.envStage != EnvelopeStage::Release)
@@ -799,9 +844,12 @@ void PhysicsEngine::writeSnapshot()
         dst.keyHigh       = src.keyHigh;
         dst.transposeOct  = src.transposeOct;
         dst.transposeSemi = src.transposeSemi;
-        dst.transposeCents= src.transposeCents;
-        dst.pan           = src.pan;
-        dst.active        = src.active;
+        dst.transposeCents         = src.transposeCents;
+        dst.pan                    = src.pan;
+        dst.terminusEnabled        = src.terminusEnabled;
+        dst.terminusStrength       = src.terminusStrength;
+        dst.terminusArrivalRadius  = src.terminusArrivalRadius;
+        dst.active                 = src.active;
     }
 
     snap.globalBoundary = globalBoundary_;

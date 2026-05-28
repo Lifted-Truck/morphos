@@ -129,6 +129,11 @@ private:
     juce::Slider sldTransposeOct_,  sldTransposeSemi_, sldTransposeCents_;
     juce::Label  lblEmitPan_;
     juce::Slider sldEmitPan_;
+
+    // Terminus sub-section (emitter panel)
+    juce::TextButton btnTerminusEnabled_ { "Terminus" };
+    juce::Label      lblTerminusStrength_, lblTerminusRadius_;
+    juce::Slider     sldTerminusStrength_, sldTerminusRadius_;
     juce::Label  lblEmitAngle_,     lblEmitSpeed_;
     juce::Label  lblEmitAttack_,    lblEmitDecay_,   lblEmitSustain_,  lblEmitRelease_;
     juce::Slider sldEmitAngle_,     sldEmitSpeed_;
