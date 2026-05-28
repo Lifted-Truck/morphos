@@ -137,6 +137,12 @@ private:
     juce::TextButton btnBoundTerminate_ { "Terminate" };
     juce::TextButton btnBoundKlein_     { "Klein"     };
 
+    // Global polyphony row — always visible
+    juce::Label      lblPolyMode_;
+    juce::TextButton btnPoly_   { "Poly"   };
+    juce::TextButton btnMono_   { "Mono"   };
+    juce::TextButton btnLegato_ { "Legato" };
+
     // ── Per-Morphon trail buffer ───────────────────────────────────────────────
     struct Trail
     {

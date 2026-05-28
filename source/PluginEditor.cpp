@@ -133,6 +133,17 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
         btnBoundTerminate_.setBounds(x + bw * 2, y, bw,         BTN_ROW_H);
         btnBoundKlein_    .setBounds(x + bw * 3, y, w - bw * 3, BTN_ROW_H);
     }
+    y += BTN_ROW_H + 2;
+
+    // ── Polyphony row — global voice mode; always visible ─────────────────────
+    lblPolyMode_.setBounds(x, y, w, LABEL_H);
+    y += LABEL_H;
+    {
+        const int bw = w / 3;
+        btnPoly_  .setBounds(x + bw * 0, y, bw,         BTN_ROW_H);
+        btnMono_  .setBounds(x + bw * 1, y, bw,         BTN_ROW_H);
+        btnLegato_.setBounds(x + bw * 2, y, w - bw * 2, BTN_ROW_H);
+    }
     y += BTN_ROW_H + 4;
 
     // ── Header: name label + remove button ────────────────────────────────────
@@ -433,6 +444,29 @@ void MorphosEditor::setupSliders()
     btnBoundReflect_  .onClick = [boundaryClick]{ boundaryClick(BoundaryBehavior::Reflect);     };
     btnBoundTerminate_.onClick = [boundaryClick]{ boundaryClick(BoundaryBehavior::Terminate);   };
     btnBoundKlein_    .onClick = [boundaryClick]{ boundaryClick(BoundaryBehavior::KleinBottle); };
+
+    // ── Global polyphony row ────────────────────────────────────────────────────
+    styleLabel(lblPolyMode_, "Voices");
+    addAndMakeVisible(lblPolyMode_);
+
+    styleBoundBtn(btnPoly_);    addAndMakeVisible(btnPoly_);
+    styleBoundBtn(btnMono_);    addAndMakeVisible(btnMono_);
+    styleBoundBtn(btnLegato_);  addAndMakeVisible(btnLegato_);
+
+    btnPoly_.setToggleState(true, juce::dontSendNotification);  // Default: Polyphonic
+
+    auto polyClick = [this](PolyMode p)
+    {
+        sendEdit(ManifoldEdit::Type::SetPolyMode, 0,
+                 static_cast<float>(static_cast<uint8_t>(p)));
+        btnPoly_  .setToggleState(p == PolyMode::Polyphonic, juce::dontSendNotification);
+        btnMono_  .setToggleState(p == PolyMode::Mono,       juce::dontSendNotification);
+        btnLegato_.setToggleState(p == PolyMode::Legato,      juce::dontSendNotification);
+    };
+
+    btnPoly_  .onClick = [polyClick]{ polyClick(PolyMode::Polyphonic); };
+    btnMono_  .onClick = [polyClick]{ polyClick(PolyMode::Mono);       };
+    btnLegato_.onClick = [polyClick]{ polyClick(PolyMode::Legato);     };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -443,14 +477,20 @@ void MorphosEditor::setupSliders()
 
 void MorphosEditor::updatePanel()
 {
-    // ── Always-visible: global topology buttons ───────────────────────────────
+    // ── Always-visible: global topology + polyphony buttons ──────────────────
     {
         const auto& state = processor_.getPhysicsStateForUI();
-        const auto  b     = state.globalBoundary;
+
+        const auto b = state.globalBoundary;
         btnBoundWrap_     .setToggleState(b == BoundaryBehavior::Wrap,        juce::dontSendNotification);
         btnBoundReflect_  .setToggleState(b == BoundaryBehavior::Reflect,     juce::dontSendNotification);
         btnBoundTerminate_.setToggleState(b == BoundaryBehavior::Terminate,   juce::dontSendNotification);
         btnBoundKlein_    .setToggleState(b == BoundaryBehavior::KleinBottle, juce::dontSendNotification);
+
+        const auto p = state.globalPolyMode;
+        btnPoly_  .setToggleState(p == PolyMode::Polyphonic, juce::dontSendNotification);
+        btnMono_  .setToggleState(p == PolyMode::Mono,       juce::dontSendNotification);
+        btnLegato_.setToggleState(p == PolyMode::Legato,      juce::dontSendNotification);
     }
 
     // Hide every per-selection slider group first

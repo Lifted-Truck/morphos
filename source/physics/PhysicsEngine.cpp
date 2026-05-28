@@ -328,6 +328,11 @@ void PhysicsEngine::drainEditCommands()
                         static_cast<uint8_t>(static_cast<int>(e.x)));
                     break;
 
+                case ManifoldEdit::Type::SetPolyMode:
+                    globalPolyMode_ = static_cast<PolyMode>(
+                        static_cast<uint8_t>(static_cast<int>(e.x)));
+                    break;
+
                 // ── Timbral Anchor property edits ─────────────────────────────
                 case ManifoldEdit::Type::SetTimbralAnchorTimbreX:
                     if (idx >= 0 && idx < activeAnchorCount_)
@@ -439,62 +444,89 @@ void PhysicsEngine::drainEditCommands()
 
 void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
 {
-    // Each active Emitter whose key range contains `note` fires independently.
-    // If a Morphon from that Emitter is already sounding this note, it is
-    // retriggered (envelope reset, position reset to emitter origin).
-    // Otherwise a new Morphon is spawned from that Emitter's slot.
+    // ── Legato ────────────────────────────────────────────────────────────────
+    // Find any active Morphon on this channel; retarget it without moving.
+    // Falls through to normal spawn if none exists.
+    if (globalPolyMode_ == PolyMode::Legato)
+    {
+        for (auto& m : morphons_)
+        {
+            if (!m.active || m.midiChannel != channel) continue;
+            // Keep position and velocity — only update pitch and envelope
+            m.fundamentalHz = midiNoteToHz(note);
+            m.midiNote      = note;
+            m.noteReleased  = false;
+            m.envStage      = EnvelopeStage::Attack;
+            m.age           = 0.0f;
+            return;   // One voice in legato; done
+        }
+        // No active Morphon — fall through to spawn the first note normally
+    }
+
+    // ── Mono: release every active Morphon before spawning ───────────────────
+    if (globalPolyMode_ == PolyMode::Mono || globalPolyMode_ == PolyMode::Legato)
+    {
+        for (auto& m : morphons_)
+            if (m.active && m.midiChannel == channel)
+                m.noteReleased = true;
+    }
+
+    // ── Spawn — polyphonic: all in-range Emitters; mono/legato: first only ───
     for (int ei = 0; ei < MAX_EMITTERS; ++ei)
     {
         const auto& em = emitters_[ei];
-        if (!em.active)                          continue;
+        if (!em.active)                            continue;
         if (note < em.keyLow || note > em.keyHigh) continue;
 
-        // Find an existing Morphon owned by this Emitter for this note
-        int existing = -1;
-        for (int i = 0; i < MAX_MORPHONS; ++i)
+        // In polyphonic mode check for a same-note retrigger from this Emitter
+        if (globalPolyMode_ == PolyMode::Polyphonic)
         {
-            const auto& m = morphons_[i];
-            if (m.active && m.midiNote == note
-                && m.midiChannel == channel && m.emitterIndex == ei)
-            { existing = i; break; }
+            int existing = -1;
+            for (int i = 0; i < MAX_MORPHONS; ++i)
+            {
+                const auto& m = morphons_[i];
+                if (m.active && m.midiNote == note
+                    && m.midiChannel == channel && m.emitterIndex == ei)
+                { existing = i; break; }
+            }
+            if (existing >= 0)
+            {
+                auto& m        = morphons_[existing];
+                m.noteReleased = false;
+                m.envStage     = EnvelopeStage::Attack;
+                m.age          = 0.0f;
+                m.x            = em.x;
+                m.y            = em.y;
+                m.vx           = std::cosf(em.launchAngle) * em.launchSpeed;
+                m.vy           = std::sinf(em.launchAngle) * em.launchSpeed;
+                continue;
+            }
         }
 
-        if (existing >= 0)
-        {
-            // Retrigger: reset envelope + kinematics, keep same slot
-            auto& m        = morphons_[existing];
-            m.noteReleased = false;
-            m.envStage     = EnvelopeStage::Attack;
-            m.age          = 0.0f;
-            m.x            = em.x;
-            m.y            = em.y;
-            m.vx           = std::cosf(em.launchAngle) * em.launchSpeed;
-            m.vy           = std::sinf(em.launchAngle) * em.launchSpeed;
-        }
-        else
-        {
-            const int slot = findFreeSlot();
-            if (slot < 0) continue;   // Pool full; skip this Emitter
+        const int slot = findFreeSlot();
+        if (slot < 0) break;   // Pool full
 
-            auto& m         = morphons_[slot];
-            m.active        = true;
-            m.noteReleased  = false;
-            m.envStage      = EnvelopeStage::Attack;
-            m.midiNote      = note;
-            m.midiChannel   = channel;
-            m.emitterIndex  = ei;
-            m.x             = em.x;
-            m.y             = em.y;
-            m.vx            = std::cosf(em.launchAngle) * em.launchSpeed;
-            m.vy            = std::sinf(em.launchAngle) * em.launchSpeed;
-            m.mass          = em.spawnMass;
-            m.drag          = em.spawnDrag;
-            m.amplitude     = 0.0f;
-            m.age           = 0.0f;
-            m.timbreX       = 0.5f;
-            m.timbreY       = 0.0f;
-            m.fundamentalHz = midiNoteToHz(note);
-        }
+        auto& m         = morphons_[slot];
+        m.active        = true;
+        m.noteReleased  = false;
+        m.envStage      = EnvelopeStage::Attack;
+        m.midiNote      = note;
+        m.midiChannel   = channel;
+        m.emitterIndex  = ei;
+        m.x             = em.x;
+        m.y             = em.y;
+        m.vx            = std::cosf(em.launchAngle) * em.launchSpeed;
+        m.vy            = std::sinf(em.launchAngle) * em.launchSpeed;
+        m.mass          = em.spawnMass;
+        m.drag          = em.spawnDrag;
+        m.amplitude     = 0.0f;
+        m.age           = 0.0f;
+        m.timbreX       = 0.5f;
+        m.timbreY       = 0.0f;
+        m.fundamentalHz = midiNoteToHz(note);
+
+        // Mono/Legato: one voice total — stop after first successful spawn
+        if (globalPolyMode_ != PolyMode::Polyphonic) break;
     }
 }
 
@@ -737,6 +769,7 @@ void PhysicsEngine::writeSnapshot()
     }
 
     snap.globalBoundary = globalBoundary_;
+    snap.globalPolyMode = globalPolyMode_;
 
     // Copy timbral anchors for UI rendering
     snap.activeTimbralAnchorCount = activeAnchorCount_;

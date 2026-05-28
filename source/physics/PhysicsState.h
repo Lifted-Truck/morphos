@@ -29,6 +29,15 @@ enum class BoundaryBehavior : uint8_t { Wrap, Reflect, Terminate, KleinBottle };
 // Amplitude envelope state machine stages (ADSR)
 enum class EnvelopeStage : uint8_t { Attack, Decay, Sustain, Release };
 
+// Polyphony mode — governs how note-on events interact with existing Morphons.
+// Polyphonic: each note spawns its own Morphon(s), unlimited voices.
+// Mono:       all existing Morphons are released before a new one spawns;
+//             at most one active Morphon at a time.
+// Legato:     like Mono, but an existing active Morphon keeps its Manifold
+//             position and velocity — only its pitch and envelope are updated.
+//             On first note (no active Morphon) it spawns normally.
+enum class PolyMode : uint8_t { Polyphonic, Mono, Legato };
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MorphonState — per-Morphon data shared between physics, audio, and UI
 // ─────────────────────────────────────────────────────────────────────────────
@@ -131,6 +140,7 @@ struct PhysicsStateSnapshot
     int              activeFieldObjCount      = 0;
     int              activeTimbralAnchorCount = 0;
     BoundaryBehavior globalBoundary           = BoundaryBehavior::Wrap;
+    PolyMode         globalPolyMode           = PolyMode::Polyphonic;
     uint64_t         tickIndex                = 0;
     double           simulationTimeMs         = 0.0;
 };
@@ -167,6 +177,7 @@ struct ManifoldEdit
         SetEmitterKeyLow,      // x = (float)MIDI note number [0, 127]
         SetEmitterKeyHigh,     // x = (float)MIDI note number [0, 127]
         SetGlobalBoundary,     // x = (float)cast of BoundaryBehavior uint8_t; index unused
+        SetPolyMode,           // x = (float)cast of PolyMode uint8_t; index unused
         SetTimbralAnchorTimbreX,
         SetTimbralAnchorTimbreY,
 

@@ -107,6 +107,7 @@ private:
 
     // ── Global manifold topology (physics thread; set via ManifoldEdit queue) ──
     BoundaryBehavior globalBoundary_ = BoundaryBehavior::Wrap;
+    PolyMode         globalPolyMode_ = PolyMode::Polyphonic;
 
     // ── Simulation state (physics thread only) ────────────────────────────────
     std::array<MorphonState, MAX_MORPHONS>      morphons_{};
