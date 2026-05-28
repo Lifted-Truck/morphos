@@ -1044,9 +1044,11 @@ void MorphosEditor::drawMorphons(juce::Graphics& g,
         g.setColour(Colour::MorphonDot.withAlpha(m.amplitude * 0.15f));
         g.fillEllipse(centre.x - glowR, centre.y - glowR, glowR * 2.0f, glowR * 2.0f);
 
-        // Solid core
+        // Solid core — opacity tracks amplitude so envelope stages are visible:
+        // dim during attack/release (floor 0.2), bright at peak/sustain (→ 0.9).
         constexpr float CORE_R = 4.5f;
-        g.setColour(Colour::MorphonDot.withAlpha(0.9f));
+        const float coreAlpha = 0.2f + m.amplitude * 0.7f;
+        g.setColour(Colour::MorphonDot.withAlpha(coreAlpha));
         g.fillEllipse(centre.x - CORE_R, centre.y - CORE_R, CORE_R * 2.0f, CORE_R * 2.0f);
     }
 }
