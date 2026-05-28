@@ -121,7 +121,19 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
         btnAddEmit_.setBounds(x + bw * 3, y, bw, SPAWN_H);
         btnAddAnch_.setBounds(x + bw * 4, y, w - bw * 4, SPAWN_H);
     }
-    y += SPAWN_H + 6;
+    y += SPAWN_H + 4;
+
+    // ── Topology row — global Manifold boundary; always visible ───────────────
+    lblBoundary_.setBounds(x, y, w, LABEL_H);
+    y += LABEL_H;
+    {
+        const int bw = w / 4;
+        btnBoundWrap_     .setBounds(x + bw * 0, y, bw,         BTN_ROW_H);
+        btnBoundReflect_  .setBounds(x + bw * 1, y, bw,         BTN_ROW_H);
+        btnBoundTerminate_.setBounds(x + bw * 2, y, bw,         BTN_ROW_H);
+        btnBoundKlein_    .setBounds(x + bw * 3, y, w - bw * 3, BTN_ROW_H);
+    }
+    y += BTN_ROW_H + 4;
 
     // ── Header: name label + remove button ────────────────────────────────────
     constexpr int REMOVE_W = 20;
@@ -154,17 +166,6 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     layoutRow(lblEmitDecay_,   sldEmitDecay_);
     layoutRow(lblEmitSustain_, sldEmitSustain_);
     layoutRow(lblEmitRelease_, sldEmitRelease_);
-
-    // Boundary row: label + 4 equal-width toggle buttons
-    lblBoundary_.setBounds(x, y, w, LABEL_H);
-    y += LABEL_H;
-    {
-        const int bw = w / 4;
-        btnBoundWrap_     .setBounds(x + bw * 0, y, bw,         BTN_ROW_H);
-        btnBoundReflect_  .setBounds(x + bw * 1, y, bw,         BTN_ROW_H);
-        btnBoundTerminate_.setBounds(x + bw * 2, y, bw,         BTN_ROW_H);
-        btnBoundKlein_    .setBounds(x + bw * 3, y, w - bw * 3, BTN_ROW_H);
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -308,21 +309,17 @@ void MorphosEditor::setupSliders()
     styleLabel (lblEmitSustain_, "Sustain");
     styleLabel (lblEmitRelease_, "Release (s)");
 
-    // Launch angle: wide range [-100π, 100π] so dragging never hits a boundary.
-    // textFromValueFunction displays the normalised angle in degrees [-180, 180].
-    // The onValueChange callback wraps the raw value into [-π, π] before sending.
-    const double bigRange = 100.0 * juce::MathConstants<double>::pi;
-    styleSlider(sldEmitAngle_,   -bigRange, bigRange);
-    sldEmitAngle_.textFromValueFunction = [](double v) -> juce::String
+    // Launch angle: simple [-π, π] range displayed in degrees.
+    // Continuous-rotation mode will be added when automation is implemented.
     {
-        // Normalise to [-π, π] then display as degrees
-        const double pi  = juce::MathConstants<double>::pi;
-        const double two = 2.0 * pi;
-        double a = std::fmod(v + pi, two);
-        if (a < 0.0) a += two;
-        a -= pi;
-        return juce::String(a * 180.0 / pi, 1) + juce::String::fromUTF8("\xc2\xb0");
-    };
+        const double pi = juce::MathConstants<double>::pi;
+        styleSlider(sldEmitAngle_, -pi, pi);
+        sldEmitAngle_.textFromValueFunction = [](double v) -> juce::String
+        {
+            return juce::String(v * 180.0 / juce::MathConstants<double>::pi, 1)
+                 + juce::String::fromUTF8("\xc2\xb0");
+        };
+    }
 
     styleSlider(sldEmitSpeed_,    0.0,   0.8);
     styleSlider(sldEmitAttack_,   0.001, 5.0);
@@ -340,13 +337,8 @@ void MorphosEditor::setupSliders()
     sldEmitAngle_.onValueChange = [this]
     {
         if (ignoreSliderCallbacks_) return;
-        const double pi  = juce::MathConstants<double>::pi;
-        const double two = 2.0 * pi;
-        double a = std::fmod(sldEmitAngle_.getValue() + pi, two);
-        if (a < 0.0) a += two;
-        a -= pi;
         sendEdit(ManifoldEdit::Type::SetEmitterLaunchAngle,
-                 selection_.index, (float)a);
+                 selection_.index, (float)sldEmitAngle_.getValue());
     };
     sldEmitSpeed_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
@@ -374,8 +366,8 @@ void MorphosEditor::setupSliders()
                      selection_.index, (float)sldEmitRelease_.getValue());
     };
 
-    // ── Boundary toggle row (emitter section) ──────────────────────────────────
-    styleLabel(lblBoundary_, "Boundary");
+    // ── Global topology row — always visible ──────────────────────────────────
+    styleLabel(lblBoundary_, "Topology");
     addAndMakeVisible(lblBoundary_);
 
     styleBoundBtn(btnBoundWrap_);      addAndMakeVisible(btnBoundWrap_);
@@ -383,18 +375,13 @@ void MorphosEditor::setupSliders()
     styleBoundBtn(btnBoundTerminate_); addAndMakeVisible(btnBoundTerminate_);
     styleBoundBtn(btnBoundKlein_);     addAndMakeVisible(btnBoundKlein_);
 
-    // All boundary buttons hidden by default (shown only when Emitter selected)
-    lblBoundary_.setVisible(false);
-    btnBoundWrap_.setVisible(false);
-    btnBoundReflect_.setVisible(false);
-    btnBoundTerminate_.setVisible(false);
-    btnBoundKlein_.setVisible(false);
+    // Default: Wrap is active at startup
+    btnBoundWrap_.setToggleState(true, juce::dontSendNotification);
 
     auto boundaryClick = [this](BoundaryBehavior b)
     {
-        if (!selection_.valid() || selection_.kind != ObjectKind::Emitter) return;
-        sendEdit(ManifoldEdit::Type::SetEmitterBoundary,
-                 selection_.index, static_cast<float>(static_cast<uint8_t>(b)));
+        sendEdit(ManifoldEdit::Type::SetGlobalBoundary, 0,
+                 static_cast<float>(static_cast<uint8_t>(b)));
         // Update toggle state immediately without waiting for next snapshot poll
         btnBoundWrap_     .setToggleState(b == BoundaryBehavior::Wrap,        juce::dontSendNotification);
         btnBoundReflect_  .setToggleState(b == BoundaryBehavior::Reflect,     juce::dontSendNotification);
@@ -416,7 +403,17 @@ void MorphosEditor::setupSliders()
 
 void MorphosEditor::updatePanel()
 {
-    // Hide every slider group first
+    // ── Always-visible: global topology buttons ───────────────────────────────
+    {
+        const auto& state = processor_.getPhysicsStateForUI();
+        const auto  b     = state.globalBoundary;
+        btnBoundWrap_     .setToggleState(b == BoundaryBehavior::Wrap,        juce::dontSendNotification);
+        btnBoundReflect_  .setToggleState(b == BoundaryBehavior::Reflect,     juce::dontSendNotification);
+        btnBoundTerminate_.setToggleState(b == BoundaryBehavior::Terminate,   juce::dontSendNotification);
+        btnBoundKlein_    .setToggleState(b == BoundaryBehavior::KleinBottle, juce::dontSendNotification);
+    }
+
+    // Hide every per-selection slider group first
     lblBrightness_.setVisible(false);    sldBrightness_.setVisible(false);
     lblInharmonicity_.setVisible(false); sldInharmonicity_.setVisible(false);
 
@@ -430,11 +427,6 @@ void MorphosEditor::updatePanel()
     lblEmitDecay_.setVisible(false);     sldEmitDecay_.setVisible(false);
     lblEmitSustain_.setVisible(false);   sldEmitSustain_.setVisible(false);
     lblEmitRelease_.setVisible(false);   sldEmitRelease_.setVisible(false);
-    lblBoundary_.setVisible(false);
-    btnBoundWrap_.setVisible(false);
-    btnBoundReflect_.setVisible(false);
-    btnBoundTerminate_.setVisible(false);
-    btnBoundKlein_.setVisible(false);
 
     const bool hasSelection = selection_.valid();
     btnRemove_.setVisible(hasSelection);
@@ -503,8 +495,6 @@ void MorphosEditor::updatePanel()
 
         lblPanelHeader_.setText("Emitter " + juce::String(i), juce::dontSendNotification);
 
-        // Angle slider: set to the raw angle value (in [-π, π]).
-        // The textFromValueFunction will display it correctly in degrees.
         sldEmitAngle_.setValue  (e.launchAngle,  juce::dontSendNotification);
         sldEmitSpeed_.setValue  (e.launchSpeed,  juce::dontSendNotification);
         sldEmitAttack_.setValue (e.attackTime,   juce::dontSendNotification);
@@ -518,19 +508,6 @@ void MorphosEditor::updatePanel()
         lblEmitDecay_.setVisible(true);     sldEmitDecay_.setVisible(true);
         lblEmitSustain_.setVisible(true);   sldEmitSustain_.setVisible(true);
         lblEmitRelease_.setVisible(true);   sldEmitRelease_.setVisible(true);
-
-        // Boundary radio buttons
-        const auto b = e.boundary;
-        btnBoundWrap_     .setToggleState(b == BoundaryBehavior::Wrap,        juce::dontSendNotification);
-        btnBoundReflect_  .setToggleState(b == BoundaryBehavior::Reflect,     juce::dontSendNotification);
-        btnBoundTerminate_.setToggleState(b == BoundaryBehavior::Terminate,   juce::dontSendNotification);
-        btnBoundKlein_    .setToggleState(b == BoundaryBehavior::KleinBottle, juce::dontSendNotification);
-
-        lblBoundary_.setVisible(true);
-        btnBoundWrap_.setVisible(true);
-        btnBoundReflect_.setVisible(true);
-        btnBoundTerminate_.setVisible(true);
-        btnBoundKlein_.setVisible(true);
     }
 
     ignoreSliderCallbacks_ = false;

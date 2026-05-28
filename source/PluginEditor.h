@@ -123,15 +123,12 @@ private:
     juce::Slider sldFOStrength_,    sldFORadius_,    sldFOChirality_;
 
     // Emitter section (visible when an Emitter is selected)
-    // sldEmitAngle_ uses a wide range [-100π, 100π] + degree display so the
-    // slider never hits its boundary during normal use — giving continuous
-    // 360° rotation without a jump at ±π.
     juce::Label  lblEmitAngle_,     lblEmitSpeed_;
     juce::Label  lblEmitAttack_,    lblEmitDecay_,   lblEmitSustain_,  lblEmitRelease_;
     juce::Slider sldEmitAngle_,     sldEmitSpeed_;
     juce::Slider sldEmitAttack_,    sldEmitDecay_,   sldEmitSustain_,  sldEmitRelease_;
 
-    // Boundary behaviour radio row (visible in emitter section)
+    // Global topology row — always visible; sets Manifold boundary for all Morphons
     juce::Label      lblBoundary_;
     juce::TextButton btnBoundWrap_      { "Wrap"      };
     juce::TextButton btnBoundReflect_   { "Reflect"   };

@@ -27,7 +27,6 @@ struct Emitter
     float           decayTime    = 0.15f;   // Envelope decay, seconds (attack peak → sustain)
     float           sustainLevel = 0.70f;   // Sustain amplitude [0..1]
     float           releaseTime  = 0.30f;   // Envelope release, seconds (after note-off)
-    BoundaryBehavior boundary    = BoundaryBehavior::Wrap;
     bool            active       = false;   // Slots are inactive by default; constructor enables [0]
 };
 
@@ -104,6 +103,9 @@ private:
 
     // ── Parameters (atomic) ───────────────────────────────────────────────────
     std::atomic<float> globalTimeScale_{ 1.0f };
+
+    // ── Global manifold topology (physics thread; set via ManifoldEdit queue) ──
+    BoundaryBehavior globalBoundary_ = BoundaryBehavior::Wrap;
 
     // ── Simulation state (physics thread only) ────────────────────────────────
     std::array<MorphonState, MAX_MORPHONS>      morphons_{};

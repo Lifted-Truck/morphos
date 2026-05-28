@@ -48,7 +48,6 @@ struct MorphonState
     float            age          = 0.0f;   // Seconds alive
     bool             active       = false;
     bool             noteReleased = false;  // true after note-off; triggers Release stage
-    BoundaryBehavior boundary     = BoundaryBehavior::Wrap;
 
     // ── Envelope state ────────────────────────────────────────────────────────
     EnvelopeStage envStage = EnvelopeStage::Attack;
@@ -85,7 +84,6 @@ struct EmitterSnapshot
     float          decayTime    = 0.15f;
     float          sustainLevel = 0.70f;
     float          releaseTime  = 0.30f;
-    BoundaryBehavior boundary   = BoundaryBehavior::Wrap;
     bool           active       = false;
 };
 
@@ -126,11 +124,12 @@ struct PhysicsStateSnapshot
     std::array<EmitterSnapshot,        MAX_EMITTERS>         emitters{};
     std::array<TimbralAnchorSnapshot,  MAX_TIMBRAL_ANCHORS>  timbralAnchors{};
 
-    int      activeMorphonCount       = 0;
-    int      activeFieldObjCount      = 0;
-    int      activeTimbralAnchorCount = 0;
-    uint64_t tickIndex                = 0;
-    double   simulationTimeMs         = 0.0;
+    int              activeMorphonCount       = 0;
+    int              activeFieldObjCount      = 0;
+    int              activeTimbralAnchorCount = 0;
+    BoundaryBehavior globalBoundary           = BoundaryBehavior::Wrap;
+    uint64_t         tickIndex                = 0;
+    double           simulationTimeMs         = 0.0;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -162,7 +161,7 @@ struct ManifoldEdit
         SetEmitterDecay,
         SetEmitterSustain,
         SetEmitterRelease,
-        SetEmitterBoundary,    // x = (float)cast of BoundaryBehavior uint8_t
+        SetGlobalBoundary,     // x = (float)cast of BoundaryBehavior uint8_t; index unused
         SetTimbralAnchorTimbreX,
         SetTimbralAnchorTimbreY,
 

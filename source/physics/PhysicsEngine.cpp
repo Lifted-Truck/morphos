@@ -71,7 +71,6 @@ PhysicsEngine::PhysicsEngine()
     emitters_[0].decayTime    = 0.15f;
     emitters_[0].sustainLevel = 0.70f;
     emitters_[0].releaseTime  = 0.35f;
-    emitters_[0].boundary     = BoundaryBehavior::Wrap;
     emitters_[0].active       = true;
 
     // ── Timbral Anchors for Phase 2/3 demonstration ───────────────────────────
@@ -313,11 +312,10 @@ void PhysicsEngine::drainEditCommands()
                         emitters_[idx].releaseTime = e.x;
                     break;
 
-                // ── Emitter boundary ──────────────────────────────────────────
-                case ManifoldEdit::Type::SetEmitterBoundary:
-                    if (idx >= 0 && idx < MAX_EMITTERS)
-                        emitters_[idx].boundary = static_cast<BoundaryBehavior>(
-                            static_cast<uint8_t>(static_cast<int>(e.x)));
+                // ── Global manifold topology ──────────────────────────────────
+                case ManifoldEdit::Type::SetGlobalBoundary:
+                    globalBoundary_ = static_cast<BoundaryBehavior>(
+                        static_cast<uint8_t>(static_cast<int>(e.x)));
                     break;
 
                 // ── Timbral Anchor property edits ─────────────────────────────
@@ -379,7 +377,6 @@ void PhysicsEngine::drainEditCommands()
                     em.decayTime    = 0.15f;
                     em.sustainLevel = 0.70f;
                     em.releaseTime  = 0.35f;
-                    em.boundary     = BoundaryBehavior::Wrap;
                     em.active       = true;
                     break;
                 }
@@ -463,7 +460,6 @@ void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
     m.vy            = std::sinf(emitters_[0].launchAngle) * emitters_[0].launchSpeed;
     m.mass          = emitters_[0].spawnMass;
     m.drag          = emitters_[0].spawnDrag;
-    m.boundary      = emitters_[0].boundary;
     m.amplitude     = 0.0f;
     m.age           = 0.0f;
     m.timbreX       = 0.5f;
@@ -558,7 +554,7 @@ void PhysicsEngine::applyBoundary(MorphonState& m) const noexcept
         return v;
     };
 
-    switch (m.boundary)
+    switch (globalBoundary_)
     {
         case BoundaryBehavior::Wrap:
             m.x = wrap(m.x);
@@ -712,9 +708,10 @@ void PhysicsEngine::writeSnapshot()
         dst.decayTime    = src.decayTime;
         dst.sustainLevel = src.sustainLevel;
         dst.releaseTime  = src.releaseTime;
-        dst.boundary     = src.boundary;
         dst.active       = src.active;
     }
+
+    snap.globalBoundary = globalBoundary_;
 
     // Copy timbral anchors for UI rendering
     snap.activeTimbralAnchorCount = activeAnchorCount_;
