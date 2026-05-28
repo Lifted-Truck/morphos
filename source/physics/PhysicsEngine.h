@@ -27,6 +27,8 @@ struct Emitter
     float           decayTime    = 0.15f;   // Envelope decay, seconds (attack peak → sustain)
     float           sustainLevel = 0.70f;   // Sustain amplitude [0..1]
     float           releaseTime  = 0.30f;   // Envelope release, seconds (after note-off)
+    int             keyLow       = 0;       // Lowest MIDI note this Emitter responds to [0, 127]
+    int             keyHigh      = 127;     // Highest MIDI note this Emitter responds to [0, 127]
     bool            active       = false;   // Slots are inactive by default; constructor enables [0]
 };
 
@@ -86,7 +88,6 @@ private:
     void handleNoteOn(int channel, int note, int velocity);
     void handleNoteOff(int channel, int note);
     int  findFreeSlot() const noexcept;   // Returns -1 if none
-    int  findActiveNote(int channel, int note) const noexcept;
 
     // ── Communication ─────────────────────────────────────────────────────────
     PhysicsAudioBridge bridge_;

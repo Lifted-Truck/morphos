@@ -312,6 +312,16 @@ void PhysicsEngine::drainEditCommands()
                         emitters_[idx].releaseTime = e.x;
                     break;
 
+                case ManifoldEdit::Type::SetEmitterKeyLow:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].keyLow = juce::jlimit(0, 127, (int)e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterKeyHigh:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].keyHigh = juce::jlimit(0, 127, (int)e.x);
+                    break;
+
                 // ── Global manifold topology ──────────────────────────────────
                 case ManifoldEdit::Type::SetGlobalBoundary:
                     globalBoundary_ = static_cast<BoundaryBehavior>(
@@ -429,65 +439,78 @@ void PhysicsEngine::drainEditCommands()
 
 void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
 {
-    // If the same note is already sounding, retrigger it
-    const int existing = findActiveNote(channel, note);
-    if (existing >= 0)
+    // Each active Emitter whose key range contains `note` fires independently.
+    // If a Morphon from that Emitter is already sounding this note, it is
+    // retriggered (envelope reset, position reset to emitter origin).
+    // Otherwise a new Morphon is spawned from that Emitter's slot.
+    for (int ei = 0; ei < MAX_EMITTERS; ++ei)
     {
-        morphons_[existing].noteReleased = false;
-        morphons_[existing].envStage     = EnvelopeStage::Attack;
-        morphons_[existing].age          = 0.0f;
-        morphons_[existing].x            = emitters_[0].x;
-        morphons_[existing].y           = emitters_[0].y;
-        morphons_[existing].vx          = std::cosf(emitters_[0].launchAngle)
-                                          * emitters_[0].launchSpeed;
-        morphons_[existing].vy          = std::sinf(emitters_[0].launchAngle)
-                                          * emitters_[0].launchSpeed;
-        return;
+        const auto& em = emitters_[ei];
+        if (!em.active)                          continue;
+        if (note < em.keyLow || note > em.keyHigh) continue;
+
+        // Find an existing Morphon owned by this Emitter for this note
+        int existing = -1;
+        for (int i = 0; i < MAX_MORPHONS; ++i)
+        {
+            const auto& m = morphons_[i];
+            if (m.active && m.midiNote == note
+                && m.midiChannel == channel && m.emitterIndex == ei)
+            { existing = i; break; }
+        }
+
+        if (existing >= 0)
+        {
+            // Retrigger: reset envelope + kinematics, keep same slot
+            auto& m        = morphons_[existing];
+            m.noteReleased = false;
+            m.envStage     = EnvelopeStage::Attack;
+            m.age          = 0.0f;
+            m.x            = em.x;
+            m.y            = em.y;
+            m.vx           = std::cosf(em.launchAngle) * em.launchSpeed;
+            m.vy           = std::sinf(em.launchAngle) * em.launchSpeed;
+        }
+        else
+        {
+            const int slot = findFreeSlot();
+            if (slot < 0) continue;   // Pool full; skip this Emitter
+
+            auto& m         = morphons_[slot];
+            m.active        = true;
+            m.noteReleased  = false;
+            m.envStage      = EnvelopeStage::Attack;
+            m.midiNote      = note;
+            m.midiChannel   = channel;
+            m.emitterIndex  = ei;
+            m.x             = em.x;
+            m.y             = em.y;
+            m.vx            = std::cosf(em.launchAngle) * em.launchSpeed;
+            m.vy            = std::sinf(em.launchAngle) * em.launchSpeed;
+            m.mass          = em.spawnMass;
+            m.drag          = em.spawnDrag;
+            m.amplitude     = 0.0f;
+            m.age           = 0.0f;
+            m.timbreX       = 0.5f;
+            m.timbreY       = 0.0f;
+            m.fundamentalHz = midiNoteToHz(note);
+        }
     }
-
-    const int slot = findFreeSlot();
-    if (slot < 0) return;   // Polyphony cap reached — Phase 4 adds voice stealing
-
-    auto& m         = morphons_[slot];
-    m.active        = true;
-    m.noteReleased  = false;
-    m.envStage      = EnvelopeStage::Attack;
-    m.midiNote      = note;
-    m.midiChannel   = channel;
-    m.x             = emitters_[0].x;
-    m.y             = emitters_[0].y;
-    m.vx            = std::cosf(emitters_[0].launchAngle) * emitters_[0].launchSpeed;
-    m.vy            = std::sinf(emitters_[0].launchAngle) * emitters_[0].launchSpeed;
-    m.mass          = emitters_[0].spawnMass;
-    m.drag          = emitters_[0].spawnDrag;
-    m.amplitude     = 0.0f;
-    m.age           = 0.0f;
-    m.timbreX       = 0.5f;
-    m.timbreY       = 0.0f;
-    m.fundamentalHz = midiNoteToHz(note);
 }
 
 void PhysicsEngine::handleNoteOff(int channel, int note)
 {
-    const int slot = findActiveNote(channel, note);
-    if (slot >= 0)
-        morphons_[slot].noteReleased = true;
+    // Release ALL Morphons matching this note+channel — there may be one per
+    // Emitter if multiple Emitters had overlapping key ranges covering `note`.
+    for (auto& m : morphons_)
+        if (m.active && m.midiNote == note && m.midiChannel == channel)
+            m.noteReleased = true;
 }
 
 int PhysicsEngine::findFreeSlot() const noexcept
 {
     for (int i = 0; i < MAX_MORPHONS; ++i)
         if (!morphons_[i].active)
-            return i;
-    return -1;
-}
-
-int PhysicsEngine::findActiveNote(int channel, int note) const noexcept
-{
-    for (int i = 0; i < MAX_MORPHONS; ++i)
-        if (morphons_[i].active
-            && morphons_[i].midiNote    == note
-            && morphons_[i].midiChannel == channel)
             return i;
     return -1;
 }
@@ -708,6 +731,8 @@ void PhysicsEngine::writeSnapshot()
         dst.decayTime    = src.decayTime;
         dst.sustainLevel = src.sustainLevel;
         dst.releaseTime  = src.releaseTime;
+        dst.keyLow       = src.keyLow;
+        dst.keyHigh      = src.keyHigh;
         dst.active       = src.active;
     }
 

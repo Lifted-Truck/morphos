@@ -53,8 +53,9 @@ struct MorphonState
     EnvelopeStage envStage = EnvelopeStage::Attack;
 
     // ── MIDI identity ─────────────────────────────────────────────────────────
-    int midiNote    = 60;
-    int midiChannel = 1;
+    int midiNote      = 60;
+    int midiChannel   = 1;
+    int emitterIndex  = -1;   // Which Emitter slot spawned this Morphon
 
     // ── Amplitude envelope ────────────────────────────────────────────────────
     // Computed by physics tick via ADSR state machine; read by audio engine each buffer.
@@ -84,6 +85,8 @@ struct EmitterSnapshot
     float          decayTime    = 0.15f;
     float          sustainLevel = 0.70f;
     float          releaseTime  = 0.30f;
+    int            keyLow       = 0;     // Lowest MIDI note this Emitter responds to
+    int            keyHigh      = 127;   // Highest MIDI note this Emitter responds to
     bool           active       = false;
 };
 
@@ -161,6 +164,8 @@ struct ManifoldEdit
         SetEmitterDecay,
         SetEmitterSustain,
         SetEmitterRelease,
+        SetEmitterKeyLow,      // x = (float)MIDI note number [0, 127]
+        SetEmitterKeyHigh,     // x = (float)MIDI note number [0, 127]
         SetGlobalBoundary,     // x = (float)cast of BoundaryBehavior uint8_t; index unused
         SetTimbralAnchorTimbreX,
         SetTimbralAnchorTimbreY,

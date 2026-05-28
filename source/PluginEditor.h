@@ -123,6 +123,8 @@ private:
     juce::Slider sldFOStrength_,    sldFORadius_,    sldFOChirality_;
 
     // Emitter section (visible when an Emitter is selected)
+    juce::Label  lblKeyLow_,        lblKeyHigh_;
+    juce::Slider sldKeyLow_,        sldKeyHigh_;
     juce::Label  lblEmitAngle_,     lblEmitSpeed_;
     juce::Label  lblEmitAttack_,    lblEmitDecay_,   lblEmitSustain_,  lblEmitRelease_;
     juce::Slider sldEmitAngle_,     sldEmitSpeed_;

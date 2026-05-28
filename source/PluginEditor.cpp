@@ -160,6 +160,8 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     y += SECTION_GAP;
 
     // ── Emitter section ───────────────────────────────────────────────────────
+    layoutRow(lblKeyLow_,      sldKeyLow_);
+    layoutRow(lblKeyHigh_,     sldKeyHigh_);
     layoutRow(lblEmitAngle_,   sldEmitAngle_);
     layoutRow(lblEmitSpeed_,   sldEmitSpeed_);
     layoutRow(lblEmitAttack_,  sldEmitAttack_);
@@ -302,12 +304,50 @@ void MorphosEditor::setupSliders()
     };
 
     // ── Emitter sliders ────────────────────────────────────────────────────────
+    styleLabel (lblKeyLow_,      "Key Low");
+    styleLabel (lblKeyHigh_,     "Key High");
     styleLabel (lblEmitAngle_,   "Launch Angle");
     styleLabel (lblEmitSpeed_,   "Launch Speed");
     styleLabel (lblEmitAttack_,  "Attack (s)");
     styleLabel (lblEmitDecay_,   "Decay (s)");
     styleLabel (lblEmitSustain_, "Sustain");
     styleLabel (lblEmitRelease_, "Release (s)");
+
+    // Key range sliders: integer MIDI notes 0–127, displayed as note names (C4 etc.)
+    auto midiNoteName = [](double v) -> juce::String
+    {
+        const int   n     = juce::jlimit(0, 127, (int)v);
+        const char* names[] = { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
+        return juce::String(names[n % 12]) + juce::String(n / 12 - 1);
+    };
+
+    styleSlider(sldKeyLow_,  0.0, 127.0);
+    sldKeyLow_.setNumDecimalPlacesToDisplay(0);
+    sldKeyLow_.textFromValueFunction  = midiNoteName;
+    styleSlider(sldKeyHigh_, 0.0, 127.0);
+    sldKeyHigh_.setNumDecimalPlacesToDisplay(0);
+    sldKeyHigh_.textFromValueFunction = midiNoteName;
+
+    addAndMakeVisible(lblKeyLow_);  addAndMakeVisible(sldKeyLow_);
+    addAndMakeVisible(lblKeyHigh_); addAndMakeVisible(sldKeyHigh_);
+
+    sldKeyLow_.onValueChange = [this]
+    {
+        if (ignoreSliderCallbacks_) return;
+        // Enforce low ≤ high
+        if (sldKeyLow_.getValue() > sldKeyHigh_.getValue())
+            sldKeyHigh_.setValue(sldKeyLow_.getValue(), juce::dontSendNotification);
+        sendEdit(ManifoldEdit::Type::SetEmitterKeyLow,
+                 selection_.index, (float)sldKeyLow_.getValue());
+    };
+    sldKeyHigh_.onValueChange = [this]
+    {
+        if (ignoreSliderCallbacks_) return;
+        if (sldKeyHigh_.getValue() < sldKeyLow_.getValue())
+            sldKeyLow_.setValue(sldKeyHigh_.getValue(), juce::dontSendNotification);
+        sendEdit(ManifoldEdit::Type::SetEmitterKeyHigh,
+                 selection_.index, (float)sldKeyHigh_.getValue());
+    };
 
     // Launch angle: simple [-π, π] range displayed in degrees.
     // Continuous-rotation mode will be added when automation is implemented.
@@ -421,6 +461,8 @@ void MorphosEditor::updatePanel()
     lblFORadius_.setVisible(false);      sldFORadius_.setVisible(false);
     lblFOChirality_.setVisible(false);   sldFOChirality_.setVisible(false);
 
+    lblKeyLow_.setVisible(false);        sldKeyLow_.setVisible(false);
+    lblKeyHigh_.setVisible(false);       sldKeyHigh_.setVisible(false);
     lblEmitAngle_.setVisible(false);     sldEmitAngle_.setVisible(false);
     lblEmitSpeed_.setVisible(false);     sldEmitSpeed_.setVisible(false);
     lblEmitAttack_.setVisible(false);    sldEmitAttack_.setVisible(false);
@@ -495,13 +537,17 @@ void MorphosEditor::updatePanel()
 
         lblPanelHeader_.setText("Emitter " + juce::String(i), juce::dontSendNotification);
 
-        sldEmitAngle_.setValue  (e.launchAngle,  juce::dontSendNotification);
-        sldEmitSpeed_.setValue  (e.launchSpeed,  juce::dontSendNotification);
+        sldKeyLow_.setValue     ((double)e.keyLow,  juce::dontSendNotification);
+        sldKeyHigh_.setValue    ((double)e.keyHigh, juce::dontSendNotification);
+        sldEmitAngle_.setValue  (e.launchAngle,     juce::dontSendNotification);
+        sldEmitSpeed_.setValue  (e.launchSpeed,     juce::dontSendNotification);
         sldEmitAttack_.setValue (e.attackTime,   juce::dontSendNotification);
         sldEmitDecay_.setValue  (e.decayTime,    juce::dontSendNotification);
         sldEmitSustain_.setValue(e.sustainLevel, juce::dontSendNotification);
         sldEmitRelease_.setValue(e.releaseTime,  juce::dontSendNotification);
 
+        lblKeyLow_.setVisible(true);        sldKeyLow_.setVisible(true);
+        lblKeyHigh_.setVisible(true);       sldKeyHigh_.setVisible(true);
         lblEmitAngle_.setVisible(true);     sldEmitAngle_.setVisible(true);
         lblEmitSpeed_.setVisible(true);     sldEmitSpeed_.setVisible(true);
         lblEmitAttack_.setVisible(true);    sldEmitAttack_.setVisible(true);
