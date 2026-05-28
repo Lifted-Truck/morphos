@@ -188,18 +188,28 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
         y += ROW_H;
     };
 
+    // ── Per-selection sections share the same top y ──────────────────────────
+    // Only one section is visible at a time (Anchor / FieldObject / Emitter /
+    // Zone / Gate), so stacking them sequentially wastes ~500px of layout space
+    // beneath invisible sliders. Instead they all start at sectionTopY and
+    // overlap in canvas space; the visible-state toggles in updatePanel ensure
+    // exactly one section paints. Panel total height becomes header + tallest
+    // section instead of the sum of every section.
+    const int sectionTopY = y;
+
     // ── Anchor section ────────────────────────────────────────────────────────
+    y = sectionTopY;
     layoutRow(lblBrightness_,    sldBrightness_);
     layoutRow(lblInharmonicity_, sldInharmonicity_);
-    y += SECTION_GAP;
 
     // ── Field object section ──────────────────────────────────────────────────
+    y = sectionTopY;
     layoutRow(lblFOStrength_,  sldFOStrength_);
     layoutRow(lblFORadius_,    sldFORadius_);
     layoutRow(lblFOChirality_, sldFOChirality_);
-    y += SECTION_GAP;
 
     // ── Emitter section ───────────────────────────────────────────────────────
+    y = sectionTopY;
     // Per-Emitter voice mode row (replaces the old global Voices row)
     lblEmitPolyMode_.setBounds(x, y, w, LABEL_H);
     y += LABEL_H;
@@ -235,6 +245,7 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     layoutRow(lblTerminusRadius_,   sldTerminusRadius_);
 
     // ── Effect zone section ───────────────────────────────────────────────────
+    y = sectionTopY;
     layoutRow(lblZoneRadius_, sldZoneRadius_);
     layoutRow(lblZoneDepth_,  sldZoneDepth_);
     y += SECTION_GAP;
@@ -265,6 +276,7 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     y += BTN_ROW_H + 2;
 
     // ── Flux gate section ─────────────────────────────────────────────────────
+    y = sectionTopY;
     layoutRow(lblGateLength_, sldGateLength_);
     layoutRow(lblGateAngle_,  sldGateAngle_);
 }
@@ -1285,6 +1297,14 @@ void MorphosEditor::mouseDown(const juce::MouseEvent& event)
                 break;
             default: break;
         }
+
+        // Record cursor→centre offset so mouseDrag preserves the relative grip
+        // point. Without this, the object's centre snapped to the cursor on the
+        // first drag event — fine for small dots, but disorienting for gates
+        // grabbed near an endpoint or zones grabbed off-centre.
+        const auto clickMfd = canvasToManifold(event.getPosition().toFloat(), canvas);
+        drag_.offsetX = drag_.pendingX - clickMfd.x;
+        drag_.offsetY = drag_.pendingY - clickMfd.y;
     }
     else
     {
@@ -1304,8 +1324,10 @@ void MorphosEditor::mouseDrag(const juce::MouseEvent& event)
     const auto canvas     = getCanvasBounds();
     const auto manifoldPt = canvasToManifold(event.getPosition().toFloat(), canvas);
 
-    drag_.pendingX = juce::jlimit(0.0f, 1.0f, manifoldPt.x);
-    drag_.pendingY = juce::jlimit(0.0f, 1.0f, manifoldPt.y);
+    // Apply the cursor→centre offset captured at mouseDown so the object
+    // follows the cursor while preserving where the user grabbed it.
+    drag_.pendingX = juce::jlimit(0.0f, 1.0f, manifoldPt.x + drag_.offsetX);
+    drag_.pendingY = juce::jlimit(0.0f, 1.0f, manifoldPt.y + drag_.offsetY);
 
     ManifoldEdit::Type moveType;
     switch (selection_.kind)

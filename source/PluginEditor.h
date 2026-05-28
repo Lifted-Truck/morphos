@@ -98,6 +98,12 @@ private:
         bool  active   = false;
         float pendingX = 0.5f;  // object's dragged position in manifold coords [0,1]
         float pendingY = 0.5f;
+        // Manifold-space offset from cursor to object centre at mouseDown.
+        // Preserved through the drag so the object tracks the cursor relative
+        // to where it was first grabbed, instead of snapping its centre under
+        // the cursor on the first drag event.
+        float offsetX  = 0.0f;
+        float offsetY  = 0.0f;
     };
 
     Selection selection_;
