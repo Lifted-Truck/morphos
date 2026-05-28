@@ -1341,33 +1341,36 @@ MorphosEditor::Selection MorphosEditor::hitTest(juce::Point<float> canvasPt,
             return { ObjectKind::EffectZone, i };
     }
 
-    // Priority 5: Path objects — hit on the curve itself (closest-point check).
-    // Highest among non-glyph objects so dragging a Path doesn't accidentally
-    // grab a Zone underneath.
+    // Priority 5 & 6: Path / Trajectory rings — hit-test in manifold space so
+    // the grabbable curve coincides with the rendered ellipse on non-square
+    // canvases. HIT_PX is converted to a manifold-space tolerance using the
+    // *less compressed* axis; that gives the user at least HIT_PX pixels of
+    // hit zone in either dimension regardless of canvas aspect.
+    const auto  cursorMfd      = canvasToManifold(canvasPt, canvas);
+    const float minPxPerMfd    = (float)juce::jmin(canvas.getWidth(), canvas.getHeight());
+    const float hitMfd         = (minPxPerMfd > 0.0f) ? (HIT_PX / minPxPerMfd) : 0.0f;
+
     for (int i = 0; i < MAX_PATH_OBJECTS; ++i)
     {
         const auto& p = state.pathObjects[i];
         if (!p.active) continue;
 
-        // Circle (v1): pixel distance from cursor to the nearest point on the
-        // circumference is |distance(cursor, centre) − radiusPx|.
-        const auto  centrePx = manifoldToCanvas(p.x, p.y, canvas);
-        const float radiusPx = p.radius * canvas.getWidth();
-        const float dToCentre = canvasPt.getDistanceFrom(centrePx);
-        if (std::abs(dToCentre - radiusPx) <= HIT_PX)
+        const float dx   = cursorMfd.x - p.x;
+        const float dy   = cursorMfd.y - p.y;
+        const float dMfd = std::sqrt(dx * dx + dy * dy);
+        if (std::abs(dMfd - p.radius) <= hitMfd)
             return { ObjectKind::PathObject, i };
     }
 
-    // Priority 6: Trajectory paths — same closest-point geometry as rail paths.
     for (int i = 0; i < MAX_TRAJECTORY_PATHS; ++i)
     {
         const auto& tp = state.trajectoryPaths[i];
         if (!tp.active) continue;
 
-        const auto  centrePx = manifoldToCanvas(tp.x, tp.y, canvas);
-        const float radiusPx = tp.radius * canvas.getWidth();
-        const float dToCentre = canvasPt.getDistanceFrom(centrePx);
-        if (std::abs(dToCentre - radiusPx) <= HIT_PX)
+        const float dx   = cursorMfd.x - tp.x;
+        const float dy   = cursorMfd.y - tp.y;
+        const float dMfd = std::sqrt(dx * dx + dy * dy);
+        if (std::abs(dMfd - tp.radius) <= hitMfd)
             return { ObjectKind::TrajectoryPath, i };
     }
 
@@ -1633,18 +1636,20 @@ void MorphosEditor::drawEffectZones(juce::Graphics& g,
             py = drag_.pendingY;
         }
 
-        const auto          centre = manifoldToCanvas(px, py, canvas);
-        const float         sr     = z.radius * canvas.getWidth();
-        const juce::Colour  c      = zoneColour(z.target);
+        const auto         centre = manifoldToCanvas(px, py, canvas);
+        // Manifold-space circle → canvas ellipse; see drawFieldObjects note.
+        const float        rxPx   = z.radius * canvas.getWidth();
+        const float        ryPx   = z.radius * canvas.getHeight();
+        const juce::Colour c      = zoneColour(z.target);
 
         // Influence fill — very transparent to stay out of the way
         g.setColour(c.withAlpha(0.07f));
-        g.fillEllipse(centre.x - sr, centre.y - sr, sr * 2.0f, sr * 2.0f);
+        g.fillEllipse(centre.x - rxPx, centre.y - ryPx, rxPx * 2.0f, ryPx * 2.0f);
 
         // Dashed border
         {
             juce::Path circlePath;
-            circlePath.addEllipse(centre.x - sr, centre.y - sr, sr * 2.0f, sr * 2.0f);
+            circlePath.addEllipse(centre.x - rxPx, centre.y - ryPx, rxPx * 2.0f, ryPx * 2.0f);
             float dashes[] = { 6.0f, 4.0f };
             juce::Path dashedPath;
             juce::PathStrokeType(1.4f).createDashedStroke(dashedPath, circlePath, dashes, 2);
@@ -1697,33 +1702,44 @@ void MorphosEditor::drawPathObjects(juce::Graphics& g,
             cy = drag_.pendingY;
         }
 
-        const auto  centre   = manifoldToCanvas(cx, cy, canvas);
-        const float radiusPx = p.radius * canvas.getWidth();
-        const float snapPx   = p.snapRadius * canvas.getWidth();
+        const auto  centre = manifoldToCanvas(cx, cy, canvas);
+        // Manifold-space circle → canvas ellipse so the rendering matches the
+        // physics on non-square canvases (a Morphon pinned to a manifold-radius
+        // r curve traces this ellipse in canvas pixels).
+        const float rxPx = p.radius     * canvas.getWidth();
+        const float ryPx = p.radius     * canvas.getHeight();
+        const float sxPx = p.snapRadius * canvas.getWidth();
+        const float syPx = p.snapRadius * canvas.getHeight();
 
-        // Snap zone — translucent annulus from (radius - snap) to (radius + snap).
-        // Reads as "the catchment area around the rail".
+        // Snap zone — translucent annulus between the outer and inner ellipses
+        // (each radius offset by ±snap on its own axis).
         {
-            const float outer = radiusPx + snapPx;
-            const float inner = juce::jmax(0.0f, radiusPx - snapPx);
+            const float outerX = rxPx + sxPx;
+            const float outerY = ryPx + syPx;
+            const float innerX = juce::jmax(0.0f, rxPx - sxPx);
+            const float innerY = juce::jmax(0.0f, ryPx - syPx);
             juce::Path annulus;
-            annulus.addEllipse(centre.x - outer, centre.y - outer, outer * 2.0f, outer * 2.0f);
+            annulus.addEllipse(centre.x - outerX, centre.y - outerY,
+                               outerX * 2.0f, outerY * 2.0f);
             juce::Path hole;
-            hole.addEllipse(centre.x - inner, centre.y - inner, inner * 2.0f, inner * 2.0f);
+            hole.addEllipse(centre.x - innerX, centre.y - innerY,
+                            innerX * 2.0f, innerY * 2.0f);
             annulus.setUsingNonZeroWinding(false);
             annulus.addPath(hole);
             g.setColour(c.withAlpha(0.10f));
             g.fillPath(annulus);
         }
 
-        // Rail line itself
+        // Rail line itself (ellipse)
         g.setColour(c.withAlpha(0.85f));
-        g.drawEllipse(centre.x - radiusPx, centre.y - radiusPx,
-                      radiusPx * 2.0f, radiusPx * 2.0f, 2.0f);
+        g.drawEllipse(centre.x - rxPx, centre.y - ryPx, rxPx * 2.0f, ryPx * 2.0f, 2.0f);
 
-        // Direction arrowhead at the right-most point, pointing CCW (downward).
+        // Direction arrowhead at the right-most point (manifold angle 0), pointing
+        // CCW (downward). x offsets by rxPx so the head sits on the rendered ellipse;
+        // y stays on centre because the manifold-tangent at angle 0 is (0, +1)
+        // which maps to canvas-tangent (0, +height/||·||) — still straight down.
         {
-            const float ax = centre.x + radiusPx;
+            const float ax = centre.x + rxPx;
             const float ay = centre.y;
             constexpr float AR = 5.0f;   // arrowhead size
             juce::Path arrow;
@@ -1735,12 +1751,12 @@ void MorphosEditor::drawPathObjects(juce::Graphics& g,
             g.fillPath(arrow);
         }
 
-        // Selection ring — thicker re-stroke of the rail
+        // Selection ring — thinner re-stroke of the rail
         if (selection_.kind == ObjectKind::PathObject && selection_.index == i)
         {
             g.setColour(Colour::SelectRing.withAlpha(0.70f));
-            g.drawEllipse(centre.x - radiusPx, centre.y - radiusPx,
-                          radiusPx * 2.0f, radiusPx * 2.0f, 1.0f);
+            g.drawEllipse(centre.x - rxPx, centre.y - ryPx,
+                          rxPx * 2.0f, ryPx * 2.0f, 1.0f);
         }
     }
 }
@@ -1768,15 +1784,19 @@ void MorphosEditor::drawTrajectoryPaths(juce::Graphics& g,
             cy = drag_.pendingY;
         }
 
-        const auto  centre   = manifoldToCanvas(cx, cy, canvas);
-        const float radiusPx = tp.radius * canvas.getWidth();
+        const auto  centre = manifoldToCanvas(cx, cy, canvas);
+        // Manifold-space circle → canvas ellipse (see drawFieldObjects note).
+        // The moving t-dot below samples in manifold space and is mapped via
+        // manifoldToCanvas, so it already lies exactly on this ellipse.
+        const float rxPx = tp.radius * canvas.getWidth();
+        const float ryPx = tp.radius * canvas.getHeight();
 
         // Dashed ring — distinguishes Trajectory (moves objects) from Rail
         // (constrains Morphons; solid in drawPathObjects).
         {
             juce::Path ring;
-            ring.addEllipse(centre.x - radiusPx, centre.y - radiusPx,
-                            radiusPx * 2.0f, radiusPx * 2.0f);
+            ring.addEllipse(centre.x - rxPx, centre.y - ryPx,
+                            rxPx * 2.0f, ryPx * 2.0f);
             float dashes[] = { 7.0f, 5.0f };
             juce::Path dashed;
             juce::PathStrokeType(1.6f).createDashedStroke(dashed, ring, dashes, 2);
@@ -1802,8 +1822,8 @@ void MorphosEditor::drawTrajectoryPaths(juce::Graphics& g,
         if (selection_.kind == ObjectKind::TrajectoryPath && selection_.index == i)
         {
             g.setColour(Colour::SelectRing.withAlpha(0.70f));
-            g.drawEllipse(centre.x - radiusPx, centre.y - radiusPx,
-                          radiusPx * 2.0f, radiusPx * 2.0f, 1.0f);
+            g.drawEllipse(centre.x - rxPx, centre.y - ryPx,
+                          rxPx * 2.0f, ryPx * 2.0f, 1.0f);
         }
     }
 }
@@ -1884,18 +1904,21 @@ void MorphosEditor::drawFieldObjects(juce::Graphics& g,
             py = drag_.pendingY;
         }
 
-        const auto  centre      = manifoldToCanvas(px, py, canvas);
-        const float screenRadius = obj.radius * canvas.getWidth();
+        const auto  centre = manifoldToCanvas(px, py, canvas);
+        // Manifold-space circle of radius r maps to a canvas-space ellipse with
+        // semi-axes (r * canvasWidth, r * canvasHeight). Using width for both
+        // axes would draw a pixel-circle that diverges from the physics whenever
+        // the canvas isn't square.
+        const float rxPx = obj.radius * canvas.getWidth();
+        const float ryPx = obj.radius * canvas.getHeight();
 
         // Influence halo
         g.setColour(c.withAlpha(0.07f));
-        g.fillEllipse(centre.x - screenRadius, centre.y - screenRadius,
-                      screenRadius * 2.0f, screenRadius * 2.0f);
+        g.fillEllipse(centre.x - rxPx, centre.y - ryPx, rxPx * 2.0f, ryPx * 2.0f);
 
         // Rim
         g.setColour(c.withAlpha(0.25f));
-        g.drawEllipse(centre.x - screenRadius, centre.y - screenRadius,
-                      screenRadius * 2.0f, screenRadius * 2.0f, 1.0f);
+        g.drawEllipse(centre.x - rxPx, centre.y - ryPx, rxPx * 2.0f, ryPx * 2.0f, 1.0f);
 
         // Centre glyph
         constexpr float GLYPH_R = 7.0f;
