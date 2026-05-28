@@ -107,6 +107,8 @@ struct EmitterSnapshot
     float          y            = 0.5f;
     float          launchAngle  = 0.0f;   // radians; used to draw direction arrow
     float          launchSpeed  = 0.0f;   // scales arrow length
+    float          spawnMass    = 1.0f;
+    float          spawnDrag    = 0.001f;
     float          attackTime   = 0.05f;
     float          decayTime    = 0.15f;
     float          sustainLevel = 0.70f;

@@ -101,6 +101,11 @@ private:
     struct AdditiveVoice
     {
         std::array<float, NUM_PARTIALS> phases{};
+        // Spectral shape (normalised per-partial amplitudes) at the end of the
+        // last buffer.  Lerped to the new shape across each buffer — prevents
+        // clicks when timbreX/Y jump at a Manifold boundary crossing (Wrap /
+        // Klein) without masking the intended timbral discontinuity character.
+        std::array<float, NUM_PARTIALS> prevPartialAmps{};
         float prevAmplitude = 0.0f;  // Amplitude at end of last buffer; lerped to avoid clicks
         bool  wasActive     = false;
     };

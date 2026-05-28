@@ -43,6 +43,22 @@ struct Emitter
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// PatchState — complete serialisable snapshot of all Manifold objects and global
+// topology parameters. Used for DAW session save/restore.
+// ─────────────────────────────────────────────────────────────────────────────
+struct PatchState
+{
+    std::array<FieldObject,    MAX_FIELD_OBJECTS>   fieldObjects{};
+    std::array<Emitter,        MAX_EMITTERS>        emitters{};
+    std::array<TimbralAnchor,  MAX_TIMBRAL_ANCHORS> timbralAnchors{};
+    std::array<EffectZone,     MAX_EFFECT_ZONES>    effectZones{};
+    int              activeAnchorCount = 0;
+    BoundaryBehavior boundary          = BoundaryBehavior::Wrap;
+    PolyMode         polyMode          = PolyMode::Polyphonic;
+    float            glideTimeSec      = 0.0f;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PhysicsEngine — dedicated simulation thread
 //
 // Tick loop runs at TICK_RATE_HZ. Each tick:
@@ -76,6 +92,10 @@ public:
     // Send an edit command (object move, parameter change) from the UI thread.
     // Applied at the start of the next physics tick — no wait, no blocking.
     bool pushManifoldEdit(const ManifoldEdit& edit) noexcept;
+
+    // Replace all Manifold state from a saved patch. Stops and restarts the
+    // physics thread; call only from the message thread (DAW save/restore).
+    void applyPatch(const PatchState& patch);
 
     // ── Any thread (atomic writes) ───────────────────────────────────────────
     void setGlobalTimeScale(float scale) noexcept;

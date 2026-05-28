@@ -1053,6 +1053,8 @@ void PhysicsEngine::writeSnapshot()
         dst.y            = src.y;
         dst.launchAngle  = src.launchAngle;
         dst.launchSpeed  = src.launchSpeed;
+        dst.spawnMass    = src.spawnMass;
+        dst.spawnDrag    = src.spawnDrag;
         dst.attackTime   = src.attackTime;
         dst.decayTime    = src.decayTime;
         dst.sustainLevel = src.sustainLevel;
@@ -1104,4 +1106,31 @@ void PhysicsEngine::writeSnapshot()
     }
 
     bridge_.publish();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Patch apply — replaces all Manifold state from a saved patch.
+//
+// Stops the physics thread, replaces all object arrays and global params,
+// clears all active Morphons (they belong to the old patch), and restarts.
+// Must be called from the message thread only.
+// ─────────────────────────────────────────────────────────────────────────────
+
+void PhysicsEngine::applyPatch(const PatchState& patch)
+{
+    stopSimulation();
+
+    fieldObjects_       = patch.fieldObjects;
+    emitters_           = patch.emitters;
+    timbralAnchors_     = patch.timbralAnchors;
+    effectZones_        = patch.effectZones;
+    activeAnchorCount_  = patch.activeAnchorCount;
+    globalBoundary_     = patch.boundary;
+    globalPolyMode_     = patch.polyMode;
+    globalGlideTimeSec_ = patch.glideTimeSec;
+
+    morphons_        = {};    // Kill all active voices from the previous patch
+    fieldGrid_.dirty = true;  // Force grid rebuild on first tick
+
+    startSimulation();
 }

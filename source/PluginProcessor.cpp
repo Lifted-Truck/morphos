@@ -303,10 +303,82 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     auto state = apvts_.copyState();
 
-    // Append Manifold object data as a child element.
-    // Phase 3+: populate this with Anchor positions, Emitter configs, etc.
+    // latestSnapshotForUI_ is a relaxed copy written by the audio thread each
+    // processBlock() and read by the UI timer — same access pattern as the editor.
+    const auto& snap = latestSnapshotForUI_;
+
     auto manifoldData = juce::ValueTree("ManifoldObjects");
-    // manifoldData.appendChild(..., nullptr);  // Phase 3+
+    manifoldData.setProperty("version",     1,                             nullptr);
+    manifoldData.setProperty("boundary",    (int)snap.globalBoundary,      nullptr);
+    manifoldData.setProperty("polyMode",    (int)snap.globalPolyMode,      nullptr);
+    manifoldData.setProperty("glideTime",   snap.globalGlideTime,          nullptr);
+
+    for (int i = 0; i < MAX_FIELD_OBJECTS; ++i)
+    {
+        const auto& fo = snap.fieldObjects[i];
+        if (!fo.active) continue;
+        auto node = juce::ValueTree("FieldObject");
+        node.setProperty("type",      (int)fo.type, nullptr);
+        node.setProperty("x",         fo.x,         nullptr);
+        node.setProperty("y",         fo.y,         nullptr);
+        node.setProperty("strength",  fo.strength,  nullptr);
+        node.setProperty("radius",    fo.radius,    nullptr);
+        node.setProperty("chirality", fo.chirality, nullptr);
+        manifoldData.appendChild(node, nullptr);
+    }
+
+    for (int i = 0; i < MAX_EMITTERS; ++i)
+    {
+        const auto& em = snap.emitters[i];
+        if (!em.active) continue;
+        auto node = juce::ValueTree("Emitter");
+        node.setProperty("x",              em.x,                       nullptr);
+        node.setProperty("y",              em.y,                       nullptr);
+        node.setProperty("launchAngle",    em.launchAngle,              nullptr);
+        node.setProperty("launchSpeed",    em.launchSpeed,              nullptr);
+        node.setProperty("spawnMass",      em.spawnMass,                nullptr);
+        node.setProperty("spawnDrag",      em.spawnDrag,                nullptr);
+        node.setProperty("attack",         em.attackTime,               nullptr);
+        node.setProperty("decay",          em.decayTime,                nullptr);
+        node.setProperty("sustain",        em.sustainLevel,             nullptr);
+        node.setProperty("release",        em.releaseTime,              nullptr);
+        node.setProperty("keyLow",         em.keyLow,                   nullptr);
+        node.setProperty("keyHigh",        em.keyHigh,                  nullptr);
+        node.setProperty("transposeOct",   em.transposeOct,             nullptr);
+        node.setProperty("transposeSemi",  em.transposeSemi,            nullptr);
+        node.setProperty("transposeCents", em.transposeCents,           nullptr);
+        node.setProperty("pan",            em.pan,                      nullptr);
+        node.setProperty("terminusOn",     em.terminusEnabled ? 1 : 0,  nullptr);
+        node.setProperty("terminusStr",    em.terminusStrength,         nullptr);
+        node.setProperty("terminusRad",    em.terminusArrivalRadius,    nullptr);
+        manifoldData.appendChild(node, nullptr);
+    }
+
+    for (int i = 0; i < snap.activeTimbralAnchorCount; ++i)
+    {
+        const auto& a = snap.timbralAnchors[i];
+        auto node = juce::ValueTree("Anchor");
+        node.setProperty("x",       a.x,       nullptr);
+        node.setProperty("y",       a.y,       nullptr);
+        node.setProperty("timbreX", a.timbreX, nullptr);
+        node.setProperty("timbreY", a.timbreY, nullptr);
+        manifoldData.appendChild(node, nullptr);
+    }
+
+    for (int i = 0; i < MAX_EFFECT_ZONES; ++i)
+    {
+        const auto& z = snap.effectZones[i];
+        if (!z.active) continue;
+        auto node = juce::ValueTree("Zone");
+        node.setProperty("x",       z.x,            nullptr);
+        node.setProperty("y",       z.y,            nullptr);
+        node.setProperty("radius",  z.radius,       nullptr);
+        node.setProperty("depth",   z.depth,        nullptr);
+        node.setProperty("target",  (int)z.target,  nullptr);
+        node.setProperty("falloff", (int)z.falloff, nullptr);
+        manifoldData.appendChild(node, nullptr);
+    }
+
     state.appendChild(manifoldData, nullptr);
 
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
@@ -324,16 +396,87 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
     if (!loadedState.isValid())
         return;
 
-    // Restore APVTS parameters
     if (loadedState.hasType(apvts_.state.getType()))
         apvts_.replaceState(loadedState);
 
-    // Restore Manifold object data
     auto manifoldData = loadedState.getChildWithName("ManifoldObjects");
-    if (manifoldData.isValid())
+    if (!manifoldData.isValid())
+        return;
+    if ((int)manifoldData.getProperty("version", 0) < 1)
+        return;
+
+    PatchState patch;
+    patch.boundary     = static_cast<BoundaryBehavior>(
+                             (int)manifoldData.getProperty("boundary",  0));
+    patch.polyMode     = static_cast<PolyMode>(
+                             (int)manifoldData.getProperty("polyMode",  0));
+    patch.glideTimeSec = (float)manifoldData.getProperty("glideTime", 0.0f);
+
+    int fieldObjSlot = 0, emitterSlot = 0, anchorSlot = 0, zoneSlot = 0;
+
+    for (int i = 0; i < manifoldData.getNumChildren(); ++i)
     {
-        // Phase 3+: reconstruct Anchors, Emitters, field objects from manifoldData.
+        auto child = manifoldData.getChild(i);
+
+        if (child.hasType("FieldObject") && fieldObjSlot < MAX_FIELD_OBJECTS)
+        {
+            auto& fo     = patch.fieldObjects[fieldObjSlot++];
+            fo.type      = static_cast<FieldObjectType>((int)child.getProperty("type",      0));
+            fo.x         = (float)child.getProperty("x",         0.5f);
+            fo.y         = (float)child.getProperty("y",         0.5f);
+            fo.strength  = (float)child.getProperty("strength",  0.25f);
+            fo.radius    = (float)child.getProperty("radius",    0.45f);
+            fo.chirality = (float)child.getProperty("chirality", 1.0f);
+            fo.active    = true;
+        }
+        else if (child.hasType("Emitter") && emitterSlot < MAX_EMITTERS)
+        {
+            auto& em                 = patch.emitters[emitterSlot++];
+            em.x                     = (float)child.getProperty("x",             0.5f);
+            em.y                     = (float)child.getProperty("y",             0.5f);
+            em.launchAngle           = (float)child.getProperty("launchAngle",   0.0f);
+            em.launchSpeed           = (float)child.getProperty("launchSpeed",   0.18f);
+            em.spawnMass             = (float)child.getProperty("spawnMass",     1.0f);
+            em.spawnDrag             = (float)child.getProperty("spawnDrag",     0.001f);
+            em.attackTime            = (float)child.getProperty("attack",        0.05f);
+            em.decayTime             = (float)child.getProperty("decay",         0.15f);
+            em.sustainLevel          = (float)child.getProperty("sustain",       0.70f);
+            em.releaseTime           = (float)child.getProperty("release",       0.35f);
+            em.keyLow                = (int)child.getProperty("keyLow",          0);
+            em.keyHigh               = (int)child.getProperty("keyHigh",         127);
+            em.transposeOct          = (int)child.getProperty("transposeOct",    0);
+            em.transposeSemi         = (int)child.getProperty("transposeSemi",   0);
+            em.transposeCents        = (float)child.getProperty("transposeCents",0.0f);
+            em.pan                   = (float)child.getProperty("pan",           0.0f);
+            em.terminusEnabled       = (int)child.getProperty("terminusOn",      0) != 0;
+            em.terminusStrength      = (float)child.getProperty("terminusStr",   0.30f);
+            em.terminusArrivalRadius = (float)child.getProperty("terminusRad",   0.04f);
+            em.active                = true;
+        }
+        else if (child.hasType("Anchor") && anchorSlot < MAX_TIMBRAL_ANCHORS)
+        {
+            auto& a   = patch.timbralAnchors[anchorSlot++];
+            a.x       = (float)child.getProperty("x",       0.5f);
+            a.y       = (float)child.getProperty("y",       0.5f);
+            a.timbreX = (float)child.getProperty("timbreX", 0.5f);
+            a.timbreY = (float)child.getProperty("timbreY", 0.0f);
+            a.active  = true;
+        }
+        else if (child.hasType("Zone") && zoneSlot < MAX_EFFECT_ZONES)
+        {
+            auto& z   = patch.effectZones[zoneSlot++];
+            z.x       = (float)child.getProperty("x",      0.5f);
+            z.y       = (float)child.getProperty("y",      0.5f);
+            z.radius  = (float)child.getProperty("radius", 0.15f);
+            z.depth   = (float)child.getProperty("depth",  0.5f);
+            z.target  = static_cast<ZoneTarget>( (int)child.getProperty("target",  0));
+            z.falloff = static_cast<ZoneFalloff>((int)child.getProperty("falloff", 1));
+            z.active  = true;
+        }
     }
+
+    patch.activeAnchorCount = anchorSlot;
+    physicsEngine_.applyPatch(patch);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
