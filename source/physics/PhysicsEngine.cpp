@@ -175,8 +175,10 @@ void PhysicsEngine::run()
 
 void PhysicsEngine::tick(double dtSeconds)
 {
-    drainNoteEvents();
-    drainEditCommands();      // Apply UI edits before rebuilding grid / integrating
+    drainEditCommands();          // Apply UI edits first so subsequent steps see them
+    advanceTrajectoryPaths(dtSeconds);
+    updateAttachedEmitters();     // Move attached Emitters to their path positions
+    drainNoteEvents();            // Note-ons now read updated Emitter positions
     rebuildFieldGridIfDirty();
     integrateMorphons(dtSeconds);
     applyPathConstraints();   // Snap pinned Morphons before gates so crossings
@@ -442,6 +444,7 @@ void PhysicsEngine::drainEditCommands()
                     em.decayTime    = 0.15f;
                     em.sustainLevel = 0.70f;
                     em.releaseTime  = 0.35f;
+                    em.trajectoryPathIndex = -1;
                     em.active       = true;
                     break;
                 }
@@ -631,6 +634,71 @@ void PhysicsEngine::drainEditCommands()
                 case ManifoldEdit::Type::SetPathObjectSnapRadius:
                     if (idx >= 0 && idx < MAX_PATH_OBJECTS)
                         pathObjects_[idx].snapRadius = juce::jlimit(0.005f, 0.15f, e.x);
+                    break;
+
+                // ── Trajectory path spawn / remove / edits ────────────────────
+                case ManifoldEdit::Type::AddTrajectoryPath:
+                {
+                    int slot = -1;
+                    for (int k = 0; k < MAX_TRAJECTORY_PATHS; ++k)
+                        if (!trajectoryPaths_[k].active) { slot = k; break; }
+                    if (slot < 0) break;
+
+                    auto& tp    = trajectoryPaths_[slot];
+                    tp.shape    = PathShape::Circle;
+                    tp.x        = e.x;
+                    tp.y        = e.y;
+                    tp.radius   = 0.15f;
+                    tp.mode     = TrajectoryMode::AutoPlay;
+                    tp.speed    = 0.5f;
+                    tp.currentT = 0.0f;
+                    tp.active   = true;
+                    break;
+                }
+
+                case ManifoldEdit::Type::RemoveTrajectoryPath:
+                    if (idx >= 0 && idx < MAX_TRAJECTORY_PATHS)
+                    {
+                        trajectoryPaths_[idx].active = false;
+                        // Detach any Emitters that were following this path so
+                        // they don't snap to a deactivated curve next tick.
+                        for (auto& em : emitters_)
+                            if (em.trajectoryPathIndex == idx)
+                                em.trajectoryPathIndex = -1;
+                    }
+                    break;
+
+                case ManifoldEdit::Type::MoveTrajectoryPath:
+                    if (idx >= 0 && idx < MAX_TRAJECTORY_PATHS)
+                    {
+                        trajectoryPaths_[idx].x = e.x;
+                        trajectoryPaths_[idx].y = e.y;
+                    }
+                    break;
+
+                case ManifoldEdit::Type::SetTrajectoryPathRadius:
+                    if (idx >= 0 && idx < MAX_TRAJECTORY_PATHS)
+                        trajectoryPaths_[idx].radius = juce::jlimit(0.02f, 0.45f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetTrajectoryPathSpeed:
+                    if (idx >= 0 && idx < MAX_TRAJECTORY_PATHS)
+                        trajectoryPaths_[idx].speed = juce::jlimit(-4.0f, 4.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetTrajectoryPathMode:
+                    if (idx >= 0 && idx < MAX_TRAJECTORY_PATHS)
+                        trajectoryPaths_[idx].mode = static_cast<TrajectoryMode>(
+                            static_cast<uint8_t>(static_cast<int>(e.x)));
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterTrajectoryPath:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                    {
+                        const int v = (int)e.x;
+                        emitters_[idx].trajectoryPathIndex
+                            = (v >= 0 && v < MAX_TRAJECTORY_PATHS) ? v : -1;
+                    }
                     break;
             }
         }
@@ -1131,6 +1199,60 @@ void PhysicsEngine::updateEnvelopes(double dt)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Trajectory paths — parameter advance + Emitter position update
+//
+// advanceTrajectoryPaths: every AutoPlay path's currentT advances by
+//   speed * dt and wraps modulo 1.0 (closed shapes only for v1). Manual mode
+//   paths are skipped — their currentT is driven externally (Phase 6 mod
+//   matrix destination).
+//
+// updateAttachedEmitters: every Emitter with trajectoryPathIndex >= 0 has its
+//   (x, y) sampled from the path's current parameter. If the path was removed
+//   between ticks, the Emitter detaches and resumes its previous static
+//   position (held over from before the path was deleted).
+// ─────────────────────────────────────────────────────────────────────────────
+
+void PhysicsEngine::advanceTrajectoryPaths(double dt)
+{
+    const float dtF = static_cast<float>(dt);
+
+    for (auto& tp : trajectoryPaths_)
+    {
+        if (!tp.active) continue;
+        if (tp.mode != TrajectoryMode::AutoPlay) continue;
+
+        tp.currentT += tp.speed * dtF;
+
+        // Wrap to [0, 1). Use fmod to handle large jumps cleanly (e.g. extreme
+        // speed on the first frame after a session resume).
+        tp.currentT = std::fmod(tp.currentT, 1.0f);
+        if (tp.currentT < 0.0f) tp.currentT += 1.0f;
+    }
+}
+
+void PhysicsEngine::updateAttachedEmitters()
+{
+    for (auto& em : emitters_)
+    {
+        if (!em.active) continue;
+        const int ti = em.trajectoryPathIndex;
+        if (ti < 0 || ti >= MAX_TRAJECTORY_PATHS) continue;
+
+        const auto& tp = trajectoryPaths_[ti];
+        if (!tp.active)
+        {
+            em.trajectoryPathIndex = -1;   // Detach: path was removed under us
+            continue;
+        }
+
+        float tx, ty;
+        trajectoryPathSample(tp, tp.currentT, tx, ty);
+        em.x = tx;
+        em.y = ty;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Path constraints — rail pinning + tangent projection
 //
 // Two passes per tick after integration:
@@ -1390,6 +1512,7 @@ void PhysicsEngine::writeSnapshot()
         dst.terminusStrength       = src.terminusStrength;
         dst.terminusArrivalRadius  = src.terminusArrivalRadius;
         dst.polyMode               = src.polyMode;
+        dst.trajectoryPathIndex    = src.trajectoryPathIndex;
         dst.active                 = src.active;
     }
 
@@ -1444,6 +1567,24 @@ void PhysicsEngine::writeSnapshot()
     }
     snap.activePathObjectCount = activePaths;
 
+    // Copy trajectory paths for UI rendering
+    int activeTrajectories = 0;
+    for (int i = 0; i < MAX_TRAJECTORY_PATHS; ++i)
+    {
+        const auto& src = trajectoryPaths_[i];
+        auto&       dst = snap.trajectoryPaths[i];
+        dst.shape    = src.shape;
+        dst.x        = src.x;
+        dst.y        = src.y;
+        dst.radius   = src.radius;
+        dst.mode     = src.mode;
+        dst.speed    = src.speed;
+        dst.currentT = src.currentT;
+        dst.active   = src.active;
+        if (src.active) ++activeTrajectories;
+    }
+    snap.activeTrajectoryPathCount = activeTrajectories;
+
     // Copy timbral anchors for UI rendering
     snap.activeTimbralAnchorCount = activeAnchorCount_;
     for (int i = 0; i < MAX_TIMBRAL_ANCHORS; ++i)
@@ -1478,6 +1619,7 @@ void PhysicsEngine::applyPatch(const PatchState& patch)
     effectZones_        = patch.effectZones;
     fluxGates_          = patch.fluxGates;
     pathObjects_        = patch.pathObjects;
+    trajectoryPaths_    = patch.trajectoryPaths;
     activeAnchorCount_  = patch.activeAnchorCount;
     globalBoundary_     = patch.boundary;
     globalGlideTimeSec_ = patch.glideTimeSec;

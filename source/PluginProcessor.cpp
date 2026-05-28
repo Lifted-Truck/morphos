@@ -353,6 +353,7 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         node.setProperty("terminusStr",    em.terminusStrength,         nullptr);
         node.setProperty("terminusRad",    em.terminusArrivalRadius,    nullptr);
         node.setProperty("polyMode",       (int)em.polyMode,            nullptr);
+        node.setProperty("trajPath",       em.trajectoryPathIndex,      nullptr);
         manifoldData.appendChild(node, nullptr);
     }
 
@@ -406,6 +407,21 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         manifoldData.appendChild(node, nullptr);
     }
 
+    for (int i = 0; i < MAX_TRAJECTORY_PATHS; ++i)
+    {
+        const auto& tp = snap.trajectoryPaths[i];
+        if (!tp.active) continue;
+        auto node = juce::ValueTree("Traj");
+        node.setProperty("shape",    (int)tp.shape, nullptr);
+        node.setProperty("x",        tp.x,          nullptr);
+        node.setProperty("y",        tp.y,          nullptr);
+        node.setProperty("radius",   tp.radius,     nullptr);
+        node.setProperty("mode",     (int)tp.mode,  nullptr);
+        node.setProperty("speed",    tp.speed,      nullptr);
+        node.setProperty("currentT", tp.currentT,   nullptr);
+        manifoldData.appendChild(node, nullptr);
+    }
+
     state.appendChild(manifoldData, nullptr);
 
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
@@ -456,7 +472,7 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             ed->setSize(w, h);
     }
 
-    int fieldObjSlot = 0, emitterSlot = 0, anchorSlot = 0, zoneSlot = 0, gateSlot = 0, pathSlot = 0;
+    int fieldObjSlot = 0, emitterSlot = 0, anchorSlot = 0, zoneSlot = 0, gateSlot = 0, pathSlot = 0, trajSlot = 0;
 
     for (int i = 0; i < manifoldData.getNumChildren(); ++i)
     {
@@ -498,6 +514,7 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             em.polyMode              = (patchVersion >= 2)
                 ? static_cast<PolyMode>((int)child.getProperty("polyMode", 0))
                 : v1GlobalPolyMode;  // v1 fallback: broadcast the old global value
+            em.trajectoryPathIndex   = (int)child.getProperty("trajPath", -1);
             em.active                = true;
         }
         else if (child.hasType("Anchor") && anchorSlot < MAX_TIMBRAL_ANCHORS)
@@ -538,6 +555,18 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             p.radius     = (float)child.getProperty("radius",     0.15f);
             p.snapRadius = (float)child.getProperty("snapRadius", 0.04f);
             p.active     = true;
+        }
+        else if (child.hasType("Traj") && trajSlot < MAX_TRAJECTORY_PATHS)
+        {
+            auto& tp    = patch.trajectoryPaths[trajSlot++];
+            tp.shape    = static_cast<PathShape>((int)child.getProperty("shape", 0));
+            tp.x        = (float)child.getProperty("x",        0.5f);
+            tp.y        = (float)child.getProperty("y",        0.5f);
+            tp.radius   = (float)child.getProperty("radius",   0.15f);
+            tp.mode     = static_cast<TrajectoryMode>((int)child.getProperty("mode", 0));
+            tp.speed    = (float)child.getProperty("speed",    0.5f);
+            tp.currentT = (float)child.getProperty("currentT", 0.0f);
+            tp.active   = true;
         }
     }
 

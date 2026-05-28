@@ -44,6 +44,10 @@ namespace Colour
     // Path Object — rail-constraint curve. Sage / olive green reads as
     // "track / rail" without colliding with Anchor teal or Zone greens.
     static const juce::Colour PathObject   { 0xFF8DBC72 };  // Sage green
+
+    // Trajectory Path — position-driver curve. Peach / apricot reads as
+    // "warm / motion" without colliding with Emitter amber or Repeller red.
+    static const juce::Colour TrajPath     { 0xFFE89A5C };  // Peach / apricot
 }
 
 static juce::Colour zoneColour(ZoneTarget t) noexcept
@@ -142,23 +146,28 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     const int x = panel.getX();
     const int w = panel.getWidth();
 
-    // ── Spawn rows — 4 + 4 two-row split ─────────────────────────────────────
+    // ── Spawn rows — 3 × 3 grid (9 object types) ─────────────────────────────
     // Phase 10's right-click context menu will subsume these buttons; until
-    // then, two rows of 4 keeps each label readable at panel width = 260.
+    // then, a 3×3 grid keeps labels readable as more object types come online.
     {
-        const int bw4 = w / 4;
-        btnAddAtt_ .setBounds(x + bw4 * 0, y, bw4,         SPAWN_H);
-        btnAddRep_ .setBounds(x + bw4 * 1, y, bw4,         SPAWN_H);
-        btnAddVor_ .setBounds(x + bw4 * 2, y, bw4,         SPAWN_H);
-        btnAddEmit_.setBounds(x + bw4 * 3, y, w - bw4 * 3, SPAWN_H);
+        const int bw3 = w / 3;
+        btnAddAtt_ .setBounds(x + bw3 * 0, y, bw3,         SPAWN_H);
+        btnAddRep_ .setBounds(x + bw3 * 1, y, bw3,         SPAWN_H);
+        btnAddVor_ .setBounds(x + bw3 * 2, y, w - bw3 * 2, SPAWN_H);
     }
     y += SPAWN_H + 2;
     {
-        const int bw4 = w / 4;
-        btnAddAnch_.setBounds(x + bw4 * 0, y, bw4,         SPAWN_H);
-        btnAddZone_.setBounds(x + bw4 * 1, y, bw4,         SPAWN_H);
-        btnAddFlux_.setBounds(x + bw4 * 2, y, bw4,         SPAWN_H);
-        btnAddPath_.setBounds(x + bw4 * 3, y, w - bw4 * 3, SPAWN_H);
+        const int bw3 = w / 3;
+        btnAddEmit_.setBounds(x + bw3 * 0, y, bw3,         SPAWN_H);
+        btnAddAnch_.setBounds(x + bw3 * 1, y, bw3,         SPAWN_H);
+        btnAddZone_.setBounds(x + bw3 * 2, y, w - bw3 * 2, SPAWN_H);
+    }
+    y += SPAWN_H + 2;
+    {
+        const int bw3 = w / 3;
+        btnAddFlux_.setBounds(x + bw3 * 0, y, bw3,         SPAWN_H);
+        btnAddPath_.setBounds(x + bw3 * 1, y, bw3,         SPAWN_H);
+        btnAddTraj_.setBounds(x + bw3 * 2, y, w - bw3 * 2, SPAWN_H);
     }
     y += SPAWN_H + 4;
 
@@ -248,6 +257,9 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     layoutRow(lblTerminusStrength_, sldTerminusStrength_);
     layoutRow(lblTerminusRadius_,   sldTerminusRadius_);
 
+    // Trajectory attachment selector (Emitter sub-section)
+    layoutRow(lblEmitTraj_, sldEmitTraj_);
+
     // ── Effect zone section ───────────────────────────────────────────────────
     y = sectionTopY;
     layoutRow(lblZoneRadius_, sldZoneRadius_);
@@ -288,6 +300,11 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     y = sectionTopY;
     layoutRow(lblPathRadius_, sldPathRadius_);
     layoutRow(lblPathSnap_,   sldPathSnap_);
+
+    // ── Trajectory path section ───────────────────────────────────────────────
+    y = sectionTopY;
+    layoutRow(lblTrajRadius_, sldTrajRadius_);
+    layoutRow(lblTrajSpeed_,  sldTrajSpeed_);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -344,31 +361,34 @@ void MorphosEditor::setupSliders()
     styleSpawnBtn(btnAddZone_);  addAndMakeVisible(btnAddZone_);
     styleSpawnBtn(btnAddFlux_);  addAndMakeVisible(btnAddFlux_);
     styleSpawnBtn(btnAddPath_);  addAndMakeVisible(btnAddPath_);
+    styleSpawnBtn(btnAddTraj_);  addAndMakeVisible(btnAddTraj_);
 
     // Spawn buttons arm placement mode — click canvas to place at desired position.
     // Clicking the same button again disarms without placing anything.
     auto armSpawn = [this](SpawnKind k)
     {
         pendingSpawn_ = (pendingSpawn_ == k) ? SpawnKind::None : k;
-        btnAddAtt_ .setToggleState(pendingSpawn_ == SpawnKind::Attractor,    juce::dontSendNotification);
-        btnAddRep_ .setToggleState(pendingSpawn_ == SpawnKind::Repeller,     juce::dontSendNotification);
-        btnAddVor_ .setToggleState(pendingSpawn_ == SpawnKind::Vortex,       juce::dontSendNotification);
-        btnAddEmit_.setToggleState(pendingSpawn_ == SpawnKind::Emitter,      juce::dontSendNotification);
-        btnAddAnch_.setToggleState(pendingSpawn_ == SpawnKind::TimbralAnchor,juce::dontSendNotification);
-        btnAddZone_.setToggleState(pendingSpawn_ == SpawnKind::EffectZone,   juce::dontSendNotification);
-        btnAddFlux_.setToggleState(pendingSpawn_ == SpawnKind::FluxGate,     juce::dontSendNotification);
-        btnAddPath_.setToggleState(pendingSpawn_ == SpawnKind::PathObject,   juce::dontSendNotification);
+        btnAddAtt_ .setToggleState(pendingSpawn_ == SpawnKind::Attractor,      juce::dontSendNotification);
+        btnAddRep_ .setToggleState(pendingSpawn_ == SpawnKind::Repeller,       juce::dontSendNotification);
+        btnAddVor_ .setToggleState(pendingSpawn_ == SpawnKind::Vortex,         juce::dontSendNotification);
+        btnAddEmit_.setToggleState(pendingSpawn_ == SpawnKind::Emitter,        juce::dontSendNotification);
+        btnAddAnch_.setToggleState(pendingSpawn_ == SpawnKind::TimbralAnchor,  juce::dontSendNotification);
+        btnAddZone_.setToggleState(pendingSpawn_ == SpawnKind::EffectZone,     juce::dontSendNotification);
+        btnAddFlux_.setToggleState(pendingSpawn_ == SpawnKind::FluxGate,       juce::dontSendNotification);
+        btnAddPath_.setToggleState(pendingSpawn_ == SpawnKind::PathObject,     juce::dontSendNotification);
+        btnAddTraj_.setToggleState(pendingSpawn_ == SpawnKind::TrajectoryPath, juce::dontSendNotification);
         repaint();
     };
 
-    btnAddAtt_ .onClick = [armSpawn]{ armSpawn(SpawnKind::Attractor);    };
-    btnAddRep_ .onClick = [armSpawn]{ armSpawn(SpawnKind::Repeller);     };
-    btnAddVor_ .onClick = [armSpawn]{ armSpawn(SpawnKind::Vortex);       };
-    btnAddEmit_.onClick = [armSpawn]{ armSpawn(SpawnKind::Emitter);      };
-    btnAddAnch_.onClick = [armSpawn]{ armSpawn(SpawnKind::TimbralAnchor);};
-    btnAddZone_.onClick = [armSpawn]{ armSpawn(SpawnKind::EffectZone);   };
-    btnAddFlux_.onClick = [armSpawn]{ armSpawn(SpawnKind::FluxGate);     };
-    btnAddPath_.onClick = [armSpawn]{ armSpawn(SpawnKind::PathObject);   };
+    btnAddAtt_ .onClick = [armSpawn]{ armSpawn(SpawnKind::Attractor);      };
+    btnAddRep_ .onClick = [armSpawn]{ armSpawn(SpawnKind::Repeller);       };
+    btnAddVor_ .onClick = [armSpawn]{ armSpawn(SpawnKind::Vortex);         };
+    btnAddEmit_.onClick = [armSpawn]{ armSpawn(SpawnKind::Emitter);        };
+    btnAddAnch_.onClick = [armSpawn]{ armSpawn(SpawnKind::TimbralAnchor);  };
+    btnAddZone_.onClick = [armSpawn]{ armSpawn(SpawnKind::EffectZone);     };
+    btnAddFlux_.onClick = [armSpawn]{ armSpawn(SpawnKind::FluxGate);       };
+    btnAddPath_.onClick = [armSpawn]{ armSpawn(SpawnKind::PathObject);     };
+    btnAddTraj_.onClick = [armSpawn]{ armSpawn(SpawnKind::TrajectoryPath); };
 
     // ── Panel header + remove button ──────────────────────────────────────────
     lblPanelHeader_.setText("No Selection", juce::dontSendNotification);
@@ -393,6 +413,7 @@ void MorphosEditor::setupSliders()
             case ObjectKind::EffectZone:    t = ManifoldEdit::Type::RemoveEffectZone;    break;
             case ObjectKind::FluxGate:      t = ManifoldEdit::Type::RemoveFluxGate;      break;
             case ObjectKind::PathObject:    t = ManifoldEdit::Type::RemovePathObject;    break;
+            case ObjectKind::TrajectoryPath:t = ManifoldEdit::Type::RemoveTrajectoryPath;break;
             default: return;
         }
         sendEdit(t, selection_.index, 0.0f, 0.0f);
@@ -754,6 +775,46 @@ void MorphosEditor::setupSliders()
                      selection_.index, (float)sldPathSnap_.getValue());
     };
 
+    // ── Trajectory path sliders ────────────────────────────────────────────────
+    styleLabel(lblTrajRadius_, "Radius");
+    styleLabel(lblTrajSpeed_,  "Speed (Hz)");
+    styleSlider(sldTrajRadius_, 0.02, 0.45);
+    styleSlider(sldTrajSpeed_,  -4.0,  4.0);
+    sldTrajRadius_.setNumDecimalPlacesToDisplay(2);
+    sldTrajSpeed_ .setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblTrajRadius_); addAndMakeVisible(sldTrajRadius_);
+    addAndMakeVisible(lblTrajSpeed_);  addAndMakeVisible(sldTrajSpeed_);
+
+    sldTrajRadius_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTrajectoryPathRadius,
+                     selection_.index, (float)sldTrajRadius_.getValue());
+    };
+    sldTrajSpeed_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTrajectoryPathSpeed,
+                     selection_.index, (float)sldTrajSpeed_.getValue());
+    };
+
+    // ── Emitter ↔ Trajectory attachment slider ─────────────────────────────────
+    // Integer slider: -1 = stationary (no attachment), 0..MAX_TRAJECTORY_PATHS-1
+    // = follow that trajectory path. Text shows "—" for -1 and "Traj N" for 0+.
+    styleLabel(lblEmitTraj_, "Trajectory");
+    styleSlider(sldEmitTraj_, -1.0, (double)(MAX_TRAJECTORY_PATHS - 1));
+    sldEmitTraj_.setNumDecimalPlacesToDisplay(0);
+    sldEmitTraj_.textFromValueFunction = [](double v) -> juce::String
+    {
+        const int n = (int)v;
+        if (n < 0) return juce::String::fromUTF8("\xe2\x80\x94");  // em-dash
+        return "Traj " + juce::String(n);
+    };
+    addAndMakeVisible(lblEmitTraj_); addAndMakeVisible(sldEmitTraj_);
+    sldEmitTraj_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterTrajectoryPath,
+                     selection_.index, (float)sldEmitTraj_.getValue());
+    };
+
     // ── Global topology row — always visible ──────────────────────────────────
     styleLabel(lblBoundary_, "Topology");
     addAndMakeVisible(lblBoundary_);
@@ -907,6 +968,11 @@ void MorphosEditor::updatePanel()
     lblPathRadius_.setVisible(false);       sldPathRadius_.setVisible(false);
     lblPathSnap_.setVisible(false);         sldPathSnap_.setVisible(false);
 
+    lblTrajRadius_.setVisible(false);       sldTrajRadius_.setVisible(false);
+    lblTrajSpeed_.setVisible(false);        sldTrajSpeed_.setVisible(false);
+
+    lblEmitTraj_.setVisible(false);         sldEmitTraj_.setVisible(false);
+
     const bool hasSelection = selection_.valid();
     btnRemove_.setVisible(hasSelection);
 
@@ -981,6 +1047,7 @@ void MorphosEditor::updatePanel()
         sldTransposeCents_.setValue((double)e.transposeCents, juce::dontSendNotification);
         sldEmitPan_.setValue           ((double)e.pan,                    juce::dontSendNotification);
         sldEmitMass_.setValue          ((double)e.spawnMass,               juce::dontSendNotification);
+        sldEmitTraj_.setValue          ((double)e.trajectoryPathIndex,     juce::dontSendNotification);
         btnEmitPoly_  .setToggleState(e.polyMode == PolyMode::Polyphonic, juce::dontSendNotification);
         btnEmitMono_  .setToggleState(e.polyMode == PolyMode::Mono,       juce::dontSendNotification);
         btnEmitLegato_.setToggleState(e.polyMode == PolyMode::Legato,     juce::dontSendNotification);
@@ -1002,6 +1069,7 @@ void MorphosEditor::updatePanel()
         lblTransposeCents_.setVisible(true);   sldTransposeCents_.setVisible(true);
         lblEmitPan_.setVisible(true);              sldEmitPan_.setVisible(true);
         lblEmitMass_.setVisible(true);             sldEmitMass_.setVisible(true);
+        lblEmitTraj_.setVisible(true);             sldEmitTraj_.setVisible(true);
         lblEmitPolyMode_.setVisible(true);
         btnEmitPoly_.setVisible(true);             btnEmitMono_.setVisible(true);
         btnEmitLegato_.setVisible(true);           btnEmitSlur_.setVisible(true);
@@ -1086,13 +1154,30 @@ void MorphosEditor::updatePanel()
         }
         const auto& p = state.pathObjects[i];
 
-        lblPanelHeader_.setText("Path " + juce::String(i), juce::dontSendNotification);
+        lblPanelHeader_.setText("Rail " + juce::String(i), juce::dontSendNotification);
 
         sldPathRadius_.setValue(p.radius,     juce::dontSendNotification);
         sldPathSnap_  .setValue(p.snapRadius, juce::dontSendNotification);
 
         lblPathRadius_.setVisible(true); sldPathRadius_.setVisible(true);
         lblPathSnap_  .setVisible(true); sldPathSnap_  .setVisible(true);
+    }
+    else if (selection_.kind == ObjectKind::TrajectoryPath)
+    {
+        const int i = selection_.index;
+        if (i >= MAX_TRAJECTORY_PATHS || !state.trajectoryPaths[i].active)
+        {
+            selection_ = {}; ignoreSliderCallbacks_ = false; return;
+        }
+        const auto& tp = state.trajectoryPaths[i];
+
+        lblPanelHeader_.setText("Traj " + juce::String(i), juce::dontSendNotification);
+
+        sldTrajRadius_.setValue(tp.radius, juce::dontSendNotification);
+        sldTrajSpeed_ .setValue(tp.speed,  juce::dontSendNotification);
+
+        lblTrajRadius_.setVisible(true); sldTrajRadius_.setVisible(true);
+        lblTrajSpeed_ .setVisible(true); sldTrajSpeed_ .setVisible(true);
     }
 
     ignoreSliderCallbacks_ = false;
@@ -1128,21 +1213,23 @@ void MorphosEditor::clearPlacementMode()
     btnAddZone_.setToggleState(false, juce::dontSendNotification);
     btnAddFlux_.setToggleState(false, juce::dontSendNotification);
     btnAddPath_.setToggleState(false, juce::dontSendNotification);
+    btnAddTraj_.setToggleState(false, juce::dontSendNotification);
 }
 
 juce::Colour MorphosEditor::pendingSpawnColour() const noexcept
 {
     switch (pendingSpawn_)
     {
-        case SpawnKind::Attractor:     return Colour::Attractor;
-        case SpawnKind::Repeller:      return Colour::Repeller;
-        case SpawnKind::Vortex:        return Colour::Vortex;
-        case SpawnKind::Emitter:       return Colour::Emitter;
-        case SpawnKind::TimbralAnchor: return Colour::Anchor;
-        case SpawnKind::EffectZone:    return Colour::ZoneTimbreX;
-        case SpawnKind::FluxGate:      return Colour::FluxGate;
-        case SpawnKind::PathObject:    return Colour::PathObject;
-        default:                       return juce::Colours::white;
+        case SpawnKind::Attractor:      return Colour::Attractor;
+        case SpawnKind::Repeller:       return Colour::Repeller;
+        case SpawnKind::Vortex:         return Colour::Vortex;
+        case SpawnKind::Emitter:        return Colour::Emitter;
+        case SpawnKind::TimbralAnchor:  return Colour::Anchor;
+        case SpawnKind::EffectZone:     return Colour::ZoneTimbreX;
+        case SpawnKind::FluxGate:       return Colour::FluxGate;
+        case SpawnKind::PathObject:     return Colour::PathObject;
+        case SpawnKind::TrajectoryPath: return Colour::TrajPath;
+        default:                        return juce::Colours::white;
     }
 }
 
@@ -1174,6 +1261,7 @@ bool MorphosEditor::keyPressed(const juce::KeyPress& key)
             case ObjectKind::EffectZone:    t = ManifoldEdit::Type::RemoveEffectZone;    break;
             case ObjectKind::FluxGate:      t = ManifoldEdit::Type::RemoveFluxGate;      break;
             case ObjectKind::PathObject:    t = ManifoldEdit::Type::RemovePathObject;    break;
+            case ObjectKind::TrajectoryPath:t = ManifoldEdit::Type::RemoveTrajectoryPath;break;
             default: return false;
         }
         sendEdit(t, selection_.index, 0.0f, 0.0f);
@@ -1270,6 +1358,19 @@ MorphosEditor::Selection MorphosEditor::hitTest(juce::Point<float> canvasPt,
             return { ObjectKind::PathObject, i };
     }
 
+    // Priority 6: Trajectory paths — same closest-point geometry as rail paths.
+    for (int i = 0; i < MAX_TRAJECTORY_PATHS; ++i)
+    {
+        const auto& tp = state.trajectoryPaths[i];
+        if (!tp.active) continue;
+
+        const auto  centrePx = manifoldToCanvas(tp.x, tp.y, canvas);
+        const float radiusPx = tp.radius * canvas.getWidth();
+        const float dToCentre = canvasPt.getDistanceFrom(centrePx);
+        if (std::abs(dToCentre - radiusPx) <= HIT_PX)
+            return { ObjectKind::TrajectoryPath, i };
+    }
+
     // Priority 6: Flux gates — hit on the line segment itself, using point-to-
     // segment distance so the whole tripwire is grabbable (not just the centre).
     for (int i = 0; i < MAX_FLUX_GATES; ++i)
@@ -1328,6 +1429,7 @@ void MorphosEditor::mouseDown(const juce::MouseEvent& event)
             case SpawnKind::EffectZone:    addType = ManifoldEdit::Type::AddEffectZone;    break;
             case SpawnKind::FluxGate:      addType = ManifoldEdit::Type::AddFluxGate;      break;
             case SpawnKind::PathObject:    addType = ManifoldEdit::Type::AddPathObject;    break;
+            case SpawnKind::TrajectoryPath:addType = ManifoldEdit::Type::AddTrajectoryPath;break;
             default: clearPlacementMode(); return;
         }
 
@@ -1374,6 +1476,10 @@ void MorphosEditor::mouseDown(const juce::MouseEvent& event)
                 drag_.pendingX = state.pathObjects[hit.index].x;
                 drag_.pendingY = state.pathObjects[hit.index].y;
                 break;
+            case ObjectKind::TrajectoryPath:
+                drag_.pendingX = state.trajectoryPaths[hit.index].x;
+                drag_.pendingY = state.trajectoryPaths[hit.index].y;
+                break;
             default: break;
         }
 
@@ -1417,6 +1523,7 @@ void MorphosEditor::mouseDrag(const juce::MouseEvent& event)
         case ObjectKind::EffectZone:    moveType = ManifoldEdit::Type::MoveEffectZone;     break;
         case ObjectKind::FluxGate:      moveType = ManifoldEdit::Type::MoveFluxGate;       break;
         case ObjectKind::PathObject:    moveType = ManifoldEdit::Type::MovePathObject;     break;
+        case ObjectKind::TrajectoryPath:moveType = ManifoldEdit::Type::MoveTrajectoryPath; break;
         default: return;
     }
 
@@ -1454,7 +1561,7 @@ void MorphosEditor::paint(juce::Graphics& g)
 
         // "Click to place: Type" hint in top-left corner of canvas
         static const char* spawnNames[] = {
-            "", "Attractor", "Repeller", "Vortex", "Emitter", "Anchor", "Zone", "Gate", "Path"
+            "", "Attractor", "Repeller", "Vortex", "Emitter", "Anchor", "Zone", "Gate", "Rail", "Trajectory"
         };
         g.setFont(juce::FontOptions(11.0f));
         g.setColour(c.withAlpha(0.80f));
@@ -1464,7 +1571,8 @@ void MorphosEditor::paint(juce::Graphics& g)
     }
 
     drawEffectZones     (g, state, canvas);    // Behind all other objects
-    drawPathObjects     (g, state, canvas);    // Above zones, beneath gates
+    drawPathObjects     (g, state, canvas);    // Above zones
+    drawTrajectoryPaths (g, state, canvas);    // Above rail paths
     drawFluxGates       (g, state, canvas);    // Above paths, beneath fields
     drawFieldObjects    (g, state, canvas);
     drawEmitters        (g, state, canvas);
@@ -1629,6 +1737,69 @@ void MorphosEditor::drawPathObjects(juce::Graphics& g,
 
         // Selection ring — thicker re-stroke of the rail
         if (selection_.kind == ObjectKind::PathObject && selection_.index == i)
+        {
+            g.setColour(Colour::SelectRing.withAlpha(0.70f));
+            g.drawEllipse(centre.x - radiusPx, centre.y - radiusPx,
+                          radiusPx * 2.0f, radiusPx * 2.0f, 1.0f);
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Draw — trajectory paths (dashed curve + moving t-dot indicating current pos)
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MorphosEditor::drawTrajectoryPaths(juce::Graphics& g,
+                                        const PhysicsStateSnapshot& state,
+                                        juce::Rectangle<int> canvas) const
+{
+    const juce::Colour c = Colour::TrajPath;
+
+    for (int i = 0; i < MAX_TRAJECTORY_PATHS; ++i)
+    {
+        const auto& tp = state.trajectoryPaths[i];
+        if (!tp.active) continue;
+
+        float cx = tp.x, cy = tp.y;
+        if (drag_.active && selection_.kind == ObjectKind::TrajectoryPath
+            && selection_.index == i)
+        {
+            cx = drag_.pendingX;
+            cy = drag_.pendingY;
+        }
+
+        const auto  centre   = manifoldToCanvas(cx, cy, canvas);
+        const float radiusPx = tp.radius * canvas.getWidth();
+
+        // Dashed ring — distinguishes Trajectory (moves objects) from Rail
+        // (constrains Morphons; solid in drawPathObjects).
+        {
+            juce::Path ring;
+            ring.addEllipse(centre.x - radiusPx, centre.y - radiusPx,
+                            radiusPx * 2.0f, radiusPx * 2.0f);
+            float dashes[] = { 7.0f, 5.0f };
+            juce::Path dashed;
+            juce::PathStrokeType(1.6f).createDashedStroke(dashed, ring, dashes, 2);
+            g.setColour(c.withAlpha(0.85f));
+            g.fillPath(dashed);
+        }
+
+        // Current-T dot — shows where attached objects are currently positioned.
+        // Renders the moving head on AutoPlay so the user can read the speed at
+        // a glance.
+        {
+            constexpr float TWO_PI = 6.28318530717958647692f;
+            const float angle = tp.currentT * TWO_PI;
+            const float hx = cx + std::cos(angle) * tp.radius;
+            const float hy = cy + std::sin(angle) * tp.radius;
+            const auto headPx = manifoldToCanvas(hx, hy, canvas);
+            constexpr float HR = 4.5f;
+            g.setColour(c);
+            g.fillEllipse(headPx.x - HR, headPx.y - HR, HR * 2.0f, HR * 2.0f);
+        }
+
+        // Selection ring
+        if (selection_.kind == ObjectKind::TrajectoryPath && selection_.index == i)
         {
             g.setColour(Colour::SelectRing.withAlpha(0.70f));
             g.drawEllipse(centre.x - radiusPx, centre.y - radiusPx,
@@ -2074,8 +2245,10 @@ void MorphosEditor::drawStatusBar(juce::Graphics& g,
            << (state.activeEffectZoneCount != 1 ? "s" : "") << "  |  "
            << state.activeFluxGateCount << " gate"
            << (state.activeFluxGateCount != 1 ? "s" : "") << "  |  "
-           << state.activePathObjectCount << " path"
-           << (state.activePathObjectCount != 1 ? "s" : "");
+           << state.activePathObjectCount << " rail"
+           << (state.activePathObjectCount != 1 ? "s" : "") << "  |  "
+           << state.activeTrajectoryPathCount << " traj"
+           << (state.activeTrajectoryPathCount != 1 ? "s" : "");
 
     const auto statusRect = getLocalBounds()
                                 .removeFromBottom(28)

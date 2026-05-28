@@ -7,6 +7,7 @@
 #include "FieldObject.h"
 #include "FluxGate.h"
 #include "PathObject.h"
+#include "TrajectoryPath.h"
 #include "synthesis/TimbralAnchor.h"   // for MAX_TIMBRAL_ANCHORS
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -137,6 +138,7 @@ struct EmitterSnapshot
     float          terminusStrength      = 0.30f;
     float          terminusArrivalRadius = 0.04f;
     PolyMode       polyMode              = PolyMode::Polyphonic;
+    int            trajectoryPathIndex   = -1;   // -1 = stationary; else attached
     bool           active                = false;
 };
 
@@ -192,6 +194,21 @@ struct PathObjectSnapshot
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TrajectoryPathSnapshot — position-driver path data for UI rendering
+// ─────────────────────────────────────────────────────────────────────────────
+struct TrajectoryPathSnapshot
+{
+    PathShape      shape    = PathShape::Circle;
+    float          x        = 0.5f;
+    float          y        = 0.5f;
+    float          radius   = 0.15f;
+    TrajectoryMode mode     = TrajectoryMode::AutoPlay;
+    float          speed    = 0.5f;
+    float          currentT = 0.0f;
+    bool           active   = false;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FieldObjectSnapshot — lightweight field object data for UI rendering
 // ─────────────────────────────────────────────────────────────────────────────
 struct FieldObjectSnapshot
@@ -218,6 +235,7 @@ struct PhysicsStateSnapshot
     std::array<EffectZoneSnapshot,     MAX_EFFECT_ZONES>     effectZones{};
     std::array<FluxGateSnapshot,       MAX_FLUX_GATES>       fluxGates{};
     std::array<PathObjectSnapshot,     MAX_PATH_OBJECTS>     pathObjects{};
+    std::array<TrajectoryPathSnapshot, MAX_TRAJECTORY_PATHS> trajectoryPaths{};
 
     int              activeMorphonCount       = 0;
     int              activeFieldObjCount      = 0;
@@ -225,6 +243,7 @@ struct PhysicsStateSnapshot
     int              activeEffectZoneCount    = 0;
     int              activeFluxGateCount      = 0;
     int              activePathObjectCount    = 0;
+    int              activeTrajectoryPathCount = 0;
     BoundaryBehavior globalBoundary           = BoundaryBehavior::Wrap;
     float            globalGlideTime          = 0.0f;   // Portamento seconds [0, 5]
     uint64_t         tickIndex                = 0;
@@ -308,6 +327,15 @@ struct ManifoldEdit
         MovePathObject,           // x,y carry new Manifold coords [0,1] (centre)
         SetPathObjectRadius,      // x = radius [0.02, 0.45]
         SetPathObjectSnapRadius,  // x = snap radius [0.005, 0.15]
+
+        // ── Trajectory path spawn / remove / edits ────────────────────────────
+        AddTrajectoryPath,           // Spawn a new TrajectoryPath at (x,y)
+        RemoveTrajectoryPath,        // Deactivate trajectoryPath[index]
+        MoveTrajectoryPath,          // x,y carry new centre coords [0,1]
+        SetTrajectoryPathRadius,     // x = radius [0.02, 0.45]
+        SetTrajectoryPathSpeed,      // x = t-per-second [-4.0, 4.0]; negative reverses
+        SetTrajectoryPathMode,       // x = (float)cast of TrajectoryMode uint8_t
+        SetEmitterTrajectoryPath,    // x = trajectory index [-1, MAX_TRAJECTORY_PATHS-1]
     };
 
     Type  type  = Type::MoveFieldObject;

@@ -9,6 +9,7 @@
 #include "FieldObject.h"
 #include "FluxGate.h"
 #include "PathObject.h"
+#include "TrajectoryPath.h"
 #include "synthesis/TimbralAnchor.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ struct Emitter
     float           terminusStrength      = 0.30f; // Pull force magnitude (Manifold units/s²)
     float           terminusArrivalRadius = 0.04f; // Deactivate when within this distance
     PolyMode        polyMode              = PolyMode::Polyphonic;  // Per-Emitter voice routing
+    int             trajectoryPathIndex   = -1;   // -1 = stationary; else attached to traj[index]
     bool            active       = false;   // Slots are inactive by default; constructor enables [0]
 };
 
@@ -57,6 +59,7 @@ struct PatchState
     std::array<EffectZone,     MAX_EFFECT_ZONES>    effectZones{};
     std::array<FluxGate,       MAX_FLUX_GATES>      fluxGates{};
     std::array<PathObject,     MAX_PATH_OBJECTS>    pathObjects{};
+    std::array<TrajectoryPath, MAX_TRAJECTORY_PATHS> trajectoryPaths{};
     int              activeAnchorCount = 0;
     BoundaryBehavior boundary          = BoundaryBehavior::Wrap;
     float            glideTimeSec      = 0.0f;
@@ -119,6 +122,8 @@ private:
     void applyEffectZones();
     void applyFluxGates();
     void applyPathConstraints();
+    void advanceTrajectoryPaths(double dt);
+    void updateAttachedEmitters();
     void writeSnapshot();
 
     // ── Note handling (physics thread only) ──────────────────────────────────
@@ -175,6 +180,9 @@ private:
 
     // ── Path Objects — rail-constraint curves ─────────────────────────────────
     std::array<PathObject, MAX_PATH_OBJECTS> pathObjects_{};
+
+    // ── Trajectory Paths — position-driver curves (drive object x,y) ──────────
+    std::array<TrajectoryPath, MAX_TRAJECTORY_PATHS> trajectoryPaths_{};
 
     uint64_t tickIndex_        = 0;
     double   simulationTimeMs_ = 0.0;

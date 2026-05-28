@@ -65,6 +65,8 @@ private:
                              juce::Rectangle<int> canvas) const;
     void drawPathObjects    (juce::Graphics&, const PhysicsStateSnapshot&,
                              juce::Rectangle<int> canvas) const;
+    void drawTrajectoryPaths(juce::Graphics&, const PhysicsStateSnapshot&,
+                             juce::Rectangle<int> canvas) const;
 
     // ── Mouse interaction (drag-and-drop + placement) ─────────────────────────
     void mouseDown(const juce::MouseEvent&) override;
@@ -75,10 +77,10 @@ private:
     bool keyPressed(const juce::KeyPress&) override;
 
     // ── Selection / drag state ─────────────────────────────────────────────────
-    enum class ObjectKind { None, FieldObject, Emitter, TimbralAnchor, EffectZone, FluxGate, PathObject };
+    enum class ObjectKind { None, FieldObject, Emitter, TimbralAnchor, EffectZone, FluxGate, PathObject, TrajectoryPath };
 
     // ── Placement mode — arm a type, then click canvas to place ───────────────
-    enum class SpawnKind { None, Attractor, Repeller, Vortex, Emitter, TimbralAnchor, EffectZone, FluxGate, PathObject };
+    enum class SpawnKind { None, Attractor, Repeller, Vortex, Emitter, TimbralAnchor, EffectZone, FluxGate, PathObject, TrajectoryPath };
 
     SpawnKind pendingSpawn_ = SpawnKind::None;
 
@@ -139,7 +141,8 @@ private:
     juce::TextButton btnAddAnch_ { "+Anch" };
     juce::TextButton btnAddZone_ { "+Zon"  };
     juce::TextButton btnAddFlux_ { "+Gate" };
-    juce::TextButton btnAddPath_ { "+Path" };
+    juce::TextButton btnAddPath_ { "+Rail" };
+    juce::TextButton btnAddTraj_ { "+Traj" };
 
     // Panel header: object type+index label, plus Remove button on the right
     juce::Label      lblPanelHeader_;
@@ -207,6 +210,14 @@ private:
     // Path object section (visible when a PathObject is selected)
     juce::Label  lblPathRadius_, lblPathSnap_;
     juce::Slider sldPathRadius_, sldPathSnap_;
+
+    // Trajectory path section (visible when a TrajectoryPath is selected)
+    juce::Label  lblTrajRadius_, lblTrajSpeed_;
+    juce::Slider sldTrajRadius_, sldTrajSpeed_;
+
+    // Emitter section addition: trajectory path attachment (in Emitter panel)
+    juce::Label  lblEmitTraj_;
+    juce::Slider sldEmitTraj_;
 
     // ── Per-Morphon trail buffer ───────────────────────────────────────────────
     struct Trail
