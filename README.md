@@ -103,8 +103,12 @@ All physics↔audio communication is wait-free. Parameter reads use cached `std:
 
 Two layers in `getStateInformation` / `setStateInformation`:
 1. **APVTS parameters** — automatically serialised by JUCE ValueTree
-2. **Manifold objects** — custom `ManifoldObjects` XML child (Anchors, Emitters, field objects)
-   Added in Phase 3+; slot is present in the format from Phase 0 for forward compatibility.
+2. **Manifold objects** — custom `ManifoldObjects` XML child appended to the APVTS state tree.
+   Format: `version=1` attribute, one child per active object (`FieldObject`, `Emitter`, `Anchor`, `Zone`),
+   plus global topology attributes (`boundary`, `polyMode`, `glideTime`).
+   Saves from the `latestSnapshotForUI_` copy; restores by building a `PatchState` and calling
+   `PhysicsEngine::applyPatch()` (stops/replaces/restarts the simulation thread).
+   Saves without `ManifoldObjects` or `version < 1` restore APVTS params only (backward-compatible).
 
 ### Parameter IDs
 
@@ -136,23 +140,28 @@ is shipped — DAW automation is keyed to these strings.
 
 - [x] **Phase 0** — Plugin skeleton: CMake, JUCE, threading model, parameter system, state hooks
 - [x] **Phase 1** — Physics core: Morphon integration, Attractor/Repeller/Vortex, precomputed field grid
-- [x] **Phase 2** — First sound: additive engine (20 partials), two Timbral Anchors, IDW blending, full ADSR
-- [x] **Phase 3** — Manifold authoring: drag-and-drop Anchors, Emitter placement, parameter panels, amplitude→opacity Morphon core feedback
-- [ ] **Phase 4** — Polyphony & key-tracking: voice management, Terminus, MIDI mapping, mono/legato mode, per-note Morphon spawn characteristics, per-Emitter transpose (Oct/Coarse/Fine), per-Emitter pan, tuning modes (harmonic series, ratio) (note-driven launch parameters)
-- [ ] **Phase 5** — Full field model: Effect Zones, Flux Gates, Path Objects
+- [x] **Phase 2** — First sound: additive engine (20 partials), Timbral Anchors, IDW blending, full ADSR
+- [x] **Phase 3** — Manifold authoring: drag-and-drop for all object types, parameter panel (strength/radius/chirality/ADSR/key range/transpose/pan/terminus), per-Morphon trails, amplitude→opacity rendering, click-to-place spawn mode (arm type, click canvas), Delete/Backspace shortcut, patch save/load (DAW session persistence)
+- [x] **Phase 4** — Polyphony & key-tracking: 256-voice pool, per-Emitter key ranges, per-Emitter transpose (Oct/Semi/Cents), per-Emitter pan, Terminus (key-off attractor with arrival detection), Poly/Mono/Legato/Slur voice modes, pitch glide/portamento (log-space interpolation), spectral crossfade to suppress clicks at Manifold boundary crossings
+  - ⚠️ *Deferred:* tuning modes (harmonic series, ratio-based pitch mapping)
+- [x] **Phase 5 (partial)** — Effect Zones: circular spatial modulators for TimbreX, TimbreY, Amplitude, Pan, Pitch; Linear/Gaussian falloff; additive accumulation per tick; depth range auto-switches to ±24 semitones for Pitch target
+  - ⏳ *Remaining:* Flux Gates, Path Objects
 - [ ] **Phase 6** — Modulation: mod matrix, MIDI sources, Morphon state sources, MPE. Priority destinations: Emitter position XY, launch angle, launch speed (keytracking these to MIDI pitch is the canonical Morphos expressive relationship). All field object XY positions must be both sources and destinations.
-- [ ] **Phase 7** — Additional engines: FM, wavetable, heterogeneous blending. **Transient Objects**: percussive event synthesis layer triggered by Emitter generation, Terminus arrival, Event Horizon absorption, and Flux Gate crossings. **Emitter unison/detune mode**: N Morphons per note with per-parameter spread (angle, speed, detune, pan, mass); spread values are mod destinations.: percussive event synthesis layer triggered by Emitter generation, Terminus arrival, Event Horizon absorption, and Flux Gate crossings. Emitter-tethered transient (on note-on) is the first implementation target.
+- [ ] **Phase 7** — Additional engines: FM, wavetable, heterogeneous blending. **Transient Objects**: percussive event synthesis layer triggered by Emitter generation, Terminus arrival, Event Horizon absorption, and Flux Gate crossings. **Emitter unison/detune mode**: N Morphons per note with per-parameter spread (angle, speed, detune, pan, mass); spread values are mod destinations.
 - [ ] **Phase 8** — Scaling: spatial hash, SIMD, engine LOD, physics quality settings
 - [ ] **Phase 9** — Advanced: granular, physical model, spectral engines, full mod matrix
-- [ ] **Phase 10** — Product: patch save/load, patch randomizer (with its own parameters), per-Morphon visual identity (note labels + per-note colour toggle), preset browser, factory patches, GUI polish, code signing
+- [ ] **Phase 10** — Product: timbral visualizer (partial bar graph / FFT waterfall for latest Morphon), object staging area (configure defaults before placement), patch randomizer, per-Morphon visual identity (note labels + per-note colour), preset browser, factory patches, GUI polish, code signing
 
 **Known deferred issues:**
-- **Topology-aware anchor blending** — Timbral Anchor IDW uses raw Euclidean distance; crossing a wrap boundary causes a sharp timbral discontinuity. Fix: use `min(|Δx|, 1−|Δx|)` per axis conditioned on `globalBoundary`. The discontinuity has its own LFO-reset character and should be a toggle once the continuous version exists. Target: Phase 5.
+- **Topology-aware anchor blending** — Timbral Anchor IDW uses raw Euclidean distance; crossing a wrap boundary causes a sharp timbral discontinuity. Fix: use `min(|Δx|, 1−|Δx|)` per axis conditioned on `globalBoundary`. The discontinuity has its own character and should be a toggle once the continuous version exists. Target: Phase 5 remainder.
+- **Tuning modes** — current pitch calculation is equal temperament only. Harmonic series and ratio-based mapping deferred from Phase 4.
 
 **UI wishlist (Phase 10+):**
-- Piano keyboard strip at the bottom of the window — lights active MIDI notes and is clickable for in-VST testing. JUCE provides `MidiKeyboardComponent` as a baseline; will likely want a custom-skinned version to match the Morphos visual language.
-- **Per-Morphon visual identity** — note number or pitch-class label printed on each active Morphon dot; per-note colour generation (toggleable). Makes polyphonic patches legible at a glance and is especially useful when developing key-tracked patches.
-- **Patch randomizer** — randomise some or all object parameters with configurable mutation depth and optional seeded anchoring ("randomise around current patch"). Needs its own parameter set to control which domains are in scope for randomisation.
+- **Timbral visualizer** — partial amplitude bar graph is the lowest-cost option given the existing additive engine; oscilloscope or FFT waterfall are alternatives. Shows timbre of the most recently launched Morphon.
+- **Object staging area** — configure Emitter/Anchor/Zone defaults in the panel before clicking to place, so the first instance lands already tuned rather than requiring post-placement edits.
+- **Per-Morphon visual identity** — note number or pitch-class label on each Morphon dot; per-note colour generation (toggleable). Makes polyphonic patches legible at a glance.
+- **Patch randomizer** — randomise parameters with configurable mutation depth and optional seeded anchoring ("randomise around current patch").
+- Piano keyboard strip at the bottom — lights active MIDI notes, clickable for in-VST testing.
 
 ---
 
