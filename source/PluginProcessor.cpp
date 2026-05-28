@@ -227,8 +227,22 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
                 sample *= amp;
 
-                for (int ch = 0; ch < clampedCh; ++ch)
-                    channelPtrs[ch][s] += sample;
+                // Equal-power pan: θ maps pan [-1,+1] → [0, π/2]
+                // L = cos(θ), R = sin(θ)
+                const float panAngle = (m.pan + 1.0f) * (juce::MathConstants<float>::pi * 0.25f);
+                const float panL     = std::cos(panAngle);
+                const float panR     = std::sin(panAngle);
+
+                if (clampedCh >= 2)
+                {
+                    channelPtrs[0][s] += sample * panL;
+                    channelPtrs[1][s] += sample * panR;
+                }
+                else
+                {
+                    for (int ch = 0; ch < clampedCh; ++ch)
+                        channelPtrs[ch][s] += sample;
+                }
             }
         }
     }

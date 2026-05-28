@@ -138,10 +138,10 @@ is shipped — DAW automation is keyed to these strings.
 - [x] **Phase 1** — Physics core: Morphon integration, Attractor/Repeller/Vortex, precomputed field grid
 - [x] **Phase 2** — First sound: additive engine (20 partials), two Timbral Anchors, IDW blending, full ADSR
 - [x] **Phase 3** — Manifold authoring: drag-and-drop Anchors, Emitter placement, parameter panels, amplitude→opacity Morphon core feedback
-- [ ] **Phase 4** — Polyphony & key-tracking: voice management, Terminus, MIDI mapping, mono/legato mode, per-note Morphon spawn characteristics (note-driven launch parameters)
+- [ ] **Phase 4** — Polyphony & key-tracking: voice management, Terminus, MIDI mapping, mono/legato mode, per-note Morphon spawn characteristics, per-Emitter transpose (Oct/Coarse/Fine), per-Emitter pan, tuning modes (harmonic series, ratio) (note-driven launch parameters)
 - [ ] **Phase 5** — Full field model: Effect Zones, Flux Gates, Path Objects
 - [ ] **Phase 6** — Modulation: mod matrix, MIDI sources, Morphon state sources, MPE. Priority destinations: Emitter position XY, launch angle, launch speed (keytracking these to MIDI pitch is the canonical Morphos expressive relationship). All field object XY positions must be both sources and destinations.
-- [ ] **Phase 7** — Additional engines: FM, wavetable, heterogeneous blending. **Transient Objects**: percussive event synthesis layer triggered by Emitter generation, Terminus arrival, Event Horizon absorption, and Flux Gate crossings. Emitter-tethered transient (on note-on) is the first implementation target.
+- [ ] **Phase 7** — Additional engines: FM, wavetable, heterogeneous blending. **Transient Objects**: percussive event synthesis layer triggered by Emitter generation, Terminus arrival, Event Horizon absorption, and Flux Gate crossings. **Emitter unison/detune mode**: N Morphons per note with per-parameter spread (angle, speed, detune, pan, mass); spread values are mod destinations.: percussive event synthesis layer triggered by Emitter generation, Terminus arrival, Event Horizon absorption, and Flux Gate crossings. Emitter-tethered transient (on note-on) is the first implementation target.
 - [ ] **Phase 8** — Scaling: spatial hash, SIMD, engine LOD, physics quality settings
 - [ ] **Phase 9** — Advanced: granular, physical model, spectral engines, full mod matrix
 - [ ] **Phase 10** — Product: patch save/load, patch randomizer (with its own parameters), per-Morphon visual identity (note labels + per-note colour toggle), preset browser, factory patches, GUI polish, code signing

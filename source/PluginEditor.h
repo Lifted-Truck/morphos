@@ -125,6 +125,10 @@ private:
     // Emitter section (visible when an Emitter is selected)
     juce::Label  lblKeyLow_,        lblKeyHigh_;
     juce::Slider sldKeyLow_,        sldKeyHigh_;
+    juce::Label  lblTransposeOct_,  lblTransposeSemi_, lblTransposeCents_;
+    juce::Slider sldTransposeOct_,  sldTransposeSemi_, sldTransposeCents_;
+    juce::Label  lblEmitPan_;
+    juce::Slider sldEmitPan_;
     juce::Label  lblEmitAngle_,     lblEmitSpeed_;
     juce::Label  lblEmitAttack_,    lblEmitDecay_,   lblEmitSustain_,  lblEmitRelease_;
     juce::Slider sldEmitAngle_,     sldEmitSpeed_;

@@ -29,6 +29,10 @@ struct Emitter
     float           releaseTime  = 0.30f;   // Envelope release, seconds (after note-off)
     int             keyLow       = 0;       // Lowest MIDI note this Emitter responds to [0, 127]
     int             keyHigh      = 127;     // Highest MIDI note this Emitter responds to [0, 127]
+    int             transposeOct  = 0;      // Octave offset [-4, +4]
+    int             transposeSemi = 0;      // Semitone offset [-12, +12]
+    float           transposeCents= 0.0f;  // Fine offset in cents [-100, +100]
+    float           pan           = 0.0f;  // Stereo position [-1 L, 0 C, +1 R]
     bool            active       = false;   // Slots are inactive by default; constructor enables [0]
 };
 

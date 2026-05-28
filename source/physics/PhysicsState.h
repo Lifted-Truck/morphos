@@ -70,6 +70,9 @@ struct MorphonState
     // Computed by physics tick via ADSR state machine; read by audio engine each buffer.
     float amplitude = 0.0f;   // 0..1, authoritative value for synthesis scaling
 
+    // ── Spatial ───────────────────────────────────────────────────────────────
+    float pan = 0.0f;   // Stereo position [-1 L, 0 C, +1 R]; set at spawn from Emitter
+
     // ── Timbral parameters ────────────────────────────────────────────────────
     // Output of Timbral Anchor RBF blending at current Manifold position.
     // Phase 2: timbreX = spectral rolloff, timbreY = inharmonicity.
@@ -94,9 +97,13 @@ struct EmitterSnapshot
     float          decayTime    = 0.15f;
     float          sustainLevel = 0.70f;
     float          releaseTime  = 0.30f;
-    int            keyLow       = 0;     // Lowest MIDI note this Emitter responds to
-    int            keyHigh      = 127;   // Highest MIDI note this Emitter responds to
-    bool           active       = false;
+    int            keyLow        = 0;     // Lowest MIDI note this Emitter responds to
+    int            keyHigh       = 127;   // Highest MIDI note this Emitter responds to
+    int            transposeOct  = 0;
+    int            transposeSemi = 0;
+    float          transposeCents= 0.0f;
+    float          pan           = 0.0f;
+    bool           active        = false;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -174,8 +181,12 @@ struct ManifoldEdit
         SetEmitterDecay,
         SetEmitterSustain,
         SetEmitterRelease,
-        SetEmitterKeyLow,      // x = (float)MIDI note number [0, 127]
-        SetEmitterKeyHigh,     // x = (float)MIDI note number [0, 127]
+        SetEmitterKeyLow,       // x = (float)MIDI note number [0, 127]
+        SetEmitterKeyHigh,      // x = (float)MIDI note number [0, 127]
+        SetEmitterTransposeOct, // x = (float)octave offset [-4, +4]
+        SetEmitterTransposeSemi,// x = (float)semitone offset [-12, +12]
+        SetEmitterTransposeCents,// x = cents [-100, +100]
+        SetEmitterPan,          // x = pan position [-1, +1]
         SetGlobalBoundary,     // x = (float)cast of BoundaryBehavior uint8_t; index unused
         SetPolyMode,           // x = (float)cast of PolyMode uint8_t; index unused
         SetTimbralAnchorTimbreX,

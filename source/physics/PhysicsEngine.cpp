@@ -322,6 +322,26 @@ void PhysicsEngine::drainEditCommands()
                         emitters_[idx].keyHigh = juce::jlimit(0, 127, (int)e.x);
                     break;
 
+                case ManifoldEdit::Type::SetEmitterTransposeOct:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].transposeOct = juce::jlimit(-4, 4, (int)e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterTransposeSemi:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].transposeSemi = juce::jlimit(-12, 12, (int)e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterTransposeCents:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].transposeCents = juce::jlimit(-100.0f, 100.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterPan:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].pan = juce::jlimit(-1.0f, 1.0f, e.x);
+                    break;
+
                 // ── Global manifold topology ──────────────────────────────────
                 case ManifoldEdit::Type::SetGlobalBoundary:
                     globalBoundary_ = static_cast<BoundaryBehavior>(
@@ -453,7 +473,15 @@ void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
         {
             if (!m.active || m.midiChannel != channel) continue;
             // Keep position and velocity — only update pitch and envelope
-            m.fundamentalHz = midiNoteToHz(note);
+            {
+                const int ei = m.emitterIndex;
+                const float xp = (ei >= 0 && ei < MAX_EMITTERS)
+                    ? std::pow(2.0f, emitters_[ei].transposeOct
+                                   + emitters_[ei].transposeSemi / 12.0f
+                                   + emitters_[ei].transposeCents / 1200.0f)
+                    : 1.0f;
+                m.fundamentalHz = midiNoteToHz(note) * xp;
+            }
             m.midiNote      = note;
             m.noteReleased  = false;
             m.envStage      = EnvelopeStage::Attack;
@@ -523,7 +551,11 @@ void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
         m.age           = 0.0f;
         m.timbreX       = 0.5f;
         m.timbreY       = 0.0f;
-        m.fundamentalHz = midiNoteToHz(note);
+        m.pan           = em.pan;
+        m.fundamentalHz = midiNoteToHz(note)
+            * std::pow(2.0f, em.transposeOct
+                           + em.transposeSemi / 12.0f
+                           + em.transposeCents / 1200.0f);
 
         // Mono/Legato: one voice total — stop after first successful spawn
         if (globalPolyMode_ != PolyMode::Polyphonic) break;
@@ -763,9 +795,13 @@ void PhysicsEngine::writeSnapshot()
         dst.decayTime    = src.decayTime;
         dst.sustainLevel = src.sustainLevel;
         dst.releaseTime  = src.releaseTime;
-        dst.keyLow       = src.keyLow;
-        dst.keyHigh      = src.keyHigh;
-        dst.active       = src.active;
+        dst.keyLow        = src.keyLow;
+        dst.keyHigh       = src.keyHigh;
+        dst.transposeOct  = src.transposeOct;
+        dst.transposeSemi = src.transposeSemi;
+        dst.transposeCents= src.transposeCents;
+        dst.pan           = src.pan;
+        dst.active        = src.active;
     }
 
     snap.globalBoundary = globalBoundary_;

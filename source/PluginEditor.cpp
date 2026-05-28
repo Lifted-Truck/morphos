@@ -171,9 +171,13 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     y += SECTION_GAP;
 
     // ── Emitter section ───────────────────────────────────────────────────────
-    layoutRow(lblKeyLow_,      sldKeyLow_);
-    layoutRow(lblKeyHigh_,     sldKeyHigh_);
-    layoutRow(lblEmitAngle_,   sldEmitAngle_);
+    layoutRow(lblKeyLow_,         sldKeyLow_);
+    layoutRow(lblKeyHigh_,        sldKeyHigh_);
+    layoutRow(lblTransposeOct_,   sldTransposeOct_);
+    layoutRow(lblTransposeSemi_,  sldTransposeSemi_);
+    layoutRow(lblTransposeCents_, sldTransposeCents_);
+    layoutRow(lblEmitPan_,        sldEmitPan_);
+    layoutRow(lblEmitAngle_,      sldEmitAngle_);
     layoutRow(lblEmitSpeed_,   sldEmitSpeed_);
     layoutRow(lblEmitAttack_,  sldEmitAttack_);
     layoutRow(lblEmitDecay_,   sldEmitDecay_);
@@ -360,6 +364,46 @@ void MorphosEditor::setupSliders()
                  selection_.index, (float)sldKeyHigh_.getValue());
     };
 
+    // Transpose sliders — integer oct/semi, float cents
+    styleLabel(lblTransposeOct_,   "Oct");
+    styleLabel(lblTransposeSemi_,  "Semi");
+    styleLabel(lblTransposeCents_, "Cents");
+
+    styleSlider(sldTransposeOct_,   -4.0,  4.0);   sldTransposeOct_.setNumDecimalPlacesToDisplay(0);
+    styleSlider(sldTransposeSemi_, -12.0, 12.0);   sldTransposeSemi_.setNumDecimalPlacesToDisplay(0);
+    styleSlider(sldTransposeCents_,-100.0,100.0);   sldTransposeCents_.setNumDecimalPlacesToDisplay(1);
+
+    addAndMakeVisible(lblTransposeOct_);   addAndMakeVisible(sldTransposeOct_);
+    addAndMakeVisible(lblTransposeSemi_);  addAndMakeVisible(sldTransposeSemi_);
+    addAndMakeVisible(lblTransposeCents_); addAndMakeVisible(sldTransposeCents_);
+
+    sldTransposeOct_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterTransposeOct,
+                     selection_.index, (float)sldTransposeOct_.getValue());
+    };
+    sldTransposeSemi_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterTransposeSemi,
+                     selection_.index, (float)sldTransposeSemi_.getValue());
+    };
+    sldTransposeCents_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterTransposeCents,
+                     selection_.index, (float)sldTransposeCents_.getValue());
+    };
+
+    // Pan slider
+    styleLabel(lblEmitPan_, "Pan");
+    styleSlider(sldEmitPan_, -1.0, 1.0);
+    sldEmitPan_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblEmitPan_); addAndMakeVisible(sldEmitPan_);
+    sldEmitPan_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterPan,
+                     selection_.index, (float)sldEmitPan_.getValue());
+    };
+
     // Launch angle: simple [-π, π] range displayed in degrees.
     // Continuous-rotation mode will be added when automation is implemented.
     {
@@ -501,9 +545,13 @@ void MorphosEditor::updatePanel()
     lblFORadius_.setVisible(false);      sldFORadius_.setVisible(false);
     lblFOChirality_.setVisible(false);   sldFOChirality_.setVisible(false);
 
-    lblKeyLow_.setVisible(false);        sldKeyLow_.setVisible(false);
-    lblKeyHigh_.setVisible(false);       sldKeyHigh_.setVisible(false);
-    lblEmitAngle_.setVisible(false);     sldEmitAngle_.setVisible(false);
+    lblKeyLow_.setVisible(false);          sldKeyLow_.setVisible(false);
+    lblKeyHigh_.setVisible(false);         sldKeyHigh_.setVisible(false);
+    lblTransposeOct_.setVisible(false);    sldTransposeOct_.setVisible(false);
+    lblTransposeSemi_.setVisible(false);   sldTransposeSemi_.setVisible(false);
+    lblTransposeCents_.setVisible(false);  sldTransposeCents_.setVisible(false);
+    lblEmitPan_.setVisible(false);         sldEmitPan_.setVisible(false);
+    lblEmitAngle_.setVisible(false);       sldEmitAngle_.setVisible(false);
     lblEmitSpeed_.setVisible(false);     sldEmitSpeed_.setVisible(false);
     lblEmitAttack_.setVisible(false);    sldEmitAttack_.setVisible(false);
     lblEmitDecay_.setVisible(false);     sldEmitDecay_.setVisible(false);
@@ -577,18 +625,26 @@ void MorphosEditor::updatePanel()
 
         lblPanelHeader_.setText("Emitter " + juce::String(i), juce::dontSendNotification);
 
-        sldKeyLow_.setValue     ((double)e.keyLow,  juce::dontSendNotification);
-        sldKeyHigh_.setValue    ((double)e.keyHigh, juce::dontSendNotification);
-        sldEmitAngle_.setValue  (e.launchAngle,     juce::dontSendNotification);
+        sldKeyLow_.setValue        ((double)e.keyLow,         juce::dontSendNotification);
+        sldKeyHigh_.setValue       ((double)e.keyHigh,        juce::dontSendNotification);
+        sldTransposeOct_.setValue  ((double)e.transposeOct,   juce::dontSendNotification);
+        sldTransposeSemi_.setValue ((double)e.transposeSemi,  juce::dontSendNotification);
+        sldTransposeCents_.setValue((double)e.transposeCents, juce::dontSendNotification);
+        sldEmitPan_.setValue       ((double)e.pan,            juce::dontSendNotification);
+        sldEmitAngle_.setValue     (e.launchAngle,            juce::dontSendNotification);
         sldEmitSpeed_.setValue  (e.launchSpeed,     juce::dontSendNotification);
         sldEmitAttack_.setValue (e.attackTime,   juce::dontSendNotification);
         sldEmitDecay_.setValue  (e.decayTime,    juce::dontSendNotification);
         sldEmitSustain_.setValue(e.sustainLevel, juce::dontSendNotification);
         sldEmitRelease_.setValue(e.releaseTime,  juce::dontSendNotification);
 
-        lblKeyLow_.setVisible(true);        sldKeyLow_.setVisible(true);
-        lblKeyHigh_.setVisible(true);       sldKeyHigh_.setVisible(true);
-        lblEmitAngle_.setVisible(true);     sldEmitAngle_.setVisible(true);
+        lblKeyLow_.setVisible(true);           sldKeyLow_.setVisible(true);
+        lblKeyHigh_.setVisible(true);          sldKeyHigh_.setVisible(true);
+        lblTransposeOct_.setVisible(true);     sldTransposeOct_.setVisible(true);
+        lblTransposeSemi_.setVisible(true);    sldTransposeSemi_.setVisible(true);
+        lblTransposeCents_.setVisible(true);   sldTransposeCents_.setVisible(true);
+        lblEmitPan_.setVisible(true);          sldEmitPan_.setVisible(true);
+        lblEmitAngle_.setVisible(true);        sldEmitAngle_.setVisible(true);
         lblEmitSpeed_.setVisible(true);     sldEmitSpeed_.setVisible(true);
         lblEmitAttack_.setVisible(true);    sldEmitAttack_.setVisible(true);
         lblEmitDecay_.setVisible(true);     sldEmitDecay_.setVisible(true);
