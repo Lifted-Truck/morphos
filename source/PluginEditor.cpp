@@ -36,6 +36,10 @@ namespace Colour
     static const juce::Colour ZoneAmp      { 0xFFD4A84B };  // Gold        — amplitude
     static const juce::Colour ZonePan      { 0xFFCA5B8A };  // Pink        — stereo pan
     static const juce::Colour ZonePitch    { 0xFF9B5BCA };  // Purple      — pitch shift
+
+    // Flux Gate — crossing-triggered envelope re-trigger. Distinct hue from
+    // Repeller red and Emitter amber; reads as a "tripwire" cue.
+    static const juce::Colour FluxGate     { 0xFF38CFE6 };  // Cyan
 }
 
 static juce::Colour zoneColour(ZoneTarget t) noexcept
@@ -134,15 +138,23 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     const int x = panel.getX();
     const int w = panel.getWidth();
 
-    // ── Spawn row — 6 equal-width buttons ────────────────────────────────────
+    // ── Spawn rows — 4 + 3 two-row split ─────────────────────────────────────
+    // Single row is too cramped at 7 buttons / panel width = 260.
+    // Phase 10's right-click context menu will subsume these buttons; until
+    // then, two rows keeps each label readable.
     {
-        const int bw = w / 6;
-        btnAddAtt_ .setBounds(x + bw * 0, y, bw, SPAWN_H);
-        btnAddRep_ .setBounds(x + bw * 1, y, bw, SPAWN_H);
-        btnAddVor_ .setBounds(x + bw * 2, y, bw, SPAWN_H);
-        btnAddEmit_.setBounds(x + bw * 3, y, bw, SPAWN_H);
-        btnAddAnch_.setBounds(x + bw * 4, y, bw, SPAWN_H);
-        btnAddZone_.setBounds(x + bw * 5, y, w - bw * 5, SPAWN_H);
+        const int bw4 = w / 4;
+        btnAddAtt_ .setBounds(x + bw4 * 0, y, bw4,           SPAWN_H);
+        btnAddRep_ .setBounds(x + bw4 * 1, y, bw4,           SPAWN_H);
+        btnAddVor_ .setBounds(x + bw4 * 2, y, bw4,           SPAWN_H);
+        btnAddEmit_.setBounds(x + bw4 * 3, y, w - bw4 * 3,   SPAWN_H);
+    }
+    y += SPAWN_H + 2;
+    {
+        const int bw3 = w / 3;
+        btnAddAnch_.setBounds(x + bw3 * 0, y, bw3,         SPAWN_H);
+        btnAddZone_.setBounds(x + bw3 * 1, y, bw3,         SPAWN_H);
+        btnAddFlux_.setBounds(x + bw3 * 2, y, w - bw3 * 2, SPAWN_H);
     }
     y += SPAWN_H + 4;
 
@@ -250,6 +262,11 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
         btnZoneFalloffLinear_  .setBounds(x + bw * 0, y, bw,         BTN_ROW_H);
         btnZoneFalloffGaussian_.setBounds(x + bw * 1, y, w - bw * 1, BTN_ROW_H);
     }
+    y += BTN_ROW_H + 2;
+
+    // ── Flux gate section ─────────────────────────────────────────────────────
+    layoutRow(lblGateLength_, sldGateLength_);
+    layoutRow(lblGateAngle_,  sldGateAngle_);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -304,6 +321,7 @@ void MorphosEditor::setupSliders()
     styleSpawnBtn(btnAddEmit_);  addAndMakeVisible(btnAddEmit_);
     styleSpawnBtn(btnAddAnch_);  addAndMakeVisible(btnAddAnch_);
     styleSpawnBtn(btnAddZone_);  addAndMakeVisible(btnAddZone_);
+    styleSpawnBtn(btnAddFlux_);  addAndMakeVisible(btnAddFlux_);
 
     // Spawn buttons arm placement mode — click canvas to place at desired position.
     // Clicking the same button again disarms without placing anything.
@@ -316,6 +334,7 @@ void MorphosEditor::setupSliders()
         btnAddEmit_.setToggleState(pendingSpawn_ == SpawnKind::Emitter,      juce::dontSendNotification);
         btnAddAnch_.setToggleState(pendingSpawn_ == SpawnKind::TimbralAnchor,juce::dontSendNotification);
         btnAddZone_.setToggleState(pendingSpawn_ == SpawnKind::EffectZone,   juce::dontSendNotification);
+        btnAddFlux_.setToggleState(pendingSpawn_ == SpawnKind::FluxGate,     juce::dontSendNotification);
         repaint();
     };
 
@@ -325,6 +344,7 @@ void MorphosEditor::setupSliders()
     btnAddEmit_.onClick = [armSpawn]{ armSpawn(SpawnKind::Emitter);      };
     btnAddAnch_.onClick = [armSpawn]{ armSpawn(SpawnKind::TimbralAnchor);};
     btnAddZone_.onClick = [armSpawn]{ armSpawn(SpawnKind::EffectZone);   };
+    btnAddFlux_.onClick = [armSpawn]{ armSpawn(SpawnKind::FluxGate);     };
 
     // ── Panel header + remove button ──────────────────────────────────────────
     lblPanelHeader_.setText("No Selection", juce::dontSendNotification);
@@ -347,6 +367,7 @@ void MorphosEditor::setupSliders()
             case ObjectKind::Emitter:       t = ManifoldEdit::Type::RemoveEmitter;       break;
             case ObjectKind::TimbralAnchor: t = ManifoldEdit::Type::RemoveTimbralAnchor; break;
             case ObjectKind::EffectZone:    t = ManifoldEdit::Type::RemoveEffectZone;    break;
+            case ObjectKind::FluxGate:      t = ManifoldEdit::Type::RemoveFluxGate;      break;
             default: return;
         }
         sendEdit(t, selection_.index, 0.0f, 0.0f);
@@ -659,6 +680,34 @@ void MorphosEditor::setupSliders()
     btnZoneFalloffLinear_  .onClick = [zoneFalloffClick]{ zoneFalloffClick(ZoneFalloff::Linear);   };
     btnZoneFalloffGaussian_.onClick = [zoneFalloffClick]{ zoneFalloffClick(ZoneFalloff::Gaussian); };
 
+    // ── Flux gate sliders ──────────────────────────────────────────────────────
+    styleLabel(lblGateLength_, "Length");
+    styleLabel(lblGateAngle_,  "Angle");
+    styleSlider(sldGateLength_, 0.02, 0.9);
+    sldGateLength_.setNumDecimalPlacesToDisplay(2);
+    {
+        const double pi = juce::MathConstants<double>::pi;
+        styleSlider(sldGateAngle_, -pi, pi);
+        sldGateAngle_.textFromValueFunction = [](double v) -> juce::String
+        {
+            return juce::String(v * 180.0 / juce::MathConstants<double>::pi, 1)
+                 + juce::String::fromUTF8("\xc2\xb0");
+        };
+    }
+    addAndMakeVisible(lblGateLength_); addAndMakeVisible(sldGateLength_);
+    addAndMakeVisible(lblGateAngle_);  addAndMakeVisible(sldGateAngle_);
+
+    sldGateLength_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetFluxGateLength,
+                     selection_.index, (float)sldGateLength_.getValue());
+    };
+    sldGateAngle_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetFluxGateAngle,
+                     selection_.index, (float)sldGateAngle_.getValue());
+    };
+
     // ── Global topology row — always visible ──────────────────────────────────
     styleLabel(lblBoundary_, "Topology");
     addAndMakeVisible(lblBoundary_);
@@ -805,6 +854,9 @@ void MorphosEditor::updatePanel()
     btnZoneAmp_.setVisible(false);          btnZonePan_.setVisible(false);
     btnZonePitch_.setVisible(false);
     btnZoneFalloffLinear_.setVisible(false); btnZoneFalloffGaussian_.setVisible(false);
+
+    lblGateLength_.setVisible(false);       sldGateLength_.setVisible(false);
+    lblGateAngle_.setVisible(false);        sldGateAngle_.setVisible(false);
 
     const bool hasSelection = selection_.valid();
     btnRemove_.setVisible(hasSelection);
@@ -959,6 +1011,23 @@ void MorphosEditor::updatePanel()
         btnZonePitch_.setVisible(true);
         btnZoneFalloffLinear_.setVisible(true); btnZoneFalloffGaussian_.setVisible(true);
     }
+    else if (selection_.kind == ObjectKind::FluxGate)
+    {
+        const int i = selection_.index;
+        if (i >= MAX_FLUX_GATES || !state.fluxGates[i].active)
+        {
+            selection_ = {}; ignoreSliderCallbacks_ = false; return;
+        }
+        const auto& gate = state.fluxGates[i];
+
+        lblPanelHeader_.setText("Gate " + juce::String(i), juce::dontSendNotification);
+
+        sldGateLength_.setValue(gate.length,   juce::dontSendNotification);
+        sldGateAngle_ .setValue(gate.angleRad, juce::dontSendNotification);
+
+        lblGateLength_.setVisible(true); sldGateLength_.setVisible(true);
+        lblGateAngle_ .setVisible(true); sldGateAngle_ .setVisible(true);
+    }
 
     ignoreSliderCallbacks_ = false;
 }
@@ -991,6 +1060,7 @@ void MorphosEditor::clearPlacementMode()
     btnAddEmit_.setToggleState(false, juce::dontSendNotification);
     btnAddAnch_.setToggleState(false, juce::dontSendNotification);
     btnAddZone_.setToggleState(false, juce::dontSendNotification);
+    btnAddFlux_.setToggleState(false, juce::dontSendNotification);
 }
 
 juce::Colour MorphosEditor::pendingSpawnColour() const noexcept
@@ -1003,6 +1073,7 @@ juce::Colour MorphosEditor::pendingSpawnColour() const noexcept
         case SpawnKind::Emitter:       return Colour::Emitter;
         case SpawnKind::TimbralAnchor: return Colour::Anchor;
         case SpawnKind::EffectZone:    return Colour::ZoneTimbreX;
+        case SpawnKind::FluxGate:      return Colour::FluxGate;
         default:                       return juce::Colours::white;
     }
 }
@@ -1033,6 +1104,7 @@ bool MorphosEditor::keyPressed(const juce::KeyPress& key)
             case ObjectKind::Emitter:       t = ManifoldEdit::Type::RemoveEmitter;       break;
             case ObjectKind::TimbralAnchor: t = ManifoldEdit::Type::RemoveTimbralAnchor; break;
             case ObjectKind::EffectZone:    t = ManifoldEdit::Type::RemoveEffectZone;    break;
+            case ObjectKind::FluxGate:      t = ManifoldEdit::Type::RemoveFluxGate;      break;
             default: return false;
         }
         sendEdit(t, selection_.index, 0.0f, 0.0f);
@@ -1112,6 +1184,34 @@ MorphosEditor::Selection MorphosEditor::hitTest(juce::Point<float> canvasPt,
             return { ObjectKind::EffectZone, i };
     }
 
+    // Priority 5: Flux gates — hit on the line segment itself, using point-to-
+    // segment distance so the whole tripwire is grabbable (not just the centre).
+    for (int i = 0; i < MAX_FLUX_GATES; ++i)
+    {
+        const auto& g = state.fluxGates[i];
+        if (!g.active) continue;
+
+        const float half = g.length * 0.5f;
+        const auto a = manifoldToCanvas(g.x - std::cos(g.angleRad) * half,
+                                        g.y - std::sin(g.angleRad) * half, canvas);
+        const auto b = manifoldToCanvas(g.x + std::cos(g.angleRad) * half,
+                                        g.y + std::sin(g.angleRad) * half, canvas);
+        // Standard point-to-segment distance: project onto AB, clamp to [0,1].
+        const float dx  = b.x - a.x;
+        const float dy  = b.y - a.y;
+        const float len2 = dx * dx + dy * dy;
+        const float t   = (len2 > 1e-6f)
+            ? juce::jlimit(0.0f, 1.0f,
+                ((canvasPt.x - a.x) * dx + (canvasPt.y - a.y) * dy) / len2)
+            : 0.0f;
+        const float cx = a.x + dx * t;
+        const float cy = a.y + dy * t;
+        const float d  = std::sqrt((canvasPt.x - cx) * (canvasPt.x - cx)
+                                 + (canvasPt.y - cy) * (canvasPt.y - cy));
+        if (d <= HIT_PX)
+            return { ObjectKind::FluxGate, i };
+    }
+
     return { ObjectKind::None, -1 };
 }
 
@@ -1140,6 +1240,7 @@ void MorphosEditor::mouseDown(const juce::MouseEvent& event)
             case SpawnKind::Emitter:       addType = ManifoldEdit::Type::AddEmitter;       break;
             case SpawnKind::TimbralAnchor: addType = ManifoldEdit::Type::AddTimbralAnchor; break;
             case SpawnKind::EffectZone:    addType = ManifoldEdit::Type::AddEffectZone;    break;
+            case SpawnKind::FluxGate:      addType = ManifoldEdit::Type::AddFluxGate;      break;
             default: clearPlacementMode(); return;
         }
 
@@ -1178,6 +1279,10 @@ void MorphosEditor::mouseDown(const juce::MouseEvent& event)
                 drag_.pendingX = state.effectZones[hit.index].x;
                 drag_.pendingY = state.effectZones[hit.index].y;
                 break;
+            case ObjectKind::FluxGate:
+                drag_.pendingX = state.fluxGates[hit.index].x;
+                drag_.pendingY = state.fluxGates[hit.index].y;
+                break;
             default: break;
         }
     }
@@ -1209,6 +1314,7 @@ void MorphosEditor::mouseDrag(const juce::MouseEvent& event)
         case ObjectKind::Emitter:       moveType = ManifoldEdit::Type::MoveEmitter;        break;
         case ObjectKind::FieldObject:   moveType = ManifoldEdit::Type::MoveFieldObject;    break;
         case ObjectKind::EffectZone:    moveType = ManifoldEdit::Type::MoveEffectZone;     break;
+        case ObjectKind::FluxGate:      moveType = ManifoldEdit::Type::MoveFluxGate;       break;
         default: return;
     }
 
@@ -1246,7 +1352,7 @@ void MorphosEditor::paint(juce::Graphics& g)
 
         // "Click to place: Type" hint in top-left corner of canvas
         static const char* spawnNames[] = {
-            "", "Attractor", "Repeller", "Vortex", "Emitter", "Anchor", "Zone"
+            "", "Attractor", "Repeller", "Vortex", "Emitter", "Anchor", "Zone", "Gate"
         };
         g.setFont(juce::FontOptions(11.0f));
         g.setColour(c.withAlpha(0.80f));
@@ -1256,6 +1362,7 @@ void MorphosEditor::paint(juce::Graphics& g)
     }
 
     drawEffectZones     (g, state, canvas);    // Behind all other objects
+    drawFluxGates       (g, state, canvas);    // Above zones, beneath fields
     drawFieldObjects    (g, state, canvas);
     drawEmitters        (g, state, canvas);
     drawTimbralAnchors  (g, state, canvas);
@@ -1354,6 +1461,53 @@ void MorphosEditor::drawEffectZones(juce::Graphics& g,
             g.drawEllipse(centre.x - GLYPH_R - 3.0f, centre.y - GLYPH_R - 3.0f,
                           (GLYPH_R + 3.0f) * 2.0f, (GLYPH_R + 3.0f) * 2.0f, 1.5f);
         }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Draw — flux gates (line segment + endpoint dots; selection halo on whole line)
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MorphosEditor::drawFluxGates(juce::Graphics& g,
+                                  const PhysicsStateSnapshot& state,
+                                  juce::Rectangle<int> canvas) const
+{
+    const juce::Colour c = Colour::FluxGate;
+
+    for (int i = 0; i < MAX_FLUX_GATES; ++i)
+    {
+        const auto& gate = state.fluxGates[i];
+        if (!gate.active) continue;
+
+        float cx = gate.x, cy = gate.y;
+        if (drag_.active && selection_.kind == ObjectKind::FluxGate && selection_.index == i)
+        {
+            cx = drag_.pendingX;
+            cy = drag_.pendingY;
+        }
+
+        const float half = gate.length * 0.5f;
+        const auto a = manifoldToCanvas(cx - std::cos(gate.angleRad) * half,
+                                        cy - std::sin(gate.angleRad) * half, canvas);
+        const auto b = manifoldToCanvas(cx + std::cos(gate.angleRad) * half,
+                                        cy + std::sin(gate.angleRad) * half, canvas);
+
+        // Selection halo — wide, low-alpha line under the main stroke
+        if (selection_.kind == ObjectKind::FluxGate && selection_.index == i)
+        {
+            g.setColour(Colour::SelectRing.withAlpha(0.55f));
+            g.drawLine(a.x, a.y, b.x, b.y, 5.0f);
+        }
+
+        // Main line
+        g.setColour(c.withAlpha(0.85f));
+        g.drawLine(a.x, a.y, b.x, b.y, 2.0f);
+
+        // Endpoint dots so the gate's extent reads at a glance
+        constexpr float ER = 3.0f;
+        g.setColour(c);
+        g.fillEllipse(a.x - ER, a.y - ER, ER * 2.0f, ER * 2.0f);
+        g.fillEllipse(b.x - ER, b.y - ER, ER * 2.0f, ER * 2.0f);
     }
 }
 
@@ -1744,7 +1898,9 @@ void MorphosEditor::drawStatusBar(juce::Graphics& g,
            << state.activeTimbralAnchorCount << " anchor"
            << (state.activeTimbralAnchorCount != 1 ? "s" : "") << "  |  "
            << state.activeEffectZoneCount << " zone"
-           << (state.activeEffectZoneCount != 1 ? "s" : "");
+           << (state.activeEffectZoneCount != 1 ? "s" : "") << "  |  "
+           << state.activeFluxGateCount << " gate"
+           << (state.activeFluxGateCount != 1 ? "s" : "");
 
     const auto statusRect = getLocalBounds()
                                 .removeFromBottom(28)

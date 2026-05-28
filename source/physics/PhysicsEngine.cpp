@@ -179,6 +179,8 @@ void PhysicsEngine::tick(double dtSeconds)
     drainEditCommands();      // Apply UI edits before rebuilding grid / integrating
     rebuildFieldGridIfDirty();
     integrateMorphons(dtSeconds);
+    applyFluxGates();         // Detect crossings before envelope update so the
+                              // snap-to-Attack takes effect in this same tick.
     updateEnvelopes(dtSeconds);
     applyEffectZones();       // After envelope so amplitude modulation is applied last
     writeSnapshot();
@@ -538,6 +540,48 @@ void PhysicsEngine::drainEditCommands()
                     if (idx >= 0 && idx < MAX_EFFECT_ZONES)
                         effectZones_[idx].active = false;
                     break;
+
+                // ── Flux gate spawn / remove / edits ───────────────────────────
+                case ManifoldEdit::Type::AddFluxGate:
+                {
+                    int slot = -1;
+                    for (int k = 0; k < MAX_FLUX_GATES; ++k)
+                        if (!fluxGates_[k].active) { slot = k; break; }
+                    if (slot < 0) break;
+
+                    auto& g    = fluxGates_[slot];
+                    g.x        = e.x;
+                    g.y        = e.y;
+                    g.length   = 0.20f;
+                    g.angleRad = 0.0f;
+                    g.active   = true;
+                    break;
+                }
+
+                case ManifoldEdit::Type::RemoveFluxGate:
+                    if (idx >= 0 && idx < MAX_FLUX_GATES)
+                        fluxGates_[idx].active = false;
+                    break;
+
+                case ManifoldEdit::Type::MoveFluxGate:
+                    if (idx >= 0 && idx < MAX_FLUX_GATES)
+                    {
+                        fluxGates_[idx].x = e.x;
+                        fluxGates_[idx].y = e.y;
+                    }
+                    break;
+
+                case ManifoldEdit::Type::SetFluxGateLength:
+                    if (idx >= 0 && idx < MAX_FLUX_GATES)
+                        fluxGates_[idx].length = juce::jlimit(0.02f, 0.9f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetFluxGateAngle:
+                    if (idx >= 0 && idx < MAX_FLUX_GATES)
+                        fluxGates_[idx].angleRad = juce::jlimit(
+                            -juce::MathConstants<float>::pi,
+                             juce::MathConstants<float>::pi, e.x);
+                    break;
             }
         }
     };
@@ -811,6 +855,11 @@ void PhysicsEngine::integrateMorphons(double dt)
 
         m.age += dtF;
 
+        // Snapshot the entry position so applyFluxGates can test the per-tick
+        // trajectory segment (prev → cur) against gate lines later in the tick.
+        m.prevX = m.x;
+        m.prevY = m.y;
+
         // Sample field force at current position
         float fx, fy;
         fieldGrid_.sample(m.x, m.y, fx, fy);
@@ -1031,6 +1080,50 @@ void PhysicsEngine::updateEnvelopes(double dt)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Flux Gates — crossing detection + envelope re-trigger
+//
+// For each active Morphon, the per-tick trajectory is the line segment from
+// (prevX, prevY) to (x, y). If that segment crosses any active gate's segment,
+// the Morphon's envelope snaps back to Attack (terminus state cleared so a
+// post-noteOff re-trigger doesn't drag toward terminus mid-burst).
+//
+// Released voices are skipped — updateEnvelopes would immediately switch them
+// back to Release on its next pass and the gate would have no audible effect.
+// ─────────────────────────────────────────────────────────────────────────────
+
+void PhysicsEngine::applyFluxGates()
+{
+    // Cheap activity check — bail before per-Morphon iteration if no gates are active.
+    bool anyActive = false;
+    for (const auto& g : fluxGates_)
+        if (g.active) { anyActive = true; break; }
+    if (!anyActive) return;
+
+    for (auto& m : morphons_)
+    {
+        if (!m.active || m.noteReleased) continue;
+        if (m.prevX == m.x && m.prevY == m.y) continue;  // No movement, no crossing
+
+        for (const auto& g : fluxGates_)
+        {
+            if (!g.active) continue;
+
+            float ax, ay, bx, by;
+            fluxGateEndpointA(g, ax, ay);
+            fluxGateEndpointB(g, bx, by);
+
+            if (segmentsCross(m.prevX, m.prevY, m.x, m.y, ax, ay, bx, by))
+            {
+                m.envStage        = EnvelopeStage::Attack;
+                m.terminusArmed   = false;
+                m.terminusReached = false;
+                break;   // Multiple gates in one tick → one re-trigger is enough
+            }
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Effect zones — spatial modulation applied after envelope update
 //
 // Each tick: reset live pan and pitch contribution to their base values, then
@@ -1184,6 +1277,21 @@ void PhysicsEngine::writeSnapshot()
     }
     snap.activeEffectZoneCount = activeZones;
 
+    // Copy flux gates for UI rendering
+    int activeGates = 0;
+    for (int i = 0; i < MAX_FLUX_GATES; ++i)
+    {
+        const auto& src = fluxGates_[i];
+        auto&       dst = snap.fluxGates[i];
+        dst.x        = src.x;
+        dst.y        = src.y;
+        dst.length   = src.length;
+        dst.angleRad = src.angleRad;
+        dst.active   = src.active;
+        if (src.active) ++activeGates;
+    }
+    snap.activeFluxGateCount = activeGates;
+
     // Copy timbral anchors for UI rendering
     snap.activeTimbralAnchorCount = activeAnchorCount_;
     for (int i = 0; i < MAX_TIMBRAL_ANCHORS; ++i)
@@ -1216,6 +1324,7 @@ void PhysicsEngine::applyPatch(const PatchState& patch)
     emitters_           = patch.emitters;
     timbralAnchors_     = patch.timbralAnchors;
     effectZones_        = patch.effectZones;
+    fluxGates_          = patch.fluxGates;
     activeAnchorCount_  = patch.activeAnchorCount;
     globalBoundary_     = patch.boundary;
     globalGlideTimeSec_ = patch.glideTimeSec;

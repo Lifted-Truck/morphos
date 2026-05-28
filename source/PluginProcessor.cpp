@@ -381,6 +381,18 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         manifoldData.appendChild(node, nullptr);
     }
 
+    for (int i = 0; i < MAX_FLUX_GATES; ++i)
+    {
+        const auto& fg = snap.fluxGates[i];
+        if (!fg.active) continue;
+        auto node = juce::ValueTree("Gate");
+        node.setProperty("x",      fg.x,        nullptr);
+        node.setProperty("y",      fg.y,        nullptr);
+        node.setProperty("length", fg.length,   nullptr);
+        node.setProperty("angle",  fg.angleRad, nullptr);
+        manifoldData.appendChild(node, nullptr);
+    }
+
     state.appendChild(manifoldData, nullptr);
 
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
@@ -431,7 +443,7 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             ed->setSize(w, h);
     }
 
-    int fieldObjSlot = 0, emitterSlot = 0, anchorSlot = 0, zoneSlot = 0;
+    int fieldObjSlot = 0, emitterSlot = 0, anchorSlot = 0, zoneSlot = 0, gateSlot = 0;
 
     for (int i = 0; i < manifoldData.getNumChildren(); ++i)
     {
@@ -494,6 +506,15 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             z.target  = static_cast<ZoneTarget>( (int)child.getProperty("target",  0));
             z.falloff = static_cast<ZoneFalloff>((int)child.getProperty("falloff", 1));
             z.active  = true;
+        }
+        else if (child.hasType("Gate") && gateSlot < MAX_FLUX_GATES)
+        {
+            auto& fg    = patch.fluxGates[gateSlot++];
+            fg.x        = (float)child.getProperty("x",      0.5f);
+            fg.y        = (float)child.getProperty("y",      0.5f);
+            fg.length   = (float)child.getProperty("length", 0.20f);
+            fg.angleRad = (float)child.getProperty("angle",  0.0f);
+            fg.active   = true;
         }
     }
 

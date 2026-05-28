@@ -61,6 +61,8 @@ private:
     // ── Draw calls (additional) ───────────────────────────────────────────────
     void drawEffectZones    (juce::Graphics&, const PhysicsStateSnapshot&,
                              juce::Rectangle<int> canvas) const;
+    void drawFluxGates      (juce::Graphics&, const PhysicsStateSnapshot&,
+                             juce::Rectangle<int> canvas) const;
 
     // ── Mouse interaction (drag-and-drop + placement) ─────────────────────────
     void mouseDown(const juce::MouseEvent&) override;
@@ -71,10 +73,10 @@ private:
     bool keyPressed(const juce::KeyPress&) override;
 
     // ── Selection / drag state ─────────────────────────────────────────────────
-    enum class ObjectKind { None, FieldObject, Emitter, TimbralAnchor, EffectZone };
+    enum class ObjectKind { None, FieldObject, Emitter, TimbralAnchor, EffectZone, FluxGate };
 
     // ── Placement mode — arm a type, then click canvas to place ───────────────
-    enum class SpawnKind { None, Attractor, Repeller, Vortex, Emitter, TimbralAnchor, EffectZone };
+    enum class SpawnKind { None, Attractor, Repeller, Vortex, Emitter, TimbralAnchor, EffectZone, FluxGate };
 
     SpawnKind pendingSpawn_ = SpawnKind::None;
 
@@ -128,6 +130,7 @@ private:
     juce::TextButton btnAddEmit_ { "+Emit" };
     juce::TextButton btnAddAnch_ { "+Anch" };
     juce::TextButton btnAddZone_ { "+Zon"  };
+    juce::TextButton btnAddFlux_ { "+Gate" };
 
     // Panel header: object type+index label, plus Remove button on the right
     juce::Label      lblPanelHeader_;
@@ -187,6 +190,10 @@ private:
     juce::TextButton btnZonePitch_   { "Pitch" };
     juce::TextButton btnZoneFalloffLinear_   { "Linear"   };
     juce::TextButton btnZoneFalloffGaussian_ { "Gauss"    };
+
+    // Flux gate section (visible when a FluxGate is selected)
+    juce::Label  lblGateLength_, lblGateAngle_;
+    juce::Slider sldGateLength_, sldGateAngle_;
 
     // ── Per-Morphon trail buffer ───────────────────────────────────────────────
     struct Trail

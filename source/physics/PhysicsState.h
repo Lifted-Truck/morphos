@@ -5,6 +5,7 @@
 
 #include "EffectZone.h"
 #include "FieldObject.h"
+#include "FluxGate.h"
 #include "synthesis/TimbralAnchor.h"   // for MAX_TIMBRAL_ANCHORS
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -51,6 +52,12 @@ struct MorphonState
     float y  = 0.5f;
     float vx = 0.0f;    // Velocity (Manifold units per second)
     float vy = 0.0f;
+
+    // Position at the start of the current tick — used by Flux Gate crossing
+    // detection (the Morphon's per-tick trajectory is the segment prev → cur).
+    // Stored by integrateMorphons before the Euler step.
+    float prevX = 0.5f;
+    float prevY = 0.5f;
 
     // ── Physics parameters ────────────────────────────────────────────────────
     float mass = 1.0f;  // Resistance to field forces
@@ -153,6 +160,18 @@ struct EffectZoneSnapshot
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// FluxGateSnapshot — crossing-triggered gate data for UI rendering
+// ─────────────────────────────────────────────────────────────────────────────
+struct FluxGateSnapshot
+{
+    float x        = 0.5f;
+    float y        = 0.5f;
+    float length   = 0.20f;
+    float angleRad = 0.0f;
+    bool  active   = false;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FieldObjectSnapshot — lightweight field object data for UI rendering
 // ─────────────────────────────────────────────────────────────────────────────
 struct FieldObjectSnapshot
@@ -177,11 +196,13 @@ struct PhysicsStateSnapshot
     std::array<EmitterSnapshot,        MAX_EMITTERS>         emitters{};
     std::array<TimbralAnchorSnapshot,  MAX_TIMBRAL_ANCHORS>  timbralAnchors{};
     std::array<EffectZoneSnapshot,     MAX_EFFECT_ZONES>     effectZones{};
+    std::array<FluxGateSnapshot,       MAX_FLUX_GATES>       fluxGates{};
 
     int              activeMorphonCount       = 0;
     int              activeFieldObjCount      = 0;
     int              activeTimbralAnchorCount = 0;
     int              activeEffectZoneCount    = 0;
+    int              activeFluxGateCount      = 0;
     BoundaryBehavior globalBoundary           = BoundaryBehavior::Wrap;
     float            globalGlideTime          = 0.0f;   // Portamento seconds [0, 5]
     uint64_t         tickIndex                = 0;
@@ -251,6 +272,13 @@ struct ManifoldEdit
         SetEffectZoneDepth,       // x = depth (units: [-1,+1] or semitones [-24,+24] for Pitch)
         SetEffectZoneTarget,      // x = (float)cast of ZoneTarget uint8_t
         SetEffectZoneFalloff,     // x = (float)cast of ZoneFalloff uint8_t
+
+        // ── Flux gate spawn / remove / edits ──────────────────────────────────
+        AddFluxGate,              // Spawn a new FluxGate at (x,y) with defaults
+        RemoveFluxGate,           // Deactivate fluxGate[index]
+        MoveFluxGate,             // x,y carry new Manifold coords [0,1] (centre)
+        SetFluxGateLength,        // x = length [0.02, 0.9]
+        SetFluxGateAngle,         // x = angleRad [-π, +π]
     };
 
     Type  type  = Type::MoveFieldObject;

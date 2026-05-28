@@ -7,6 +7,7 @@
 #include "PhysicsState.h"
 #include "EffectZone.h"
 #include "FieldObject.h"
+#include "FluxGate.h"
 #include "synthesis/TimbralAnchor.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -53,6 +54,7 @@ struct PatchState
     std::array<Emitter,        MAX_EMITTERS>        emitters{};
     std::array<TimbralAnchor,  MAX_TIMBRAL_ANCHORS> timbralAnchors{};
     std::array<EffectZone,     MAX_EFFECT_ZONES>    effectZones{};
+    std::array<FluxGate,       MAX_FLUX_GATES>      fluxGates{};
     int              activeAnchorCount = 0;
     BoundaryBehavior boundary          = BoundaryBehavior::Wrap;
     float            glideTimeSec      = 0.0f;
@@ -113,6 +115,7 @@ private:
     void updateEnvelopes(double dt);
     void applyBoundary(MorphonState& m) const noexcept;
     void applyEffectZones();
+    void applyFluxGates();
     void writeSnapshot();
 
     // ── Note handling (physics thread only) ──────────────────────────────────
@@ -163,6 +166,9 @@ private:
 
     // ── Effect Zones ──────────────────────────────────────────────────────────
     std::array<EffectZone, MAX_EFFECT_ZONES> effectZones_{};
+
+    // ── Flux Gates — crossing-triggered envelope re-trigger ───────────────────
+    std::array<FluxGate, MAX_FLUX_GATES> fluxGates_{};
 
     uint64_t tickIndex_        = 0;
     double   simulationTimeMs_ = 0.0;
