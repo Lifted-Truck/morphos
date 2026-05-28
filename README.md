@@ -146,6 +146,9 @@ is shipped — DAW automation is keyed to these strings.
 - [ ] **Phase 9** — Advanced: granular, physical model, spectral engines, full mod matrix
 - [ ] **Phase 10** — Product: patch save/load, patch randomizer (with its own parameters), per-Morphon visual identity (note labels + per-note colour toggle), preset browser, factory patches, GUI polish, code signing
 
+**Known deferred issues:**
+- **Topology-aware anchor blending** — Timbral Anchor IDW uses raw Euclidean distance; crossing a wrap boundary causes a sharp timbral discontinuity. Fix: use `min(|Δx|, 1−|Δx|)` per axis conditioned on `globalBoundary`. The discontinuity has its own LFO-reset character and should be a toggle once the continuous version exists. Target: Phase 5.
+
 **UI wishlist (Phase 10+):**
 - Piano keyboard strip at the bottom of the window — lights active MIDI notes and is clickable for in-VST testing. JUCE provides `MidiKeyboardComponent` as a baseline; will likely want a custom-skinned version to match the Morphos visual language.
 - **Per-Morphon visual identity** — note number or pitch-class label printed on each active Morphon dot; per-note colour generation (toggleable). Makes polyphonic patches legible at a glance and is especially useful when developing key-tracked patches.
