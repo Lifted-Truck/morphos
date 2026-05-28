@@ -73,6 +73,12 @@ public:
         return physicsEngine_.pushManifoldEdit(edit);
     }
 
+    // Editor size persistence — editor reads on construction, writes from resized().
+    // Persisted in patch state so the next session restores the user's window shape.
+    int  getStoredEditorWidth()  const noexcept { return editorWidth_;  }
+    int  getStoredEditorHeight() const noexcept { return editorHeight_; }
+    void setStoredEditorSize(int w, int h) noexcept { editorWidth_ = w; editorHeight_ = h; }
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
@@ -91,6 +97,11 @@ private:
 
     // Current sample rate — set in prepareToPlay, read in processBlock
     double sampleRate_ = 44100.0;
+
+    // Last known editor size — survives editor close/reopen and is serialised
+    // by getStateInformation. Default matches MorphosEditor's setSize() call.
+    int editorWidth_  = 960;
+    int editorHeight_ = 600;
 
     // ── Phase 2: Additive synthesis voice state ───────────────────────────────
     // Phasor accumulators for each Morphon slot's additive engine.

@@ -122,6 +122,7 @@ struct EmitterSnapshot
     bool           terminusEnabled       = false;
     float          terminusStrength      = 0.30f;
     float          terminusArrivalRadius = 0.04f;
+    PolyMode       polyMode              = PolyMode::Polyphonic;
     bool           active                = false;
 };
 
@@ -182,7 +183,6 @@ struct PhysicsStateSnapshot
     int              activeTimbralAnchorCount = 0;
     int              activeEffectZoneCount    = 0;
     BoundaryBehavior globalBoundary           = BoundaryBehavior::Wrap;
-    PolyMode         globalPolyMode           = PolyMode::Polyphonic;
     float            globalGlideTime          = 0.0f;   // Portamento seconds [0, 5]
     uint64_t         tickIndex                = 0;
     double           simulationTimeMs         = 0.0;
@@ -227,7 +227,8 @@ struct ManifoldEdit
         SetEmitterTerminusStrength, // x = pull force magnitude
         SetEmitterTerminusRadius,   // x = arrival radius
         SetGlobalBoundary,     // x = (float)cast of BoundaryBehavior uint8_t; index unused
-        SetPolyMode,           // x = (float)cast of PolyMode uint8_t; index unused
+        SetEmitterPolyMode,    // x = (float)cast of PolyMode uint8_t; index = emitter slot
+        SetEmitterSpawnMass,   // x = mass [0.1, 4.0]; index = emitter slot
         SetTimbralAnchorTimbreX,
         SetTimbralAnchorTimbreY,
         SetGlideTime,          // x = portamento time in seconds [0, 5]; index unused

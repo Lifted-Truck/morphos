@@ -58,9 +58,9 @@ static juce::Colour zoneColour(ZoneTarget t) noexcept
 MorphosEditor::MorphosEditor(MorphosProcessor& p)
     : AudioProcessorEditor(&p), processor_(p)
 {
-    setSize(960, 600);
     setResizable(true, true);
     setResizeLimits(640, 400, 2400, 1600);
+    setSize(processor_.getStoredEditorWidth(), processor_.getStoredEditorHeight());
     setWantsKeyboardFocus(true);
 
     setupSliders();
@@ -116,6 +116,7 @@ juce::Point<float> MorphosEditor::canvasToManifold(juce::Point<float> screenPt,
 
 void MorphosEditor::resized()
 {
+    processor_.setStoredEditorSize(getWidth(), getHeight());
     layoutPanel(getPanelBounds());
 }
 
@@ -157,18 +158,6 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     }
     y += BTN_ROW_H + 2;
 
-    // ── Polyphony row — global voice mode; always visible ─────────────────────
-    lblPolyMode_.setBounds(x, y, w, LABEL_H);
-    y += LABEL_H;
-    {
-        const int bw = w / 4;
-        btnPoly_  .setBounds(x + bw * 0, y, bw,         BTN_ROW_H);
-        btnMono_  .setBounds(x + bw * 1, y, bw,         BTN_ROW_H);
-        btnLegato_.setBounds(x + bw * 2, y, bw,         BTN_ROW_H);
-        btnSlur_  .setBounds(x + bw * 3, y, w - bw * 3, BTN_ROW_H);
-    }
-    y += BTN_ROW_H + 2;
-
     // ── Glide time — portamento rate; always visible ───────────────────────────
     lblGlideTime_.setBounds(x, y,           w, LABEL_H);
     sldGlideTime_.setBounds(x, y + LABEL_H, w, SLIDER_H);
@@ -199,12 +188,25 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     y += SECTION_GAP;
 
     // ── Emitter section ───────────────────────────────────────────────────────
+    // Per-Emitter voice mode row (replaces the old global Voices row)
+    lblEmitPolyMode_.setBounds(x, y, w, LABEL_H);
+    y += LABEL_H;
+    {
+        const int bw = w / 4;
+        btnEmitPoly_  .setBounds(x + bw * 0, y, bw,         BTN_ROW_H);
+        btnEmitMono_  .setBounds(x + bw * 1, y, bw,         BTN_ROW_H);
+        btnEmitLegato_.setBounds(x + bw * 2, y, bw,         BTN_ROW_H);
+        btnEmitSlur_  .setBounds(x + bw * 3, y, w - bw * 3, BTN_ROW_H);
+    }
+    y += BTN_ROW_H + 2;
+
     layoutRow(lblKeyLow_,         sldKeyLow_);
     layoutRow(lblKeyHigh_,        sldKeyHigh_);
     layoutRow(lblTransposeOct_,   sldTransposeOct_);
     layoutRow(lblTransposeSemi_,  sldTransposeSemi_);
     layoutRow(lblTransposeCents_, sldTransposeCents_);
     layoutRow(lblEmitPan_,        sldEmitPan_);
+    layoutRow(lblEmitMass_,       sldEmitMass_);
     layoutRow(lblEmitAngle_,      sldEmitAngle_);
     layoutRow(lblEmitSpeed_,   sldEmitSpeed_);
     layoutRow(lblEmitAttack_,  sldEmitAttack_);
@@ -685,31 +687,48 @@ void MorphosEditor::setupSliders()
     btnBoundTerminate_.onClick = [boundaryClick]{ boundaryClick(BoundaryBehavior::Terminate);   };
     btnBoundKlein_    .onClick = [boundaryClick]{ boundaryClick(BoundaryBehavior::KleinBottle); };
 
-    // ── Global polyphony row ────────────────────────────────────────────────────
-    styleLabel(lblPolyMode_, "Voices");
-    addAndMakeVisible(lblPolyMode_);
+    // ── Per-Emitter polyphony row (visible only when an Emitter is selected) ───
+    styleLabel(lblEmitPolyMode_, "Voices");
+    addAndMakeVisible(lblEmitPolyMode_);
 
-    styleBoundBtn(btnPoly_);    addAndMakeVisible(btnPoly_);
-    styleBoundBtn(btnMono_);    addAndMakeVisible(btnMono_);
-    styleBoundBtn(btnLegato_);  addAndMakeVisible(btnLegato_);
-    styleBoundBtn(btnSlur_);    addAndMakeVisible(btnSlur_);
+    styleBoundBtn(btnEmitPoly_);    addAndMakeVisible(btnEmitPoly_);
+    styleBoundBtn(btnEmitMono_);    addAndMakeVisible(btnEmitMono_);
+    styleBoundBtn(btnEmitLegato_);  addAndMakeVisible(btnEmitLegato_);
+    styleBoundBtn(btnEmitSlur_);    addAndMakeVisible(btnEmitSlur_);
+    btnEmitPoly_.setVisible(false);
+    btnEmitMono_.setVisible(false);
+    btnEmitLegato_.setVisible(false);
+    btnEmitSlur_.setVisible(false);
 
-    btnPoly_.setToggleState(true, juce::dontSendNotification);  // Default: Polyphonic
-
-    auto polyClick = [this](PolyMode p)
+    auto emitterPolyClick = [this](PolyMode p)
     {
-        sendEdit(ManifoldEdit::Type::SetPolyMode, 0,
+        if (selection_.kind != ObjectKind::Emitter || selection_.index < 0) return;
+        sendEdit(ManifoldEdit::Type::SetEmitterPolyMode, selection_.index,
                  static_cast<float>(static_cast<uint8_t>(p)));
-        btnPoly_  .setToggleState(p == PolyMode::Polyphonic, juce::dontSendNotification);
-        btnMono_  .setToggleState(p == PolyMode::Mono,       juce::dontSendNotification);
-        btnLegato_.setToggleState(p == PolyMode::Legato,     juce::dontSendNotification);
-        btnSlur_  .setToggleState(p == PolyMode::LegatoSlur, juce::dontSendNotification);
+        btnEmitPoly_  .setToggleState(p == PolyMode::Polyphonic, juce::dontSendNotification);
+        btnEmitMono_  .setToggleState(p == PolyMode::Mono,       juce::dontSendNotification);
+        btnEmitLegato_.setToggleState(p == PolyMode::Legato,     juce::dontSendNotification);
+        btnEmitSlur_  .setToggleState(p == PolyMode::LegatoSlur, juce::dontSendNotification);
     };
 
-    btnPoly_  .onClick = [polyClick]{ polyClick(PolyMode::Polyphonic); };
-    btnMono_  .onClick = [polyClick]{ polyClick(PolyMode::Mono);       };
-    btnLegato_.onClick = [polyClick]{ polyClick(PolyMode::Legato);     };
-    btnSlur_  .onClick = [polyClick]{ polyClick(PolyMode::LegatoSlur); };
+    btnEmitPoly_  .onClick = [emitterPolyClick]{ emitterPolyClick(PolyMode::Polyphonic); };
+    btnEmitMono_  .onClick = [emitterPolyClick]{ emitterPolyClick(PolyMode::Mono);       };
+    btnEmitLegato_.onClick = [emitterPolyClick]{ emitterPolyClick(PolyMode::Legato);     };
+    btnEmitSlur_  .onClick = [emitterPolyClick]{ emitterPolyClick(PolyMode::LegatoSlur); };
+
+    // ── Mass slider (Emitter section) ──────────────────────────────────────────
+    // Sets the spawn-time mass of new Morphons from this Emitter. Mass scales
+    // the inverse-mass response to all field forces (a = F/mass), so heavier
+    // Morphons resist Attractors/Repellers/Vortices more strongly.
+    styleLabel(lblEmitMass_, "Mass");
+    styleSlider(sldEmitMass_, 0.1, 4.0);
+    sldEmitMass_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblEmitMass_); addAndMakeVisible(sldEmitMass_);
+    sldEmitMass_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterSpawnMass,
+                     selection_.index, (float)sldEmitMass_.getValue());
+    };
 
     // ── Glide time — portamento rate; always visible ───────────────────────────
     // Applies during Legato / Slur retarget: fundamentalHz slides exponentially
@@ -736,7 +755,7 @@ void MorphosEditor::setupSliders()
 
 void MorphosEditor::updatePanel()
 {
-    // ── Always-visible: global topology + polyphony buttons ──────────────────
+    // ── Always-visible: global topology + glide ──────────────────────────────
     {
         const auto& state = processor_.getPhysicsStateForUI();
 
@@ -745,12 +764,6 @@ void MorphosEditor::updatePanel()
         btnBoundReflect_  .setToggleState(b == BoundaryBehavior::Reflect,     juce::dontSendNotification);
         btnBoundTerminate_.setToggleState(b == BoundaryBehavior::Terminate,   juce::dontSendNotification);
         btnBoundKlein_    .setToggleState(b == BoundaryBehavior::KleinBottle, juce::dontSendNotification);
-
-        const auto p = state.globalPolyMode;
-        btnPoly_  .setToggleState(p == PolyMode::Polyphonic, juce::dontSendNotification);
-        btnMono_  .setToggleState(p == PolyMode::Mono,       juce::dontSendNotification);
-        btnLegato_.setToggleState(p == PolyMode::Legato,     juce::dontSendNotification);
-        btnSlur_  .setToggleState(p == PolyMode::LegatoSlur, juce::dontSendNotification);
 
         ignoreSliderCallbacks_ = true;
         sldGlideTime_.setValue(state.globalGlideTime, juce::dontSendNotification);
@@ -771,6 +784,10 @@ void MorphosEditor::updatePanel()
     lblTransposeSemi_.setVisible(false);   sldTransposeSemi_.setVisible(false);
     lblTransposeCents_.setVisible(false);  sldTransposeCents_.setVisible(false);
     lblEmitPan_.setVisible(false);             sldEmitPan_.setVisible(false);
+    lblEmitMass_.setVisible(false);            sldEmitMass_.setVisible(false);
+    lblEmitPolyMode_.setVisible(false);
+    btnEmitPoly_.setVisible(false);            btnEmitMono_.setVisible(false);
+    btnEmitLegato_.setVisible(false);          btnEmitSlur_.setVisible(false);
     btnTerminusEnabled_.setVisible(false);
     lblTerminusStrength_.setVisible(false);    sldTerminusStrength_.setVisible(false);
     lblTerminusRadius_.setVisible(false);      sldTerminusRadius_.setVisible(false);
@@ -862,6 +879,11 @@ void MorphosEditor::updatePanel()
         sldTransposeSemi_.setValue ((double)e.transposeSemi,  juce::dontSendNotification);
         sldTransposeCents_.setValue((double)e.transposeCents, juce::dontSendNotification);
         sldEmitPan_.setValue           ((double)e.pan,                    juce::dontSendNotification);
+        sldEmitMass_.setValue          ((double)e.spawnMass,               juce::dontSendNotification);
+        btnEmitPoly_  .setToggleState(e.polyMode == PolyMode::Polyphonic, juce::dontSendNotification);
+        btnEmitMono_  .setToggleState(e.polyMode == PolyMode::Mono,       juce::dontSendNotification);
+        btnEmitLegato_.setToggleState(e.polyMode == PolyMode::Legato,     juce::dontSendNotification);
+        btnEmitSlur_  .setToggleState(e.polyMode == PolyMode::LegatoSlur, juce::dontSendNotification);
         btnTerminusEnabled_.setToggleState(e.terminusEnabled,              juce::dontSendNotification);
         sldTerminusStrength_.setValue  ((double)e.terminusStrength,        juce::dontSendNotification);
         sldTerminusRadius_.setValue    ((double)e.terminusArrivalRadius,   juce::dontSendNotification);
@@ -878,6 +900,10 @@ void MorphosEditor::updatePanel()
         lblTransposeSemi_.setVisible(true);    sldTransposeSemi_.setVisible(true);
         lblTransposeCents_.setVisible(true);   sldTransposeCents_.setVisible(true);
         lblEmitPan_.setVisible(true);              sldEmitPan_.setVisible(true);
+        lblEmitMass_.setVisible(true);             sldEmitMass_.setVisible(true);
+        lblEmitPolyMode_.setVisible(true);
+        btnEmitPoly_.setVisible(true);             btnEmitMono_.setVisible(true);
+        btnEmitLegato_.setVisible(true);           btnEmitSlur_.setVisible(true);
         btnTerminusEnabled_.setVisible(true);
         // Strength + radius only visible when Terminus is enabled
         const bool termOn = e.terminusEnabled;

@@ -146,8 +146,15 @@ private:
     juce::Slider sldKeyLow_,        sldKeyHigh_;
     juce::Label  lblTransposeOct_,  lblTransposeSemi_, lblTransposeCents_;
     juce::Slider sldTransposeOct_,  sldTransposeSemi_, sldTransposeCents_;
-    juce::Label  lblEmitPan_;
-    juce::Slider sldEmitPan_;
+    juce::Label  lblEmitPan_,       lblEmitMass_;
+    juce::Slider sldEmitPan_,       sldEmitMass_;
+
+    // Per-Emitter polyphony row (replaces the old global Voices row)
+    juce::Label      lblEmitPolyMode_;
+    juce::TextButton btnEmitPoly_   { "Poly"   };
+    juce::TextButton btnEmitMono_   { "Mono"   };
+    juce::TextButton btnEmitLegato_ { "Legato" };
+    juce::TextButton btnEmitSlur_   { "Slur"   };
 
     // Terminus sub-section (emitter panel)
     juce::TextButton btnTerminusEnabled_ { "Terminus" };
@@ -164,13 +171,6 @@ private:
     juce::TextButton btnBoundReflect_   { "Reflect"   };
     juce::TextButton btnBoundTerminate_ { "Terminate" };
     juce::TextButton btnBoundKlein_     { "Klein"     };
-
-    // Global polyphony row — always visible
-    juce::Label      lblPolyMode_;
-    juce::TextButton btnPoly_   { "Poly"   };
-    juce::TextButton btnMono_   { "Mono"   };
-    juce::TextButton btnLegato_ { "Legato" };  // Gap-sensitive: retargets only if note still held
-    juce::TextButton btnSlur_   { "Slur"   };  // Always-retarget: connects even across note gaps
 
     // Glide (portamento) — always visible; applies in Legato + Slur modes
     juce::Label  lblGlideTime_;

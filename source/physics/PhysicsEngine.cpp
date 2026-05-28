@@ -364,9 +364,15 @@ void PhysicsEngine::drainEditCommands()
                         static_cast<uint8_t>(static_cast<int>(e.x)));
                     break;
 
-                case ManifoldEdit::Type::SetPolyMode:
-                    globalPolyMode_ = static_cast<PolyMode>(
-                        static_cast<uint8_t>(static_cast<int>(e.x)));
+                case ManifoldEdit::Type::SetEmitterPolyMode:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].polyMode = static_cast<PolyMode>(
+                            static_cast<uint8_t>(static_cast<int>(e.x)));
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterSpawnMass:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].spawnMass = juce::jlimit(0.1f, 4.0f, e.x);
                     break;
 
                 // ── Timbral Anchor property edits ─────────────────────────────
@@ -540,84 +546,82 @@ void PhysicsEngine::drainEditCommands()
 
 void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
 {
-    // ── Legato / Slur retarget ────────────────────────────────────────────────
-    // Legato (gap-sensitive): only retargets a voice that is still held.
-    //   If the previous note was released before this note-on arrives, the voice
-    //   is in Release — we skip it and fall through to a fresh spawn, just like
-    //   pressing a completely new note.
-    // LegatoSlur (always): retargets any active voice, even one in Release.
-    //   Preserves the "always-connected" glide behaviour regardless of timing.
-    // Both: keep Manifold position + velocity; only pitch and envelope change.
-    //   If glide time > 0, fundamentalHz slides toward the new target rather than
-    //   snapping instantly.
-    if (globalPolyMode_ == PolyMode::Legato || globalPolyMode_ == PolyMode::LegatoSlur)
-    {
-        for (auto& m : morphons_)
-        {
-            if (!m.active || m.midiChannel != channel) continue;
-            if (globalPolyMode_ == PolyMode::Legato && m.noteReleased)
-                continue;   // Gap: voice released before new note — spawn fresh
-
-            const int   ei = m.emitterIndex;
-            const float xp = (ei >= 0 && ei < MAX_EMITTERS)
-                ? std::pow(2.0f, emitters_[ei].transposeOct
-                               + emitters_[ei].transposeSemi / 12.0f
-                               + emitters_[ei].transposeCents / 1200.0f)
-                : 1.0f;
-            const float newHz         = midiNoteToHz(note) * xp;
-            m.targetFundamentalHz     = newHz;
-            if (globalGlideTimeSec_ <= 0.0f)
-                m.fundamentalHz = newHz;   // Instant pitch when glide is off
-            // else: integrateMorphons() slides fundamentalHz → targetFundamentalHz
-
-            m.midiNote     = note;
-            m.noteReleased = false;
-            m.envStage     = EnvelopeStage::Attack;
-            m.age          = 0.0f;
-            return;
-        }
-        // No retargetable voice found — fall through to spawn
-    }
-
-    // ── Release all active voices on this channel before spawning ────────────
-    // Covers Mono (always), Legato (gap case), and LegatoSlur (gap case).
-    if (globalPolyMode_ != PolyMode::Polyphonic)
-    {
-        for (auto& m : morphons_)
-            if (m.active && m.midiChannel == channel)
-                m.noteReleased = true;
-    }
-
-    // ── Spawn — polyphonic: all in-range Emitters; mono/legato: first only ───
+    // Per-Emitter voice routing: each Emitter applies its own polyMode independently.
+    // A patch can mix modes (e.g. mono bass Emitter + poly lead Emitter on the same
+    // key range) — every active Emitter that matches the note range either spawns
+    // or retargets one of its own voices according to its individual setting.
     for (int ei = 0; ei < MAX_EMITTERS; ++ei)
     {
         const auto& em = emitters_[ei];
         if (!em.active)                            continue;
         if (note < em.keyLow || note > em.keyHigh) continue;
 
-        // In polyphonic mode, check for a same-note retrigger from this Emitter.
-        // Release the existing voice gracefully so its envelope can tail out, then
-        // fall through to spawn a fresh Morphon from the Emitter origin.
-        // Previously we recycled the slot in-place (position snap + envelope reset),
-        // which caused a click. The new voice gets its own slot and a clean Attack.
-        if (globalPolyMode_ == PolyMode::Polyphonic)
+        const PolyMode mode = em.polyMode;
+
+        // ── Legato / Slur retarget ──────────────────────────────────────────────
+        // Legato (gap-sensitive): retarget only a voice from this Emitter that is
+        //   still held; if its prior note was already released, fall through and
+        //   spawn a fresh voice (a "gap" between notes resets the slide).
+        // LegatoSlur (always): retarget any of this Emitter's active voices, even
+        //   ones in Release — keeps the slide connected across note gaps.
+        // Both preserve Manifold position + velocity; only pitch + envelope change.
+        if (mode == PolyMode::Legato || mode == PolyMode::LegatoSlur)
         {
+            bool retargeted = false;
+            for (auto& m : morphons_)
+            {
+                if (!m.active || m.midiChannel != channel || m.emitterIndex != ei)
+                    continue;
+                if (mode == PolyMode::Legato && m.noteReleased)
+                    continue;   // Gap: voice released before new note — spawn fresh
+
+                const float xp = std::pow(2.0f, em.transposeOct
+                                                + em.transposeSemi / 12.0f
+                                                + em.transposeCents / 1200.0f);
+                const float newHz     = midiNoteToHz(note) * xp;
+                m.targetFundamentalHz = newHz;
+                if (globalGlideTimeSec_ <= 0.0f)
+                    m.fundamentalHz = newHz;   // Instant pitch when glide is off
+
+                m.midiNote     = note;
+                m.noteReleased = false;
+                m.envStage     = EnvelopeStage::Attack;
+                m.age          = 0.0f;
+                retargeted     = true;
+                break;
+            }
+            if (retargeted) continue;  // Next Emitter; this one handled its note
+        }
+
+        // ── Mono / Legato gap / Slur gap: release this Emitter's other voices ──
+        // Mono always releases; Legato/Slur reach here only when no retarget was
+        // possible (i.e. fall-through case). Filter by emitter index so other
+        // Emitters' voices are untouched.
+        if (mode != PolyMode::Polyphonic)
+        {
+            for (auto& m : morphons_)
+                if (m.active && m.midiChannel == channel && m.emitterIndex == ei)
+                    m.noteReleased = true;
+        }
+        else
+        {
+            // Polyphonic same-note retrigger from this Emitter: release the prior
+            // voice gracefully and spawn a fresh one (clean Attack, no click).
             for (int i = 0; i < MAX_MORPHONS; ++i)
             {
                 auto& m = morphons_[i];
                 if (m.active && m.midiNote == note
                     && m.midiChannel == channel && m.emitterIndex == ei)
                 {
-                    m.noteReleased  = true;   // Graceful release — envelope tails out
-                    m.terminusArmed = false;  // Don't pull toward Terminus on retrigger-release
+                    m.noteReleased  = true;
+                    m.terminusArmed = false;
                     break;
                 }
             }
-            // Fall through — findFreeSlot() spawns the new voice below
         }
 
         const int slot = findFreeSlot();
-        if (slot < 0) break;   // Pool full
+        if (slot < 0) continue;   // Pool full — skip this Emitter, try the next
 
         auto& m           = morphons_[slot];
         m.active          = true;
@@ -649,9 +653,6 @@ void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
             m.fundamentalHz       = newHz;  // Fresh spawn: always instant (no glide)
             m.targetFundamentalHz = newHz;
         }
-
-        // Mono/Legato/Slur: one voice total — stop after first successful spawn
-        if (globalPolyMode_ != PolyMode::Polyphonic) break;
     }
 }
 
@@ -1068,11 +1069,11 @@ void PhysicsEngine::writeSnapshot()
         dst.terminusEnabled        = src.terminusEnabled;
         dst.terminusStrength       = src.terminusStrength;
         dst.terminusArrivalRadius  = src.terminusArrivalRadius;
+        dst.polyMode               = src.polyMode;
         dst.active                 = src.active;
     }
 
     snap.globalBoundary  = globalBoundary_;
-    snap.globalPolyMode  = globalPolyMode_;
     snap.globalGlideTime = globalGlideTimeSec_;
 
     // Copy effect zones for UI rendering
@@ -1126,7 +1127,6 @@ void PhysicsEngine::applyPatch(const PatchState& patch)
     effectZones_        = patch.effectZones;
     activeAnchorCount_  = patch.activeAnchorCount;
     globalBoundary_     = patch.boundary;
-    globalPolyMode_     = patch.polyMode;
     globalGlideTimeSec_ = patch.glideTimeSec;
 
     morphons_        = {};    // Kill all active voices from the previous patch

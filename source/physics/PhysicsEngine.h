@@ -39,6 +39,7 @@ struct Emitter
     bool            terminusEnabled       = false;
     float           terminusStrength      = 0.30f; // Pull force magnitude (Manifold units/s²)
     float           terminusArrivalRadius = 0.04f; // Deactivate when within this distance
+    PolyMode        polyMode              = PolyMode::Polyphonic;  // Per-Emitter voice routing
     bool            active       = false;   // Slots are inactive by default; constructor enables [0]
 };
 
@@ -54,7 +55,6 @@ struct PatchState
     std::array<EffectZone,     MAX_EFFECT_ZONES>    effectZones{};
     int              activeAnchorCount = 0;
     BoundaryBehavior boundary          = BoundaryBehavior::Wrap;
-    PolyMode         polyMode          = PolyMode::Polyphonic;
     float            glideTimeSec      = 0.0f;
 };
 
@@ -138,7 +138,6 @@ private:
 
     // ── Global manifold topology (physics thread; set via ManifoldEdit queue) ──
     BoundaryBehavior globalBoundary_    = BoundaryBehavior::Wrap;
-    PolyMode         globalPolyMode_    = PolyMode::Polyphonic;
     float            globalGlideTimeSec_ = 0.0f;   // Portamento time in seconds
 
     // ── Simulation state (physics thread only) ────────────────────────────────

@@ -104,11 +104,12 @@ All physics↔audio communication is wait-free. Parameter reads use cached `std:
 Two layers in `getStateInformation` / `setStateInformation`:
 1. **APVTS parameters** — automatically serialised by JUCE ValueTree
 2. **Manifold objects** — custom `ManifoldObjects` XML child appended to the APVTS state tree.
-   Format: `version=1` attribute, one child per active object (`FieldObject`, `Emitter`, `Anchor`, `Zone`),
-   plus global topology attributes (`boundary`, `polyMode`, `glideTime`).
-   Saves from the `latestSnapshotForUI_` copy; restores by building a `PatchState` and calling
-   `PhysicsEngine::applyPatch()` (stops/replaces/restarts the simulation thread).
-   Saves without `ManifoldObjects` or `version < 1` restore APVTS params only (backward-compatible).
+   Format: `version=2` attribute, one child per active object (`FieldObject`, `Emitter`, `Anchor`, `Zone`),
+   plus global topology attributes (`boundary`, `glideTime`) and editor window dimensions (`editorW`, `editorH`).
+   Each Emitter carries its own `polyMode`. Saves from the `latestSnapshotForUI_` copy; restores by
+   building a `PatchState` and calling `PhysicsEngine::applyPatch()` (stops/replaces/restarts the
+   simulation thread). Version 1 saves (global `polyMode`) are upgraded transparently: the old value
+   is broadcast to every Emitter. Saves without `ManifoldObjects` restore APVTS params only.
 
 ### Parameter IDs
 
@@ -142,8 +143,7 @@ is shipped — DAW automation is keyed to these strings.
 - [x] **Phase 1** — Physics core: Morphon integration, Attractor/Repeller/Vortex, precomputed field grid
 - [x] **Phase 2** — First sound: additive engine (20 partials), Timbral Anchors, IDW blending, full ADSR
 - [x] **Phase 3** — Manifold authoring: drag-and-drop for all object types, parameter panel (strength/radius/chirality/ADSR/key range/transpose/pan/terminus), per-Morphon trails, amplitude→opacity rendering, click-to-place spawn mode (arm type, click canvas), Delete/Backspace shortcut, patch save/load (DAW session persistence)
-- [x] **Phase 4** — Polyphony & key-tracking: 256-voice pool, per-Emitter key ranges, per-Emitter transpose (Oct/Semi/Cents), per-Emitter pan, Terminus (key-off attractor with arrival detection), Poly/Mono/Legato/Slur voice modes, pitch glide/portamento (log-space interpolation), spectral crossfade to suppress clicks at Manifold boundary crossings
-  - ⚠️ *Deferred:* tuning modes (harmonic series, ratio-based pitch mapping)
+- [x] **Phase 4** — Polyphony & key-tracking: 256-voice pool, per-Emitter key ranges, per-Emitter transpose (Oct/Semi/Cents), per-Emitter pan, per-Emitter mass (Morphon resistance to field forces), per-Emitter Poly/Mono/Legato/Slur (each Emitter routes its own notes — mix mono bass + poly lead on the same key range), Terminus (key-off attractor with arrival detection), pitch glide/portamento (log-space interpolation), spectral crossfade to suppress clicks at Manifold boundary crossings
 - [x] **Phase 5 (partial)** — Effect Zones: circular spatial modulators for TimbreX, TimbreY, Amplitude, Pan, Pitch; Linear/Gaussian falloff; additive accumulation per tick; depth range auto-switches to ±24 semitones for Pitch target
   - ⏳ *Remaining:* Flux Gates, Path Objects
 - [ ] **Phase 6** — Modulation: mod matrix, MIDI sources, Morphon state sources, MPE. Priority destinations: Emitter position XY, launch angle, launch speed (keytracking these to MIDI pitch is the canonical Morphos expressive relationship). All field object XY positions must be both sources and destinations.
@@ -154,9 +154,11 @@ is shipped — DAW automation is keyed to these strings.
 
 **Known deferred issues:**
 - **Topology-aware anchor blending** — Timbral Anchor IDW uses raw Euclidean distance; crossing a wrap boundary causes a sharp timbral discontinuity. Fix: use `min(|Δx|, 1−|Δx|)` per axis conditioned on `globalBoundary`. The discontinuity has its own character and should be a toggle once the continuous version exists. Target: Phase 5 remainder.
-- **Tuning modes** — current pitch calculation is equal temperament only. Harmonic series and ratio-based mapping deferred from Phase 4.
+- **Tuning modes** — current pitch calculation is equal temperament only. Harmonic series and ratio-based mapping queued for a later phase (no fixed target).
+- **Manifold aspect-ratio handling** — currently the Manifold stretches to fill the canvas, so resizing the window non-uniformly changes the relative dynamics of objects and the apparent scale of radii. This is interesting as an authoring tool but should not be the only mode. Options to design: lock 1:1 (letterbox), free-stretch (current), or global rescale (uniform scaling that preserves dynamics). Likely surfaced as a startup-menu preference.
 
 **UI wishlist (Phase 10+):**
+- **Object layer panel** — list of all existing objects on the canvas with selectable rows; alt-click on canvas cycles through objects beneath the cursor (the panel surfaces what's covered). Layer order should be reorderable to control z-stack and selection priority.
 - **Timbral visualizer** — partial amplitude bar graph is the lowest-cost option given the existing additive engine; oscilloscope or FFT waterfall are alternatives. Shows timbre of the most recently launched Morphon.
 - **Object staging area** — configure Emitter/Anchor/Zone defaults in the panel before clicking to place, so the first instance lands already tuned rather than requiring post-placement edits.
 - **Per-Morphon visual identity** — note number or pitch-class label on each Morphon dot; per-note colour generation (toggleable). Makes polyphonic patches legible at a glance.

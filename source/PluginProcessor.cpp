@@ -308,10 +308,11 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
     const auto& snap = latestSnapshotForUI_;
 
     auto manifoldData = juce::ValueTree("ManifoldObjects");
-    manifoldData.setProperty("version",     1,                             nullptr);
+    manifoldData.setProperty("version",     2,                             nullptr);
     manifoldData.setProperty("boundary",    (int)snap.globalBoundary,      nullptr);
-    manifoldData.setProperty("polyMode",    (int)snap.globalPolyMode,      nullptr);
     manifoldData.setProperty("glideTime",   snap.globalGlideTime,          nullptr);
+    manifoldData.setProperty("editorW",     editorWidth_,                  nullptr);
+    manifoldData.setProperty("editorH",     editorHeight_,                 nullptr);
 
     for (int i = 0; i < MAX_FIELD_OBJECTS; ++i)
     {
@@ -351,6 +352,7 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         node.setProperty("terminusOn",     em.terminusEnabled ? 1 : 0,  nullptr);
         node.setProperty("terminusStr",    em.terminusStrength,         nullptr);
         node.setProperty("terminusRad",    em.terminusArrivalRadius,    nullptr);
+        node.setProperty("polyMode",       (int)em.polyMode,            nullptr);
         manifoldData.appendChild(node, nullptr);
     }
 
@@ -402,15 +404,32 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
     auto manifoldData = loadedState.getChildWithName("ManifoldObjects");
     if (!manifoldData.isValid())
         return;
-    if ((int)manifoldData.getProperty("version", 0) < 1)
+    const int patchVersion = (int)manifoldData.getProperty("version", 0);
+    if (patchVersion < 1)
         return;
+
+    // Version 1 stored polyMode as a single global. Version 2 moves it onto each
+    // Emitter. Loading v1: read the global value and broadcast it to all Emitters
+    // so the user's prior voice-mode choice survives.
+    const PolyMode v1GlobalPolyMode = (patchVersion < 2)
+        ? static_cast<PolyMode>((int)manifoldData.getProperty("polyMode", 0))
+        : PolyMode::Polyphonic;
 
     PatchState patch;
     patch.boundary     = static_cast<BoundaryBehavior>(
                              (int)manifoldData.getProperty("boundary",  0));
-    patch.polyMode     = static_cast<PolyMode>(
-                             (int)manifoldData.getProperty("polyMode",  0));
     patch.glideTimeSec = (float)manifoldData.getProperty("glideTime", 0.0f);
+
+    // Window size (v2+). Defaults preserve the current editor size on older saves.
+    if (patchVersion >= 2)
+    {
+        const int w = (int)manifoldData.getProperty("editorW", editorWidth_);
+        const int h = (int)manifoldData.getProperty("editorH", editorHeight_);
+        editorWidth_  = w;
+        editorHeight_ = h;
+        if (auto* ed = dynamic_cast<MorphosEditor*>(getActiveEditor()))
+            ed->setSize(w, h);
+    }
 
     int fieldObjSlot = 0, emitterSlot = 0, anchorSlot = 0, zoneSlot = 0;
 
@@ -451,6 +470,9 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             em.terminusEnabled       = (int)child.getProperty("terminusOn",      0) != 0;
             em.terminusStrength      = (float)child.getProperty("terminusStr",   0.30f);
             em.terminusArrivalRadius = (float)child.getProperty("terminusRad",   0.04f);
+            em.polyMode              = (patchVersion >= 2)
+                ? static_cast<PolyMode>((int)child.getProperty("polyMode", 0))
+                : v1GlobalPolyMode;  // v1 fallback: broadcast the old global value
             em.active                = true;
         }
         else if (child.hasType("Anchor") && anchorSlot < MAX_TIMBRAL_ANCHORS)
