@@ -58,9 +58,10 @@ static juce::Colour zoneColour(ZoneTarget t) noexcept
 MorphosEditor::MorphosEditor(MorphosProcessor& p)
     : AudioProcessorEditor(&p), processor_(p)
 {
-    setSize(900, 600);
+    setSize(960, 600);
     setResizable(true, true);
-    setResizeLimits(600, 400, 2400, 1600);
+    setResizeLimits(640, 400, 2400, 1600);
+    setWantsKeyboardFocus(true);
 
     setupSliders();
     updatePanel();    // Initialise panel to "No Selection" state
@@ -302,12 +303,26 @@ void MorphosEditor::setupSliders()
     styleSpawnBtn(btnAddAnch_);  addAndMakeVisible(btnAddAnch_);
     styleSpawnBtn(btnAddZone_);  addAndMakeVisible(btnAddZone_);
 
-    btnAddAtt_.onClick  = [this]{ sendEdit(ManifoldEdit::Type::AddAttractor,    0, 0.5f, 0.5f); };
-    btnAddRep_.onClick  = [this]{ sendEdit(ManifoldEdit::Type::AddRepeller,     0, 0.5f, 0.5f); };
-    btnAddVor_.onClick  = [this]{ sendEdit(ManifoldEdit::Type::AddVortex,       0, 0.5f, 0.5f); };
-    btnAddEmit_.onClick = [this]{ sendEdit(ManifoldEdit::Type::AddEmitter,      0, 0.5f, 0.5f); };
-    btnAddAnch_.onClick = [this]{ sendEdit(ManifoldEdit::Type::AddTimbralAnchor,0, 0.5f, 0.5f); };
-    btnAddZone_.onClick = [this]{ sendEdit(ManifoldEdit::Type::AddEffectZone,   0, 0.5f, 0.5f); };
+    // Spawn buttons arm placement mode — click canvas to place at desired position.
+    // Clicking the same button again disarms without placing anything.
+    auto armSpawn = [this](SpawnKind k)
+    {
+        pendingSpawn_ = (pendingSpawn_ == k) ? SpawnKind::None : k;
+        btnAddAtt_ .setToggleState(pendingSpawn_ == SpawnKind::Attractor,    juce::dontSendNotification);
+        btnAddRep_ .setToggleState(pendingSpawn_ == SpawnKind::Repeller,     juce::dontSendNotification);
+        btnAddVor_ .setToggleState(pendingSpawn_ == SpawnKind::Vortex,       juce::dontSendNotification);
+        btnAddEmit_.setToggleState(pendingSpawn_ == SpawnKind::Emitter,      juce::dontSendNotification);
+        btnAddAnch_.setToggleState(pendingSpawn_ == SpawnKind::TimbralAnchor,juce::dontSendNotification);
+        btnAddZone_.setToggleState(pendingSpawn_ == SpawnKind::EffectZone,   juce::dontSendNotification);
+        repaint();
+    };
+
+    btnAddAtt_ .onClick = [armSpawn]{ armSpawn(SpawnKind::Attractor);    };
+    btnAddRep_ .onClick = [armSpawn]{ armSpawn(SpawnKind::Repeller);     };
+    btnAddVor_ .onClick = [armSpawn]{ armSpawn(SpawnKind::Vortex);       };
+    btnAddEmit_.onClick = [armSpawn]{ armSpawn(SpawnKind::Emitter);      };
+    btnAddAnch_.onClick = [armSpawn]{ armSpawn(SpawnKind::TimbralAnchor);};
+    btnAddZone_.onClick = [armSpawn]{ armSpawn(SpawnKind::EffectZone);   };
 
     // ── Panel header + remove button ──────────────────────────────────────────
     lblPanelHeader_.setText("No Selection", juce::dontSendNotification);
@@ -938,6 +953,74 @@ void MorphosEditor::sendEdit(ManifoldEdit::Type type, int index, float x, float 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Placement mode helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MorphosEditor::clearPlacementMode()
+{
+    pendingSpawn_ = SpawnKind::None;
+    btnAddAtt_ .setToggleState(false, juce::dontSendNotification);
+    btnAddRep_ .setToggleState(false, juce::dontSendNotification);
+    btnAddVor_ .setToggleState(false, juce::dontSendNotification);
+    btnAddEmit_.setToggleState(false, juce::dontSendNotification);
+    btnAddAnch_.setToggleState(false, juce::dontSendNotification);
+    btnAddZone_.setToggleState(false, juce::dontSendNotification);
+}
+
+juce::Colour MorphosEditor::pendingSpawnColour() const noexcept
+{
+    switch (pendingSpawn_)
+    {
+        case SpawnKind::Attractor:     return Colour::Attractor;
+        case SpawnKind::Repeller:      return Colour::Repeller;
+        case SpawnKind::Vortex:        return Colour::Vortex;
+        case SpawnKind::Emitter:       return Colour::Emitter;
+        case SpawnKind::TimbralAnchor: return Colour::Anchor;
+        case SpawnKind::EffectZone:    return Colour::ZoneTimbreX;
+        default:                       return juce::Colours::white;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Keyboard — Delete/Backspace removes the selected object
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool MorphosEditor::keyPressed(const juce::KeyPress& key)
+{
+    if (pendingSpawn_ != SpawnKind::None)
+    {
+        if (key == juce::KeyPress::escapeKey)
+        {
+            clearPlacementMode();
+            repaint();
+            return true;
+        }
+    }
+
+    if (selection_.valid()
+        && (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey))
+    {
+        ManifoldEdit::Type t;
+        switch (selection_.kind)
+        {
+            case ObjectKind::FieldObject:   t = ManifoldEdit::Type::RemoveFieldObject;   break;
+            case ObjectKind::Emitter:       t = ManifoldEdit::Type::RemoveEmitter;       break;
+            case ObjectKind::TimbralAnchor: t = ManifoldEdit::Type::RemoveTimbralAnchor; break;
+            case ObjectKind::EffectZone:    t = ManifoldEdit::Type::RemoveEffectZone;    break;
+            default: return false;
+        }
+        sendEdit(t, selection_.index, 0.0f, 0.0f);
+        selection_ = {};
+        drag_.active = false;
+        updatePanel();
+        repaint();
+        return true;
+    }
+
+    return false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Timer — update trails and trigger repaint
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1014,6 +1097,35 @@ void MorphosEditor::mouseDown(const juce::MouseEvent& event)
 
     const auto& state = processor_.getPhysicsStateForUI();
     const auto hit    = hitTest(event.getPosition().toFloat(), state, canvas);
+
+    // ── Placement mode — click on empty canvas to spawn the armed object type ─
+    if (pendingSpawn_ != SpawnKind::None && !hit.valid())
+    {
+        const auto mpt = canvasToManifold(event.getPosition().toFloat(), canvas);
+        const float mx = juce::jlimit(0.0f, 1.0f, mpt.x);
+        const float my = juce::jlimit(0.0f, 1.0f, mpt.y);
+
+        ManifoldEdit::Type addType;
+        switch (pendingSpawn_)
+        {
+            case SpawnKind::Attractor:     addType = ManifoldEdit::Type::AddAttractor;     break;
+            case SpawnKind::Repeller:      addType = ManifoldEdit::Type::AddRepeller;      break;
+            case SpawnKind::Vortex:        addType = ManifoldEdit::Type::AddVortex;        break;
+            case SpawnKind::Emitter:       addType = ManifoldEdit::Type::AddEmitter;       break;
+            case SpawnKind::TimbralAnchor: addType = ManifoldEdit::Type::AddTimbralAnchor; break;
+            case SpawnKind::EffectZone:    addType = ManifoldEdit::Type::AddEffectZone;    break;
+            default: clearPlacementMode(); return;
+        }
+
+        sendEdit(addType, 0, mx, my);
+        clearPlacementMode();
+        repaint();
+        return;
+    }
+
+    // If armed but user clicked an existing object: cancel placement mode and select it
+    if (pendingSpawn_ != SpawnKind::None && hit.valid())
+        clearPlacementMode();
 
     const bool selectionChanged = (hit.kind != selection_.kind || hit.index != selection_.index);
     selection_ = hit;
@@ -1096,6 +1208,27 @@ void MorphosEditor::paint(juce::Graphics& g)
     const auto& state = processor_.getPhysicsStateForUI();
 
     drawGrid            (g, canvas);
+
+    // ── Placement mode indicator ───────────────────────────────────────────────
+    if (pendingSpawn_ != SpawnKind::None)
+    {
+        const juce::Colour c = pendingSpawnColour();
+
+        // Coloured canvas border (2 px)
+        g.setColour(c.withAlpha(0.55f));
+        g.drawRect(canvas, 2);
+
+        // "Click to place: Type" hint in top-left corner of canvas
+        static const char* spawnNames[] = {
+            "", "Attractor", "Repeller", "Vortex", "Emitter", "Anchor", "Zone"
+        };
+        g.setFont(juce::FontOptions(11.0f));
+        g.setColour(c.withAlpha(0.80f));
+        g.drawText(juce::String("Click to place: ") + spawnNames[static_cast<int>(pendingSpawn_)],
+                   canvas.reduced(6).removeFromTop(16),
+                   juce::Justification::topLeft, false);
+    }
+
     drawEffectZones     (g, state, canvas);    // Behind all other objects
     drawFieldObjects    (g, state, canvas);
     drawEmitters        (g, state, canvas);

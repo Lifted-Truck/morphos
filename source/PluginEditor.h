@@ -33,7 +33,7 @@ private:
     void timerCallback() override;
 
     // ── Layout ────────────────────────────────────────────────────────────────
-    static constexpr int PANEL_WIDTH = 220;    // Right-side parameter panel (px)
+    static constexpr int PANEL_WIDTH = 260;    // Right-side parameter panel (px)
 
     juce::Rectangle<int> getCanvasBounds() const;
     juce::Rectangle<int> getPanelBounds()  const;
@@ -62,13 +62,27 @@ private:
     void drawEffectZones    (juce::Graphics&, const PhysicsStateSnapshot&,
                              juce::Rectangle<int> canvas) const;
 
-    // ── Mouse interaction (drag-and-drop) ─────────────────────────────────────
+    // ── Mouse interaction (drag-and-drop + placement) ─────────────────────────
     void mouseDown(const juce::MouseEvent&) override;
     void mouseDrag(const juce::MouseEvent&) override;
     void mouseUp  (const juce::MouseEvent&) override;
 
+    // ── Keyboard ─────────────────────────────────────────────────────────────
+    bool keyPressed(const juce::KeyPress&) override;
+
     // ── Selection / drag state ─────────────────────────────────────────────────
     enum class ObjectKind { None, FieldObject, Emitter, TimbralAnchor, EffectZone };
+
+    // ── Placement mode — arm a type, then click canvas to place ───────────────
+    enum class SpawnKind { None, Attractor, Repeller, Vortex, Emitter, TimbralAnchor, EffectZone };
+
+    SpawnKind pendingSpawn_ = SpawnKind::None;
+
+    // Returns the colour associated with the currently armed spawn type (for canvas indicator).
+    juce::Colour pendingSpawnColour() const noexcept;
+
+    // Clears placement mode and resets all spawn button toggle states.
+    void clearPlacementMode();
 
     struct Selection
     {
