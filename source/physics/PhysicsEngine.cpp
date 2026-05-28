@@ -466,7 +466,10 @@ void PhysicsEngine::drainEditCommands()
 
                 case ManifoldEdit::Type::RemoveEmitter:
                     if (idx >= 0 && idx < MAX_EMITTERS)
+                    {
                         emitters_[idx].active = false;
+                        emitterHeldCount_[idx] = 0;  // Drop held-note state
+                    }
                     break;
 
                 case ManifoldEdit::Type::RemoveTimbralAnchor:
@@ -590,7 +593,11 @@ void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
                 retargeted     = true;
                 break;
             }
-            if (retargeted) continue;  // Next Emitter; this one handled its note
+            if (retargeted)
+            {
+                pushHeldNote(ei, note);   // Track for legato fall-back on note-off
+                continue;                 // Next Emitter; this one handled its note
+            }
         }
 
         // ── Mono / Legato gap / Slur gap: release this Emitter's other voices ──
@@ -653,37 +660,121 @@ void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
             m.fundamentalHz       = newHz;  // Fresh spawn: always instant (no glide)
             m.targetFundamentalHz = newHz;
         }
+
+        pushHeldNote(ei, note);   // Track for legato fall-back on note-off
     }
+}
+
+// Move-to-top push: if `note` is already in this Emitter's stack, remove the
+// old entry so the new push goes to the top — keeps the stack a "set of held
+// notes with insertion-order tracking" rather than a literal event log.
+void PhysicsEngine::pushHeldNote(int ei, int note) noexcept
+{
+    if (ei < 0 || ei >= MAX_EMITTERS) return;
+    auto& stack = emitterHeldNotes_[ei];
+    int&  count = emitterHeldCount_[ei];
+
+    int kept = 0;
+    for (int i = 0; i < count; ++i)
+        if (stack[i] != note)
+            stack[kept++] = stack[i];
+    count = kept;
+
+    if (count < LEGATO_STACK_SIZE)
+        stack[count++] = note;
+    else
+    {
+        // Stack full — drop the oldest entry to make room.
+        for (int i = 0; i < LEGATO_STACK_SIZE - 1; ++i)
+            stack[i] = stack[i + 1];
+        stack[LEGATO_STACK_SIZE - 1] = note;
+    }
+}
+
+// Remove ALL instances of `note` from the stack (handles any leftover dupes
+// from earlier polyphonic retrigger pushes). Returns true if at least one
+// entry was removed — i.e. this Emitter was tracking the note.
+bool PhysicsEngine::popHeldNote(int ei, int note) noexcept
+{
+    if (ei < 0 || ei >= MAX_EMITTERS) return false;
+    auto& stack = emitterHeldNotes_[ei];
+    int&  count = emitterHeldCount_[ei];
+
+    int kept = 0;
+    for (int i = 0; i < count; ++i)
+        if (stack[i] != note)
+            stack[kept++] = stack[i];
+
+    const bool removed = (kept != count);
+    count = kept;
+    return removed;
 }
 
 void PhysicsEngine::handleNoteOff(int channel, int note)
 {
-    // Release ALL Morphons matching this note+channel — there may be one per
-    // Emitter if multiple Emitters had overlapping key ranges covering `note`.
-    for (auto& m : morphons_)
+    // Per-Emitter handling: each Emitter pops the note from its own held-note
+    // stack. Legato/Slur Emitters with notes still held retarget to the new top
+    // (last-note priority) instead of releasing — this is the "voice falls back
+    // to the held lower note" behaviour expected from traditional MIDI legato.
+    for (int ei = 0; ei < MAX_EMITTERS; ++ei)
     {
-        if (!m.active || m.midiNote != note || m.midiChannel != channel) continue;
+        const auto& em = emitters_[ei];
+        if (!em.active) continue;
 
-        m.noteReleased = true;
+        if (!popHeldNote(ei, note)) continue;  // This Emitter wasn't tracking it
 
-        // Arm Terminus only if the morphon is currently OUTSIDE the arrival zone.
-        // This prevents the "immediate-fire" click that occurred when the morphon
-        // was already inside the radius at the moment of note-off — the terminus
-        // should only activate on a crossing event (outside → inside), not a
-        // state check (already inside at note-off).
-        const int ei = m.emitterIndex;
-        if (ei >= 0 && ei < MAX_EMITTERS && emitters_[ei].terminusEnabled)
+        const int    count = emitterHeldCount_[ei];
+        const PolyMode mode = em.polyMode;
+
+        // Legato fall-back: notes still held → retarget the voice rather than release.
+        if (count > 0 && (mode == PolyMode::Legato || mode == PolyMode::LegatoSlur))
         {
-            const auto& em    = emitters_[ei];
-            const float dx    = m.x - em.x;
-            const float dy    = m.y - em.y;
-            const float dist2 = dx * dx + dy * dy;
-            const float ar    = em.terminusArrivalRadius;
-            m.terminusArmed   = (dist2 >= ar * ar);  // Armed only if currently outside
+            const int   topNote = emitterHeldNotes_[ei][count - 1];
+            const float xp      = std::pow(2.0f, em.transposeOct
+                                                 + em.transposeSemi / 12.0f
+                                                 + em.transposeCents / 1200.0f);
+            const float newHz   = midiNoteToHz(topNote) * xp;
+
+            for (auto& m : morphons_)
+            {
+                if (!m.active || m.midiChannel != channel || m.emitterIndex != ei)
+                    continue;
+                m.targetFundamentalHz = newHz;
+                if (globalGlideTimeSec_ <= 0.0f)
+                    m.fundamentalHz = newHz;   // Instant when glide is off
+                m.midiNote = topNote;
+                break;
+            }
+            continue;   // Don't release — voice keeps sounding the fall-back note
         }
-        else
+
+        // Otherwise: release this Emitter's voices matching `note`.
+        // (Filtering by emitter index keeps releases scoped: if two Emitters had
+        // overlapping key ranges, each releases only its own voice.)
+        for (auto& m : morphons_)
         {
-            m.terminusArmed = false;
+            if (!m.active || m.midiNote != note || m.midiChannel != channel) continue;
+            if (m.emitterIndex != ei) continue;
+
+            m.noteReleased = true;
+
+            // Arm Terminus only if the morphon is currently OUTSIDE the arrival zone.
+            // This prevents the "immediate-fire" click that occurred when the morphon
+            // was already inside the radius at the moment of note-off — the terminus
+            // should only activate on a crossing event (outside → inside), not a
+            // state check (already inside at note-off).
+            if (em.terminusEnabled)
+            {
+                const float dx    = m.x - em.x;
+                const float dy    = m.y - em.y;
+                const float dist2 = dx * dx + dy * dy;
+                const float ar    = em.terminusArrivalRadius;
+                m.terminusArmed   = (dist2 >= ar * ar);
+            }
+            else
+            {
+                m.terminusArmed = false;
+            }
         }
     }
 }
@@ -1130,6 +1221,7 @@ void PhysicsEngine::applyPatch(const PatchState& patch)
     globalGlideTimeSec_ = patch.glideTimeSec;
 
     morphons_        = {};    // Kill all active voices from the previous patch
+    emitterHeldCount_.fill(0); // Drop any tracked held notes — old patch is gone
     fieldGrid_.dirty = true;  // Force grid rebuild on first tick
 
     startSimulation();

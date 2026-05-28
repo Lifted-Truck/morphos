@@ -148,22 +148,27 @@ is shipped — DAW automation is keyed to these strings.
   - ⏳ *Remaining:* Flux Gates, Path Objects
 - [ ] **Phase 6** — Modulation: mod matrix, MIDI sources, Morphon state sources, MPE. Priority destinations: Emitter position XY, launch angle, launch speed (keytracking these to MIDI pitch is the canonical Morphos expressive relationship). All field object XY positions must be both sources and destinations.
 - [ ] **Phase 7** — Additional engines: FM, wavetable, heterogeneous blending. **Transient Objects**: percussive event synthesis layer triggered by Emitter generation, Terminus arrival, Event Horizon absorption, and Flux Gate crossings. **Emitter unison/detune mode**: N Morphons per note with per-parameter spread (angle, speed, detune, pan, mass); spread values are mod destinations.
-- [ ] **Phase 8** — Scaling: spatial hash, SIMD, engine LOD, physics quality settings
-- [ ] **Phase 9** — Advanced: granular, physical model, spectral engines, full mod matrix
-- [ ] **Phase 10** — Product: timbral visualizer (partial bar graph / FFT waterfall for latest Morphon), object staging area (configure defaults before placement), patch randomizer, per-Morphon visual identity (note labels + per-note colour), preset browser, factory patches, GUI polish, code signing
+- [ ] **Phase 8** — Scaling: spatial hash, SIMD, engine LOD, physics quality settings, **offline-rendering correctness** (switch physics from wall-clock to buffer-clock advance under `isNonRealtime()`)
+- [ ] **Phase 9** — Advanced: granular, physical model, spectral engines, full mod matrix, **tuning modes** (harmonic series, ratio-based pitch mapping, alternate temperaments)
+- [ ] **Phase 10** — Product:
+  - **Preset / patch system** — internal preset browser independent of DAW session save: save to/load from disk, named slots, categories, factory patches, A/B compare. Distinct from the existing `getStateInformation` path (which serialises into the DAW session).
+  - **Right-click context menus** — grow over time. On empty canvas: spawn each object type + "Generate Random" (creates a random object with randomised parameters). On an object: motion-path drawing (bezier curves, click-to-add waypoints) and pre-formed motion shapes (circle / Lissajous / spiral) placed via a stretchable bounding box. Right-click on a slider: copy/paste value, "copy from Emitter N" etc.
+  - **Object copy / paste** — Ctrl+C / Ctrl+V on the canvas; also "copy parameters from Emitter N" via the right-click menu so a new Emitter can mirror an existing one's settings.
+  - **Typed X/Y position input** — numeric entry for every selected object's Manifold position (in addition to drag), so positions can be set precisely.
+  - **Panel layout fix** — current `layoutPanel()` lays sections out sequentially even when invisible, so each visible section sits below the cumulative height of all hidden ones. Rewrite so per-selection sections share a common `sectionTopY` and overlap (only the visible one paints). Becomes essential as the panel grows.
+  - **Timbral visualizer** — partial amplitude bar graph (cheapest given the additive engine); oscilloscope or FFT waterfall are alternatives. Shows the timbre of the most recently launched Morphon.
+  - **Object layer panel** — list of all objects on the canvas with selectable rows; alt-click on canvas cycles through objects beneath the cursor (the panel surfaces what's covered). Layer order reorderable to control z-stack and selection priority.
+  - **Object staging area** — configure Emitter/Anchor/Zone defaults in the panel before clicking to place, so the first instance lands already tuned rather than requiring post-placement edits.
+  - **Per-Morphon visual identity** — note number or pitch-class label on each Morphon dot; per-note colour generation (toggleable).
+  - **Patch randomizer** — randomise parameters with configurable mutation depth and optional seeded anchoring ("randomise around current patch").
+  - **Piano keyboard strip** at the bottom — lights active MIDI notes, clickable for in-VST testing.
+  - GUI polish, code signing.
+- [ ] **Phase 11** — Cross-platform: macOS port (AU + VST3 universal binary, code signing & notarisation, Retina-aware rendering). Build system already CMake-based; the JUCE side is portable, but anything Windows-specific (paths, file dialogs, font assumptions) gets audited here.
 
 **Known deferred issues:**
+- **Offline-rendering / Bounce** — the physics thread is wall-clock-driven (a `juce::Thread` ticking at 500 Hz of real time), so during Ableton's faster-than-realtime render (Freeze, Bounce in Place, Export Audio) the audio thread renders many buffers per wall second while physics still advances at only 500 ticks/sec. The bounced audio will not match live playback. Fix: detect `isNonRealtime()` in `processBlock` and advance physics inline with `dt = numSamples / sampleRate`. Threaded path stays for live use. Target: Phase 8.
 - **Topology-aware anchor blending** — Timbral Anchor IDW uses raw Euclidean distance; crossing a wrap boundary causes a sharp timbral discontinuity. Fix: use `min(|Δx|, 1−|Δx|)` per axis conditioned on `globalBoundary`. The discontinuity has its own character and should be a toggle once the continuous version exists. Target: Phase 5 remainder.
-- **Tuning modes** — current pitch calculation is equal temperament only. Harmonic series and ratio-based mapping queued for a later phase (no fixed target).
 - **Manifold aspect-ratio handling** — currently the Manifold stretches to fill the canvas, so resizing the window non-uniformly changes the relative dynamics of objects and the apparent scale of radii. This is interesting as an authoring tool but should not be the only mode. Options to design: lock 1:1 (letterbox), free-stretch (current), or global rescale (uniform scaling that preserves dynamics). Likely surfaced as a startup-menu preference.
-
-**UI wishlist (Phase 10+):**
-- **Object layer panel** — list of all existing objects on the canvas with selectable rows; alt-click on canvas cycles through objects beneath the cursor (the panel surfaces what's covered). Layer order should be reorderable to control z-stack and selection priority.
-- **Timbral visualizer** — partial amplitude bar graph is the lowest-cost option given the existing additive engine; oscilloscope or FFT waterfall are alternatives. Shows timbre of the most recently launched Morphon.
-- **Object staging area** — configure Emitter/Anchor/Zone defaults in the panel before clicking to place, so the first instance lands already tuned rather than requiring post-placement edits.
-- **Per-Morphon visual identity** — note number or pitch-class label on each Morphon dot; per-note colour generation (toggleable). Makes polyphonic patches legible at a glance.
-- **Patch randomizer** — randomise parameters with configurable mutation depth and optional seeded anchoring ("randomise around current patch").
-- Piano keyboard strip at the bottom — lights active MIDI notes, clickable for in-VST testing.
 
 ---
 

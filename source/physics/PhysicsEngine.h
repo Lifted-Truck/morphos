@@ -140,6 +140,17 @@ private:
     BoundaryBehavior globalBoundary_    = BoundaryBehavior::Wrap;
     float            globalGlideTimeSec_ = 0.0f;   // Portamento time in seconds
 
+    // ── Per-Emitter held-note stack — supports legato last-note priority ──────
+    // On note-off, Legato/Slur Emitters fall back to the most recently pressed
+    // note that is still held (rather than killing the voice). Each Emitter
+    // keeps its own stack so per-Emitter polyMode stays self-contained.
+    static constexpr int LEGATO_STACK_SIZE = 16;
+    std::array<std::array<int, LEGATO_STACK_SIZE>, MAX_EMITTERS> emitterHeldNotes_{};
+    std::array<int, MAX_EMITTERS>                                emitterHeldCount_{};
+
+    void pushHeldNote(int emitterIndex, int note) noexcept;   // Move-to-top semantics
+    bool popHeldNote (int emitterIndex, int note) noexcept;   // Returns true if note was present
+
     // ── Simulation state (physics thread only) ────────────────────────────────
     std::array<MorphonState, MAX_MORPHONS>      morphons_{};
     std::array<FieldObject,  MAX_FIELD_OBJECTS> fieldObjects_{};
