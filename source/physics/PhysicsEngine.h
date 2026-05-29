@@ -9,6 +9,7 @@
 #include "FieldObject.h"
 #include "FluxGate.h"
 #include "PathObject.h"
+#include "TangentPath.h"
 #include "TrajectoryPath.h"
 #include "synthesis/TimbralAnchor.h"
 
@@ -60,6 +61,7 @@ struct PatchState
     std::array<FluxGate,       MAX_FLUX_GATES>      fluxGates{};
     std::array<PathObject,     MAX_PATH_OBJECTS>    pathObjects{};
     std::array<TrajectoryPath, MAX_TRAJECTORY_PATHS> trajectoryPaths{};
+    std::array<TangentPath,    MAX_TANGENT_PATHS>    tangentPaths{};
     int              activeAnchorCount = 0;
     BoundaryBehavior boundary          = BoundaryBehavior::Wrap;
     float            glideTimeSec      = 0.0f;
@@ -183,6 +185,9 @@ private:
 
     // ── Trajectory Paths — position-driver curves (drive object x,y) ──────────
     std::array<TrajectoryPath, MAX_TRAJECTORY_PATHS> trajectoryPaths_{};
+
+    // ── Tangent-force ("Flow") paths — apply stream forces to nearby Morphons ──
+    std::array<TangentPath, MAX_TANGENT_PATHS> tangentPaths_{};
 
     uint64_t tickIndex_        = 0;
     double   simulationTimeMs_ = 0.0;

@@ -308,7 +308,7 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
     const auto& snap = latestSnapshotForUI_;
 
     auto manifoldData = juce::ValueTree("ManifoldObjects");
-    manifoldData.setProperty("version",     2,                             nullptr);
+    manifoldData.setProperty("version",     3,                             nullptr);
     manifoldData.setProperty("boundary",    (int)snap.globalBoundary,      nullptr);
     manifoldData.setProperty("glideTime",   snap.globalGlideTime,          nullptr);
     manifoldData.setProperty("editorW",     editorWidth_,                  nullptr);
@@ -422,6 +422,21 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         manifoldData.appendChild(node, nullptr);
     }
 
+    for (int i = 0; i < MAX_TANGENT_PATHS; ++i)
+    {
+        const auto& tp = snap.tangentPaths[i];
+        if (!tp.active) continue;
+        auto node = juce::ValueTree("Flow");
+        node.setProperty("shape",     (int)tp.shape, nullptr);
+        node.setProperty("x",         tp.x,          nullptr);
+        node.setProperty("y",         tp.y,          nullptr);
+        node.setProperty("radius",    tp.radius,     nullptr);
+        node.setProperty("width",     tp.width,      nullptr);
+        node.setProperty("strength",  tp.strength,   nullptr);
+        node.setProperty("chirality", tp.chirality,  nullptr);
+        manifoldData.appendChild(node, nullptr);
+    }
+
     state.appendChild(manifoldData, nullptr);
 
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
@@ -472,7 +487,7 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             ed->setSize(w, h);
     }
 
-    int fieldObjSlot = 0, emitterSlot = 0, anchorSlot = 0, zoneSlot = 0, gateSlot = 0, pathSlot = 0, trajSlot = 0;
+    int fieldObjSlot = 0, emitterSlot = 0, anchorSlot = 0, zoneSlot = 0, gateSlot = 0, pathSlot = 0, trajSlot = 0, flowSlot = 0;
 
     for (int i = 0; i < manifoldData.getNumChildren(); ++i)
     {
@@ -567,6 +582,18 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             tp.speed    = (float)child.getProperty("speed",    0.5f);
             tp.currentT = (float)child.getProperty("currentT", 0.0f);
             tp.active   = true;
+        }
+        else if (child.hasType("Flow") && flowSlot < MAX_TANGENT_PATHS)
+        {
+            auto& tp     = patch.tangentPaths[flowSlot++];
+            tp.shape     = static_cast<PathShape>((int)child.getProperty("shape", 0));
+            tp.x         = (float)child.getProperty("x",         0.5f);
+            tp.y         = (float)child.getProperty("y",         0.5f);
+            tp.radius    = (float)child.getProperty("radius",    0.15f);
+            tp.width     = (float)child.getProperty("width",     0.08f);
+            tp.strength  = (float)child.getProperty("strength",  0.40f);
+            tp.chirality = (float)child.getProperty("chirality", 1.0f);
+            tp.active    = true;
         }
     }
 

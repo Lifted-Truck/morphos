@@ -48,6 +48,11 @@ namespace Colour
     // Trajectory Path — position-driver curve. Peach / apricot reads as
     // "warm / motion" without colliding with Emitter amber or Repeller red.
     static const juce::Colour TrajPath     { 0xFFE89A5C };  // Peach / apricot
+
+    // Tangent-force ("Flow") path — soft stream that carries Morphons along a
+    // curve. Periwinkle blue reads as "current / flow" without colliding with
+    // FluxGate cyan or Anchor teal.
+    static const juce::Colour FlowPath     { 0xFF7C9CF0 };  // Periwinkle blue
 }
 
 static juce::Colour zoneColour(ZoneTarget t) noexcept
@@ -168,6 +173,11 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
         btnAddFlux_.setBounds(x + bw3 * 0, y, bw3,         SPAWN_H);
         btnAddPath_.setBounds(x + bw3 * 1, y, bw3,         SPAWN_H);
         btnAddTraj_.setBounds(x + bw3 * 2, y, w - bw3 * 2, SPAWN_H);
+    }
+    y += SPAWN_H + 2;
+    {
+        const int bw3 = w / 3;
+        btnAddFlow_.setBounds(x + bw3 * 0, y, bw3,         SPAWN_H);
     }
     y += SPAWN_H + 4;
 
@@ -305,6 +315,13 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     y = sectionTopY;
     layoutRow(lblTrajRadius_, sldTrajRadius_);
     layoutRow(lblTrajSpeed_,  sldTrajSpeed_);
+
+    // ── Tangent-force ("Flow") path section ────────────────────────────────────
+    y = sectionTopY;
+    layoutRow(lblFlowRadius_,    sldFlowRadius_);
+    layoutRow(lblFlowWidth_,     sldFlowWidth_);
+    layoutRow(lblFlowStrength_,  sldFlowStrength_);
+    layoutRow(lblFlowChirality_, sldFlowChirality_);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -362,6 +379,7 @@ void MorphosEditor::setupSliders()
     styleSpawnBtn(btnAddFlux_);  addAndMakeVisible(btnAddFlux_);
     styleSpawnBtn(btnAddPath_);  addAndMakeVisible(btnAddPath_);
     styleSpawnBtn(btnAddTraj_);  addAndMakeVisible(btnAddTraj_);
+    styleSpawnBtn(btnAddFlow_);  addAndMakeVisible(btnAddFlow_);
 
     // Spawn buttons arm placement mode — click canvas to place at desired position.
     // Clicking the same button again disarms without placing anything.
@@ -377,6 +395,7 @@ void MorphosEditor::setupSliders()
         btnAddFlux_.setToggleState(pendingSpawn_ == SpawnKind::FluxGate,       juce::dontSendNotification);
         btnAddPath_.setToggleState(pendingSpawn_ == SpawnKind::PathObject,     juce::dontSendNotification);
         btnAddTraj_.setToggleState(pendingSpawn_ == SpawnKind::TrajectoryPath, juce::dontSendNotification);
+        btnAddFlow_.setToggleState(pendingSpawn_ == SpawnKind::TangentPath,    juce::dontSendNotification);
         repaint();
     };
 
@@ -389,6 +408,7 @@ void MorphosEditor::setupSliders()
     btnAddFlux_.onClick = [armSpawn]{ armSpawn(SpawnKind::FluxGate);       };
     btnAddPath_.onClick = [armSpawn]{ armSpawn(SpawnKind::PathObject);     };
     btnAddTraj_.onClick = [armSpawn]{ armSpawn(SpawnKind::TrajectoryPath); };
+    btnAddFlow_.onClick = [armSpawn]{ armSpawn(SpawnKind::TangentPath);    };
 
     // ── Panel header + remove button ──────────────────────────────────────────
     lblPanelHeader_.setText("No Selection", juce::dontSendNotification);
@@ -414,6 +434,7 @@ void MorphosEditor::setupSliders()
             case ObjectKind::FluxGate:      t = ManifoldEdit::Type::RemoveFluxGate;      break;
             case ObjectKind::PathObject:    t = ManifoldEdit::Type::RemovePathObject;    break;
             case ObjectKind::TrajectoryPath:t = ManifoldEdit::Type::RemoveTrajectoryPath;break;
+            case ObjectKind::TangentPath:   t = ManifoldEdit::Type::RemoveTangentPath;   break;
             default: return;
         }
         sendEdit(t, selection_.index, 0.0f, 0.0f);
@@ -796,6 +817,45 @@ void MorphosEditor::setupSliders()
                      selection_.index, (float)sldTrajSpeed_.getValue());
     };
 
+    // ── Tangent-force ("Flow") path sliders ────────────────────────────────────
+    styleLabel(lblFlowRadius_,    "Radius");
+    styleLabel(lblFlowWidth_,     "Width");
+    styleLabel(lblFlowStrength_,  "Strength");
+    styleLabel(lblFlowChirality_, "Chirality");
+    styleSlider(sldFlowRadius_,    0.02, 0.45);
+    styleSlider(sldFlowWidth_,     0.01, 0.30);
+    styleSlider(sldFlowStrength_,  0.0,  2.0);
+    styleSlider(sldFlowChirality_,-1.0,  1.0);
+    sldFlowRadius_  .setNumDecimalPlacesToDisplay(2);
+    sldFlowWidth_   .setNumDecimalPlacesToDisplay(2);
+    sldFlowStrength_.setNumDecimalPlacesToDisplay(2);
+    sldFlowChirality_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblFlowRadius_);    addAndMakeVisible(sldFlowRadius_);
+    addAndMakeVisible(lblFlowWidth_);     addAndMakeVisible(sldFlowWidth_);
+    addAndMakeVisible(lblFlowStrength_);  addAndMakeVisible(sldFlowStrength_);
+    addAndMakeVisible(lblFlowChirality_); addAndMakeVisible(sldFlowChirality_);
+
+    sldFlowRadius_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTangentPathRadius,
+                     selection_.index, (float)sldFlowRadius_.getValue());
+    };
+    sldFlowWidth_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTangentPathWidth,
+                     selection_.index, (float)sldFlowWidth_.getValue());
+    };
+    sldFlowStrength_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTangentPathStrength,
+                     selection_.index, (float)sldFlowStrength_.getValue());
+    };
+    sldFlowChirality_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTangentPathChirality,
+                     selection_.index, (float)sldFlowChirality_.getValue());
+    };
+
     // ── Emitter ↔ Trajectory attachment slider ─────────────────────────────────
     // Integer slider: -1 = stationary (no attachment), 0..MAX_TRAJECTORY_PATHS-1
     // = follow that trajectory path. Text shows "—" for -1 and "Traj N" for 0+.
@@ -970,6 +1030,11 @@ void MorphosEditor::updatePanel()
 
     lblTrajRadius_.setVisible(false);       sldTrajRadius_.setVisible(false);
     lblTrajSpeed_.setVisible(false);        sldTrajSpeed_.setVisible(false);
+
+    lblFlowRadius_.setVisible(false);       sldFlowRadius_.setVisible(false);
+    lblFlowWidth_.setVisible(false);        sldFlowWidth_.setVisible(false);
+    lblFlowStrength_.setVisible(false);     sldFlowStrength_.setVisible(false);
+    lblFlowChirality_.setVisible(false);    sldFlowChirality_.setVisible(false);
 
     lblEmitTraj_.setVisible(false);         sldEmitTraj_.setVisible(false);
 
@@ -1179,6 +1244,27 @@ void MorphosEditor::updatePanel()
         lblTrajRadius_.setVisible(true); sldTrajRadius_.setVisible(true);
         lblTrajSpeed_ .setVisible(true); sldTrajSpeed_ .setVisible(true);
     }
+    else if (selection_.kind == ObjectKind::TangentPath)
+    {
+        const int i = selection_.index;
+        if (i >= MAX_TANGENT_PATHS || !state.tangentPaths[i].active)
+        {
+            selection_ = {}; ignoreSliderCallbacks_ = false; return;
+        }
+        const auto& tp = state.tangentPaths[i];
+
+        lblPanelHeader_.setText("Flow " + juce::String(i), juce::dontSendNotification);
+
+        sldFlowRadius_   .setValue(tp.radius,    juce::dontSendNotification);
+        sldFlowWidth_    .setValue(tp.width,     juce::dontSendNotification);
+        sldFlowStrength_ .setValue(tp.strength,  juce::dontSendNotification);
+        sldFlowChirality_.setValue(tp.chirality, juce::dontSendNotification);
+
+        lblFlowRadius_.setVisible(true);    sldFlowRadius_.setVisible(true);
+        lblFlowWidth_.setVisible(true);     sldFlowWidth_.setVisible(true);
+        lblFlowStrength_.setVisible(true);  sldFlowStrength_.setVisible(true);
+        lblFlowChirality_.setVisible(true); sldFlowChirality_.setVisible(true);
+    }
 
     ignoreSliderCallbacks_ = false;
 }
@@ -1214,6 +1300,7 @@ void MorphosEditor::clearPlacementMode()
     btnAddFlux_.setToggleState(false, juce::dontSendNotification);
     btnAddPath_.setToggleState(false, juce::dontSendNotification);
     btnAddTraj_.setToggleState(false, juce::dontSendNotification);
+    btnAddFlow_.setToggleState(false, juce::dontSendNotification);
 }
 
 juce::Colour MorphosEditor::pendingSpawnColour() const noexcept
@@ -1229,6 +1316,7 @@ juce::Colour MorphosEditor::pendingSpawnColour() const noexcept
         case SpawnKind::FluxGate:       return Colour::FluxGate;
         case SpawnKind::PathObject:     return Colour::PathObject;
         case SpawnKind::TrajectoryPath: return Colour::TrajPath;
+        case SpawnKind::TangentPath:    return Colour::FlowPath;
         default:                        return juce::Colours::white;
     }
 }
@@ -1262,6 +1350,7 @@ bool MorphosEditor::keyPressed(const juce::KeyPress& key)
             case ObjectKind::FluxGate:      t = ManifoldEdit::Type::RemoveFluxGate;      break;
             case ObjectKind::PathObject:    t = ManifoldEdit::Type::RemovePathObject;    break;
             case ObjectKind::TrajectoryPath:t = ManifoldEdit::Type::RemoveTrajectoryPath;break;
+            case ObjectKind::TangentPath:   t = ManifoldEdit::Type::RemoveTangentPath;   break;
             default: return false;
         }
         sendEdit(t, selection_.index, 0.0f, 0.0f);
@@ -1374,6 +1463,18 @@ MorphosEditor::Selection MorphosEditor::hitTest(juce::Point<float> canvasPt,
             return { ObjectKind::TrajectoryPath, i };
     }
 
+    for (int i = 0; i < MAX_TANGENT_PATHS; ++i)
+    {
+        const auto& tp = state.tangentPaths[i];
+        if (!tp.active) continue;
+
+        const float dx   = cursorMfd.x - tp.x;
+        const float dy   = cursorMfd.y - tp.y;
+        const float dMfd = std::sqrt(dx * dx + dy * dy);
+        if (std::abs(dMfd - tp.radius) <= hitMfd)
+            return { ObjectKind::TangentPath, i };
+    }
+
     // Priority 6: Flux gates — hit on the line segment itself, using point-to-
     // segment distance so the whole tripwire is grabbable (not just the centre).
     for (int i = 0; i < MAX_FLUX_GATES; ++i)
@@ -1433,6 +1534,7 @@ void MorphosEditor::mouseDown(const juce::MouseEvent& event)
             case SpawnKind::FluxGate:      addType = ManifoldEdit::Type::AddFluxGate;      break;
             case SpawnKind::PathObject:    addType = ManifoldEdit::Type::AddPathObject;    break;
             case SpawnKind::TrajectoryPath:addType = ManifoldEdit::Type::AddTrajectoryPath;break;
+            case SpawnKind::TangentPath:   addType = ManifoldEdit::Type::AddTangentPath;   break;
             default: clearPlacementMode(); return;
         }
 
@@ -1483,6 +1585,10 @@ void MorphosEditor::mouseDown(const juce::MouseEvent& event)
                 drag_.pendingX = state.trajectoryPaths[hit.index].x;
                 drag_.pendingY = state.trajectoryPaths[hit.index].y;
                 break;
+            case ObjectKind::TangentPath:
+                drag_.pendingX = state.tangentPaths[hit.index].x;
+                drag_.pendingY = state.tangentPaths[hit.index].y;
+                break;
             default: break;
         }
 
@@ -1527,6 +1633,7 @@ void MorphosEditor::mouseDrag(const juce::MouseEvent& event)
         case ObjectKind::FluxGate:      moveType = ManifoldEdit::Type::MoveFluxGate;       break;
         case ObjectKind::PathObject:    moveType = ManifoldEdit::Type::MovePathObject;     break;
         case ObjectKind::TrajectoryPath:moveType = ManifoldEdit::Type::MoveTrajectoryPath; break;
+        case ObjectKind::TangentPath:   moveType = ManifoldEdit::Type::MoveTangentPath;    break;
         default: return;
     }
 
@@ -1564,7 +1671,7 @@ void MorphosEditor::paint(juce::Graphics& g)
 
         // "Click to place: Type" hint in top-left corner of canvas
         static const char* spawnNames[] = {
-            "", "Attractor", "Repeller", "Vortex", "Emitter", "Anchor", "Zone", "Gate", "Rail", "Trajectory"
+            "", "Attractor", "Repeller", "Vortex", "Emitter", "Anchor", "Zone", "Gate", "Rail", "Trajectory", "Flow"
         };
         g.setFont(juce::FontOptions(11.0f));
         g.setColour(c.withAlpha(0.80f));
@@ -1575,7 +1682,8 @@ void MorphosEditor::paint(juce::Graphics& g)
 
     drawEffectZones     (g, state, canvas);    // Behind all other objects
     drawPathObjects     (g, state, canvas);    // Above zones
-    drawTrajectoryPaths (g, state, canvas);    // Above rail paths
+    drawTangentPaths    (g, state, canvas);    // Above rail paths
+    drawTrajectoryPaths (g, state, canvas);    // Above flow paths
     drawFluxGates       (g, state, canvas);    // Above paths, beneath fields
     drawFieldObjects    (g, state, canvas);
     drawEmitters        (g, state, canvas);
@@ -1820,6 +1928,109 @@ void MorphosEditor::drawTrajectoryPaths(juce::Graphics& g,
 
         // Selection ring
         if (selection_.kind == ObjectKind::TrajectoryPath && selection_.index == i)
+        {
+            g.setColour(Colour::SelectRing.withAlpha(0.70f));
+            g.drawEllipse(centre.x - rxPx, centre.y - ryPx,
+                          rxPx * 2.0f, ryPx * 2.0f, 1.0f);
+        }
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Draw — tangent-force ("Flow") paths
+//
+// A solid ring (the curve) wrapped in a translucent influence band (annulus of
+// half-width `width` per axis). Flow arrowheads at four points around the ring
+// show traversal direction (chirality). Distinct from the rail (solid ring, no
+// band) and the trajectory path (dashed ring + moving t-dot).
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MorphosEditor::drawTangentPaths(juce::Graphics& g,
+                                     const PhysicsStateSnapshot& state,
+                                     juce::Rectangle<int> canvas) const
+{
+    const juce::Colour c = Colour::FlowPath;
+
+    for (int i = 0; i < MAX_TANGENT_PATHS; ++i)
+    {
+        const auto& tp = state.tangentPaths[i];
+        if (!tp.active) continue;
+
+        float cx = tp.x, cy = tp.y;
+        if (drag_.active && selection_.kind == ObjectKind::TangentPath
+            && selection_.index == i)
+        {
+            cx = drag_.pendingX;
+            cy = drag_.pendingY;
+        }
+
+        const auto  centre = manifoldToCanvas(cx, cy, canvas);
+        // Manifold-space circle → canvas ellipse (see drawFieldObjects note).
+        const float rxPx = tp.radius * canvas.getWidth();
+        const float ryPx = tp.radius * canvas.getHeight();
+        const float wxPx = tp.width  * canvas.getWidth();
+        const float wyPx = tp.width  * canvas.getHeight();
+
+        // Influence band — translucent annulus where the flow force acts, with
+        // intensity scaled by strength so a stronger stream reads as more solid.
+        {
+            const float outerX = rxPx + wxPx;
+            const float outerY = ryPx + wyPx;
+            const float innerX = juce::jmax(0.0f, rxPx - wxPx);
+            const float innerY = juce::jmax(0.0f, ryPx - wyPx);
+            juce::Path band;
+            band.addEllipse(centre.x - outerX, centre.y - outerY,
+                            outerX * 2.0f, outerY * 2.0f);
+            juce::Path hole;
+            hole.addEllipse(centre.x - innerX, centre.y - innerY,
+                            innerX * 2.0f, innerY * 2.0f);
+            band.setUsingNonZeroWinding(false);
+            band.addPath(hole);
+            const float a = 0.06f + 0.10f * juce::jlimit(0.0f, 1.0f, tp.strength * 0.5f);
+            g.setColour(c.withAlpha(a));
+            g.fillPath(band);
+        }
+
+        // Curve ring itself
+        g.setColour(c.withAlpha(0.85f));
+        g.drawEllipse(centre.x - rxPx, centre.y - ryPx, rxPx * 2.0f, ryPx * 2.0f, 1.6f);
+
+        // Flow arrowheads — four around the ring, oriented along the local
+        // traversal direction (CCW for chirality > 0, CW for < 0). Direction is
+        // derived by sampling a neighbouring parameter so it follows the canvas
+        // ellipse correctly on non-square aspect ratios.
+        {
+            constexpr float TWO_PI = 6.28318530717958647692f;
+            const float dir = (tp.chirality >= 0.0f) ? 1.0f : -1.0f;
+            constexpr float AR = 5.0f;
+            g.setColour(c);
+            for (int k = 0; k < 4; ++k)
+            {
+                const float ang = (float)k * (TWO_PI * 0.25f);
+                const float pmx = cx + std::cos(ang) * tp.radius;
+                const float pmy = cy + std::sin(ang) * tp.radius;
+                const float qmx = cx + std::cos(ang + dir * 0.08f) * tp.radius;
+                const float qmy = cy + std::sin(ang + dir * 0.08f) * tp.radius;
+                const auto  p   = manifoldToCanvas(pmx, pmy, canvas);
+                const auto  q   = manifoldToCanvas(qmx, qmy, canvas);
+
+                float dx = q.x - p.x, dy = q.y - p.y;
+                const float len = std::sqrt(dx * dx + dy * dy);
+                if (len < 1e-4f) continue;
+                dx /= len; dy /= len;
+                const float nx = -dy, ny = dx;   // perpendicular for the base
+
+                juce::Path arrow;
+                arrow.startNewSubPath(p.x + dx * AR,            p.y + dy * AR);            // tip
+                arrow.lineTo        (p.x - dx * AR + nx * AR,   p.y - dy * AR + ny * AR);  // base 1
+                arrow.lineTo        (p.x - dx * AR - nx * AR,   p.y - dy * AR - ny * AR);  // base 2
+                arrow.closeSubPath();
+                g.fillPath(arrow);
+            }
+        }
+
+        // Selection ring
+        if (selection_.kind == ObjectKind::TangentPath && selection_.index == i)
         {
             g.setColour(Colour::SelectRing.withAlpha(0.70f));
             g.drawEllipse(centre.x - rxPx, centre.y - ryPx,
@@ -2271,7 +2482,9 @@ void MorphosEditor::drawStatusBar(juce::Graphics& g,
            << state.activePathObjectCount << " rail"
            << (state.activePathObjectCount != 1 ? "s" : "") << "  |  "
            << state.activeTrajectoryPathCount << " traj"
-           << (state.activeTrajectoryPathCount != 1 ? "s" : "");
+           << (state.activeTrajectoryPathCount != 1 ? "s" : "") << "  |  "
+           << state.activeTangentPathCount << " flow"
+           << (state.activeTangentPathCount != 1 ? "s" : "");
 
     const auto statusRect = getLocalBounds()
                                 .removeFromBottom(28)

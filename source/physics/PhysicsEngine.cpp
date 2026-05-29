@@ -700,6 +700,59 @@ void PhysicsEngine::drainEditCommands()
                             = (v >= 0 && v < MAX_TRAJECTORY_PATHS) ? v : -1;
                     }
                     break;
+
+                // ── Tangent-force ("Flow") path spawn / remove / edits ────────
+                case ManifoldEdit::Type::AddTangentPath:
+                {
+                    int slot = -1;
+                    for (int k = 0; k < MAX_TANGENT_PATHS; ++k)
+                        if (!tangentPaths_[k].active) { slot = k; break; }
+                    if (slot < 0) break;
+
+                    auto& tp     = tangentPaths_[slot];
+                    tp.shape     = PathShape::Circle;
+                    tp.x         = e.x;
+                    tp.y         = e.y;
+                    tp.radius    = 0.15f;
+                    tp.width     = 0.08f;
+                    tp.strength  = 0.40f;
+                    tp.chirality = 1.0f;
+                    tp.active    = true;
+                    break;
+                }
+
+                case ManifoldEdit::Type::RemoveTangentPath:
+                    if (idx >= 0 && idx < MAX_TANGENT_PATHS)
+                        tangentPaths_[idx].active = false;
+                    break;
+
+                case ManifoldEdit::Type::MoveTangentPath:
+                    if (idx >= 0 && idx < MAX_TANGENT_PATHS)
+                    {
+                        tangentPaths_[idx].x = e.x;
+                        tangentPaths_[idx].y = e.y;
+                    }
+                    break;
+
+                case ManifoldEdit::Type::SetTangentPathRadius:
+                    if (idx >= 0 && idx < MAX_TANGENT_PATHS)
+                        tangentPaths_[idx].radius = juce::jlimit(0.02f, 0.45f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetTangentPathWidth:
+                    if (idx >= 0 && idx < MAX_TANGENT_PATHS)
+                        tangentPaths_[idx].width = juce::jlimit(0.01f, 0.30f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetTangentPathStrength:
+                    if (idx >= 0 && idx < MAX_TANGENT_PATHS)
+                        tangentPaths_[idx].strength = juce::jlimit(0.0f, 2.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetTangentPathChirality:
+                    if (idx >= 0 && idx < MAX_TANGENT_PATHS)
+                        tangentPaths_[idx].chirality = juce::jlimit(-1.0f, 1.0f, e.x);
+                    break;
             }
         }
     };
@@ -1020,6 +1073,17 @@ void PhysicsEngine::integrateMorphons(double dt)
                 fx += em.terminusStrength * dx * invDist;
                 fy += em.terminusStrength * dy * invDist;
             }
+        }
+
+        // ── Tangent-force ("Flow") paths ───────────────────────────────────────
+        // Each active Flow path adds a tangential push + centering pull when the
+        // Morphon is inside its influence band. These are soft forces (unlike the
+        // rail constraint), so a strong field elsewhere can still pull the Morphon
+        // out of the stream.
+        for (const auto& tp : tangentPaths_)
+        {
+            if (!tp.active) continue;
+            tangentPathForce(tp, m.x, m.y, fx, fy);
         }
 
         // F = ma  →  a = F/mass
@@ -1585,6 +1649,24 @@ void PhysicsEngine::writeSnapshot()
     }
     snap.activeTrajectoryPathCount = activeTrajectories;
 
+    // Copy tangent-force ("Flow") paths for UI rendering
+    int activeTangents = 0;
+    for (int i = 0; i < MAX_TANGENT_PATHS; ++i)
+    {
+        const auto& src = tangentPaths_[i];
+        auto&       dst = snap.tangentPaths[i];
+        dst.shape     = src.shape;
+        dst.x         = src.x;
+        dst.y         = src.y;
+        dst.radius    = src.radius;
+        dst.width     = src.width;
+        dst.strength  = src.strength;
+        dst.chirality = src.chirality;
+        dst.active    = src.active;
+        if (src.active) ++activeTangents;
+    }
+    snap.activeTangentPathCount = activeTangents;
+
     // Copy timbral anchors for UI rendering
     snap.activeTimbralAnchorCount = activeAnchorCount_;
     for (int i = 0; i < MAX_TIMBRAL_ANCHORS; ++i)
@@ -1620,6 +1702,7 @@ void PhysicsEngine::applyPatch(const PatchState& patch)
     fluxGates_          = patch.fluxGates;
     pathObjects_        = patch.pathObjects;
     trajectoryPaths_    = patch.trajectoryPaths;
+    tangentPaths_       = patch.tangentPaths;
     activeAnchorCount_  = patch.activeAnchorCount;
     globalBoundary_     = patch.boundary;
     globalGlideTimeSec_ = patch.glideTimeSec;

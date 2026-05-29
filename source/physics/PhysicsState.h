@@ -7,6 +7,7 @@
 #include "FieldObject.h"
 #include "FluxGate.h"
 #include "PathObject.h"
+#include "TangentPath.h"
 #include "TrajectoryPath.h"
 #include "synthesis/TimbralAnchor.h"   // for MAX_TIMBRAL_ANCHORS
 
@@ -209,6 +210,21 @@ struct TrajectoryPathSnapshot
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// TangentPathSnapshot — tangent-force ("Flow") path data for UI rendering
+// ─────────────────────────────────────────────────────────────────────────────
+struct TangentPathSnapshot
+{
+    PathShape shape     = PathShape::Circle;
+    float     x         = 0.5f;
+    float     y         = 0.5f;
+    float     radius    = 0.15f;
+    float     width     = 0.08f;
+    float     strength  = 0.40f;
+    float     chirality = 1.0f;
+    bool      active    = false;
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // FieldObjectSnapshot — lightweight field object data for UI rendering
 // ─────────────────────────────────────────────────────────────────────────────
 struct FieldObjectSnapshot
@@ -236,6 +252,7 @@ struct PhysicsStateSnapshot
     std::array<FluxGateSnapshot,       MAX_FLUX_GATES>       fluxGates{};
     std::array<PathObjectSnapshot,     MAX_PATH_OBJECTS>     pathObjects{};
     std::array<TrajectoryPathSnapshot, MAX_TRAJECTORY_PATHS> trajectoryPaths{};
+    std::array<TangentPathSnapshot,    MAX_TANGENT_PATHS>    tangentPaths{};
 
     int              activeMorphonCount       = 0;
     int              activeFieldObjCount      = 0;
@@ -244,6 +261,7 @@ struct PhysicsStateSnapshot
     int              activeFluxGateCount      = 0;
     int              activePathObjectCount    = 0;
     int              activeTrajectoryPathCount = 0;
+    int              activeTangentPathCount   = 0;
     BoundaryBehavior globalBoundary           = BoundaryBehavior::Wrap;
     float            globalGlideTime          = 0.0f;   // Portamento seconds [0, 5]
     uint64_t         tickIndex                = 0;
@@ -336,6 +354,15 @@ struct ManifoldEdit
         SetTrajectoryPathSpeed,      // x = t-per-second [-4.0, 4.0]; negative reverses
         SetTrajectoryPathMode,       // x = (float)cast of TrajectoryMode uint8_t
         SetEmitterTrajectoryPath,    // x = trajectory index [-1, MAX_TRAJECTORY_PATHS-1]
+
+        // ── Tangent-force ("Flow") path spawn / remove / edits ────────────────
+        AddTangentPath,              // Spawn a new TangentPath at (x,y)
+        RemoveTangentPath,           // Deactivate tangentPath[index]
+        MoveTangentPath,             // x,y carry new centre coords [0,1]
+        SetTangentPathRadius,        // x = radius [0.02, 0.45]
+        SetTangentPathWidth,         // x = influence band half-width [0.01, 0.30]
+        SetTangentPathStrength,      // x = force magnitude [0.0, 2.0]
+        SetTangentPathChirality,     // x = flow direction [-1, +1]
     };
 
     Type  type  = Type::MoveFieldObject;

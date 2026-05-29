@@ -67,6 +67,8 @@ private:
                              juce::Rectangle<int> canvas) const;
     void drawTrajectoryPaths(juce::Graphics&, const PhysicsStateSnapshot&,
                              juce::Rectangle<int> canvas) const;
+    void drawTangentPaths   (juce::Graphics&, const PhysicsStateSnapshot&,
+                             juce::Rectangle<int> canvas) const;
 
     // ── Mouse interaction (drag-and-drop + placement) ─────────────────────────
     void mouseDown(const juce::MouseEvent&) override;
@@ -77,10 +79,10 @@ private:
     bool keyPressed(const juce::KeyPress&) override;
 
     // ── Selection / drag state ─────────────────────────────────────────────────
-    enum class ObjectKind { None, FieldObject, Emitter, TimbralAnchor, EffectZone, FluxGate, PathObject, TrajectoryPath };
+    enum class ObjectKind { None, FieldObject, Emitter, TimbralAnchor, EffectZone, FluxGate, PathObject, TrajectoryPath, TangentPath };
 
     // ── Placement mode — arm a type, then click canvas to place ───────────────
-    enum class SpawnKind { None, Attractor, Repeller, Vortex, Emitter, TimbralAnchor, EffectZone, FluxGate, PathObject, TrajectoryPath };
+    enum class SpawnKind { None, Attractor, Repeller, Vortex, Emitter, TimbralAnchor, EffectZone, FluxGate, PathObject, TrajectoryPath, TangentPath };
 
     SpawnKind pendingSpawn_ = SpawnKind::None;
 
@@ -143,6 +145,7 @@ private:
     juce::TextButton btnAddFlux_ { "+Gate" };
     juce::TextButton btnAddPath_ { "+Rail" };
     juce::TextButton btnAddTraj_ { "+Traj" };
+    juce::TextButton btnAddFlow_ { "+Flow" };
 
     // Panel header: object type+index label, plus Remove button on the right
     juce::Label      lblPanelHeader_;
@@ -214,6 +217,10 @@ private:
     // Trajectory path section (visible when a TrajectoryPath is selected)
     juce::Label  lblTrajRadius_, lblTrajSpeed_;
     juce::Slider sldTrajRadius_, sldTrajSpeed_;
+
+    // Tangent-force ("Flow") path section (visible when a TangentPath is selected)
+    juce::Label  lblFlowRadius_, lblFlowWidth_, lblFlowStrength_, lblFlowChirality_;
+    juce::Slider sldFlowRadius_, sldFlowWidth_, sldFlowStrength_, sldFlowChirality_;
 
     // Emitter section addition: trajectory path attachment (in Emitter panel)
     juce::Label  lblEmitTraj_;
