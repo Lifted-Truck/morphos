@@ -45,6 +45,7 @@ struct PathObject
     float     snapRadius = 0.04f;    // Pin threshold — Morphons within this distance pin
     float     escapeForce = 0.0f;    // 0 = sticky (no escape); >0 = perpendicular force
                                      // magnitude at which pinned Morphons unpin and fly free
+    int       trajectoryPathIndex = -1;  // -1 = stationary; else attached to traj[index]
     bool      active     = false;
 };
 

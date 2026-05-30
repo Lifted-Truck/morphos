@@ -35,6 +35,7 @@ struct FluxGate
     float y        = 0.5f;
     float length   = 0.20f;    // Endpoint distance along the gate line
     float angleRad = 0.0f;     // 0 = horizontal; +π/2 = vertical
+    int   trajectoryPathIndex = -1;  // -1 = stationary; else attached to traj[index]
     bool  active   = false;
 };
 

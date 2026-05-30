@@ -293,9 +293,6 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     // Strength + radius shown only when Terminus is enabled (hidden otherwise)
     layoutRow(lblTerminusStrength_, sldTerminusStrength_);
     layoutRow(lblTerminusRadius_,   sldTerminusRadius_);
-
-    // Trajectory attachment selector (Emitter sub-section)
-    layoutRow(lblEmitTraj_, sldEmitTraj_);
     const int emitterEndY = y;
 
     // ── Effect zone section ───────────────────────────────────────────────────
@@ -373,18 +370,34 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     // ── Size panelContent_ to the currently selected section's height ────────
     // No selection → use the smallest (Anchor) so the viewport stays compact.
     int contentH = anchorEndY;
+    bool selectedIsAttachable = false;
     switch (selection_.kind)
     {
-        case ObjectKind::TimbralAnchor:  contentH = anchorEndY;  break;
-        case ObjectKind::FieldObject:    contentH = fieldEndY;   break;
-        case ObjectKind::Emitter:        contentH = emitterEndY; break;
-        case ObjectKind::EffectZone:     contentH = zoneEndY;    break;
-        case ObjectKind::FluxGate:       contentH = gateEndY;    break;
-        case ObjectKind::PathObject:     contentH = pathEndY;    break;
-        case ObjectKind::TrajectoryPath: contentH = trajEndY;    break;
-        case ObjectKind::TangentPath:    contentH = flowEndY;    break;
+        case ObjectKind::TimbralAnchor:  contentH = anchorEndY;  selectedIsAttachable = true; break;
+        case ObjectKind::FieldObject:    contentH = fieldEndY;   selectedIsAttachable = true; break;
+        case ObjectKind::Emitter:        contentH = emitterEndY; selectedIsAttachable = true; break;
+        case ObjectKind::EffectZone:     contentH = zoneEndY;    selectedIsAttachable = true; break;
+        case ObjectKind::FluxGate:       contentH = gateEndY;    selectedIsAttachable = true; break;
+        case ObjectKind::PathObject:     contentH = pathEndY;    selectedIsAttachable = true; break;
+        // TrajectoryPath can't attach to itself; TangentPath has no x/y driver
+        // semantics that would survive — it's a force field, not a positioned
+        // object the way the others are. (TangentPath has a position too; we
+        // expose it for symmetry below.)
+        case ObjectKind::TrajectoryPath: contentH = trajEndY;    selectedIsAttachable = false; break;
+        case ObjectKind::TangentPath:    contentH = flowEndY;    selectedIsAttachable = true;  break;
         default:                          contentH = anchorEndY;  break;
     }
+
+    // Shared "Attach to Trajectory" row — positioned at the end of whichever
+    // section the current selection belongs to, so the widget always appears
+    // immediately under that section's normal parameters.
+    if (selectedIsAttachable)
+    {
+        lblTrajAttach_.setBounds(x, contentH,           w, LABEL_H);
+        sldTrajAttach_.setBounds(x, contentH + LABEL_H, w, SLIDER_H);
+        contentH += ROW_H;
+    }
+
     panelContent_.setSize(w, contentH);
 }
 
@@ -959,20 +972,34 @@ void MorphosEditor::setupSliders()
     // ── Emitter ↔ Trajectory attachment slider ─────────────────────────────────
     // Integer slider: -1 = stationary (no attachment), 0..MAX_TRAJECTORY_PATHS-1
     // = follow that trajectory path. Text shows "—" for -1 and "Traj N" for 0+.
-    styleLabel(lblEmitTraj_, "Trajectory");
-    styleSlider(sldEmitTraj_, -1.0, (double)(MAX_TRAJECTORY_PATHS - 1));
-    sldEmitTraj_.setNumDecimalPlacesToDisplay(0);
-    sldEmitTraj_.textFromValueFunction = [](double v) -> juce::String
+    styleLabel(lblTrajAttach_, "Trajectory");
+    styleSlider(sldTrajAttach_, -1.0, (double)(MAX_TRAJECTORY_PATHS - 1));
+    sldTrajAttach_.setNumDecimalPlacesToDisplay(0);
+    sldTrajAttach_.textFromValueFunction = [](double v) -> juce::String
     {
         const int n = (int)v;
         if (n < 0) return juce::String::fromUTF8("\xe2\x80\x94");  // em-dash
         return "Traj " + juce::String(n);
     };
-    addAndMakeVisible(lblEmitTraj_); addAndMakeVisible(sldEmitTraj_);
-    sldEmitTraj_.onValueChange = [this] {
-        if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetEmitterTrajectoryPath,
-                     selection_.index, (float)sldEmitTraj_.getValue());
+    addAndMakeVisible(lblTrajAttach_); addAndMakeVisible(sldTrajAttach_);
+    sldTrajAttach_.onValueChange = [this] {
+        if (ignoreSliderCallbacks_) return;
+        // Dispatch to the right Set<X>TrajectoryPath edit for whichever object
+        // type is currently selected. The shared widget shows up under any
+        // attachable section, so the selected kind determines the edit target.
+        ManifoldEdit::Type type;
+        switch (selection_.kind)
+        {
+            case ObjectKind::Emitter:        type = ManifoldEdit::Type::SetEmitterTrajectoryPath;       break;
+            case ObjectKind::FieldObject:    type = ManifoldEdit::Type::SetFieldObjectTrajectoryPath;   break;
+            case ObjectKind::TimbralAnchor:  type = ManifoldEdit::Type::SetTimbralAnchorTrajectoryPath; break;
+            case ObjectKind::EffectZone:     type = ManifoldEdit::Type::SetEffectZoneTrajectoryPath;    break;
+            case ObjectKind::FluxGate:       type = ManifoldEdit::Type::SetFluxGateTrajectoryPath;      break;
+            case ObjectKind::PathObject:     type = ManifoldEdit::Type::SetPathObjectTrajectoryPath;    break;
+            case ObjectKind::TangentPath:    type = ManifoldEdit::Type::SetTangentPathTrajectoryPath;   break;
+            default: return;   // Not an attachable kind
+        }
+        sendEdit(type, selection_.index, (float)sldTrajAttach_.getValue());
     };
 
     // ── Global topology row — always visible ──────────────────────────────────
@@ -1122,7 +1149,7 @@ void MorphosEditor::installPanelViewport()
         &btnTerminusEnabled_,
         &lblTerminusStrength_, &sldTerminusStrength_,
         &lblTerminusRadius_,   &sldTerminusRadius_,
-        &lblEmitTraj_,         &sldEmitTraj_,
+        &lblTrajAttach_,         &sldTrajAttach_,
         // Zone
         &lblZoneRadius_,       &sldZoneRadius_,
         &lblZoneDepth_,        &sldZoneDepth_,
@@ -1240,7 +1267,7 @@ void MorphosEditor::updatePanel()
     lblFlowStrength_.setVisible(false);     sldFlowStrength_.setVisible(false);
     lblFlowChirality_.setVisible(false);    sldFlowChirality_.setVisible(false);
 
-    lblEmitTraj_.setVisible(false);         sldEmitTraj_.setVisible(false);
+    lblTrajAttach_.setVisible(false);         sldTrajAttach_.setVisible(false);
 
     // Multi-selection — show count, keep Remove visible (acts on the whole set),
     // hide every per-section panel. No parameters to display for a heterogeneous
@@ -1327,7 +1354,7 @@ void MorphosEditor::updatePanel()
         sldTransposeCents_.setValue((double)e.transposeCents, juce::dontSendNotification);
         sldEmitPan_.setValue           ((double)e.pan,                    juce::dontSendNotification);
         sldEmitMass_.setValue          ((double)e.spawnMass,               juce::dontSendNotification);
-        sldEmitTraj_.setValue          ((double)e.trajectoryPathIndex,     juce::dontSendNotification);
+        // Trajectory attachment value is set generically below for every attachable kind.
         btnEmitPoly_  .setToggleState(e.polyMode == PolyMode::Polyphonic, juce::dontSendNotification);
         btnEmitMono_  .setToggleState(e.polyMode == PolyMode::Mono,       juce::dontSendNotification);
         btnEmitLegato_.setToggleState(e.polyMode == PolyMode::Legato,     juce::dontSendNotification);
@@ -1349,7 +1376,7 @@ void MorphosEditor::updatePanel()
         lblTransposeCents_.setVisible(true);   sldTransposeCents_.setVisible(true);
         lblEmitPan_.setVisible(true);              sldEmitPan_.setVisible(true);
         lblEmitMass_.setVisible(true);             sldEmitMass_.setVisible(true);
-        lblEmitTraj_.setVisible(true);             sldEmitTraj_.setVisible(true);
+        // Trajectory attach visibility is set generically below for every attachable kind.
         lblEmitPolyMode_.setVisible(true);
         btnEmitPoly_.setVisible(true);             btnEmitMono_.setVisible(true);
         btnEmitLegato_.setVisible(true);           btnEmitSlur_.setVisible(true);
@@ -1492,6 +1519,74 @@ void MorphosEditor::updatePanel()
         lblFlowWidth_.setVisible(true);     sldFlowWidth_.setVisible(true);
         lblFlowStrength_.setVisible(true);  sldFlowStrength_.setVisible(true);
         lblFlowChirality_.setVisible(true); sldFlowChirality_.setVisible(true);
+    }
+
+    // ── Shared trajectory-attachment row ─────────────────────────────────────
+    // Every attachable object type writes the same `trajectoryPathIndex` field;
+    // a single widget (positioned at the end of the selected section by
+    // layoutPanel) reads/writes it. Each branch below mirrors its section's
+    // valid-slot guard.
+    {
+        int  trajIdx = -1;
+        bool show    = false;
+        switch (selection_.kind)
+        {
+            case ObjectKind::TimbralAnchor:
+                if (selection_.index < state.activeTimbralAnchorCount) {
+                    trajIdx = state.timbralAnchors[selection_.index].trajectoryPathIndex;
+                    show = true;
+                }
+                break;
+            case ObjectKind::FieldObject:
+                if (selection_.index >= 0 && selection_.index < MAX_FIELD_OBJECTS
+                    && state.fieldObjects[selection_.index].active) {
+                    trajIdx = state.fieldObjects[selection_.index].trajectoryPathIndex;
+                    show = true;
+                }
+                break;
+            case ObjectKind::Emitter:
+                if (selection_.index >= 0 && selection_.index < MAX_EMITTERS
+                    && state.emitters[selection_.index].active) {
+                    trajIdx = state.emitters[selection_.index].trajectoryPathIndex;
+                    show = true;
+                }
+                break;
+            case ObjectKind::EffectZone:
+                if (selection_.index >= 0 && selection_.index < MAX_EFFECT_ZONES
+                    && state.effectZones[selection_.index].active) {
+                    trajIdx = state.effectZones[selection_.index].trajectoryPathIndex;
+                    show = true;
+                }
+                break;
+            case ObjectKind::FluxGate:
+                if (selection_.index >= 0 && selection_.index < MAX_FLUX_GATES
+                    && state.fluxGates[selection_.index].active) {
+                    trajIdx = state.fluxGates[selection_.index].trajectoryPathIndex;
+                    show = true;
+                }
+                break;
+            case ObjectKind::PathObject:
+                if (selection_.index >= 0 && selection_.index < MAX_PATH_OBJECTS
+                    && state.pathObjects[selection_.index].active) {
+                    trajIdx = state.pathObjects[selection_.index].trajectoryPathIndex;
+                    show = true;
+                }
+                break;
+            case ObjectKind::TangentPath:
+                if (selection_.index >= 0 && selection_.index < MAX_TANGENT_PATHS
+                    && state.tangentPaths[selection_.index].active) {
+                    trajIdx = state.tangentPaths[selection_.index].trajectoryPathIndex;
+                    show = true;
+                }
+                break;
+            default: break;
+        }
+        if (show)
+        {
+            sldTrajAttach_.setValue((double)trajIdx, juce::dontSendNotification);
+            lblTrajAttach_.setVisible(true);
+            sldTrajAttach_.setVisible(true);
+        }
     }
 
     ignoreSliderCallbacks_ = false;

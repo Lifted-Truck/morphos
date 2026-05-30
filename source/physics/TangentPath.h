@@ -41,6 +41,7 @@ struct TangentPath
     float     width     = 0.08f;    // Influence band half-width around the curve
     float     strength  = 0.40f;    // Tangential force magnitude (Manifold units/s²)
     float     chirality = 1.0f;     // +1 = CCW flow, −1 = CW flow
+    int       trajectoryPathIndex = -1;  // -1 = stationary; else attached to traj[index]
     bool      active    = false;
 };
 

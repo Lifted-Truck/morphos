@@ -717,11 +717,20 @@ void PhysicsEngine::drainEditCommands()
                     if (idx >= 0 && idx < MAX_TRAJECTORY_PATHS)
                     {
                         trajectoryPaths_[idx].active = false;
-                        // Detach any Emitters that were following this path so
-                        // they don't snap to a deactivated curve next tick.
-                        for (auto& em : emitters_)
-                            if (em.trajectoryPathIndex == idx)
-                                em.trajectoryPathIndex = -1;
+                        // Detach every attached object so nothing snaps to a
+                        // deactivated curve next tick.
+                        auto detachIfMatch = [idx](auto& arr, int count) {
+                            for (int i = 0; i < count; ++i)
+                                if (arr[i].trajectoryPathIndex == idx)
+                                    arr[i].trajectoryPathIndex = -1;
+                        };
+                        detachIfMatch(emitters_,       MAX_EMITTERS);
+                        detachIfMatch(fieldObjects_,   MAX_FIELD_OBJECTS);
+                        detachIfMatch(timbralAnchors_, activeAnchorCount_);
+                        detachIfMatch(effectZones_,    MAX_EFFECT_ZONES);
+                        detachIfMatch(fluxGates_,      MAX_FLUX_GATES);
+                        detachIfMatch(pathObjects_,    MAX_PATH_OBJECTS);
+                        detachIfMatch(tangentPaths_,   MAX_TANGENT_PATHS);
                     }
                     break;
 
@@ -769,6 +778,25 @@ void PhysicsEngine::drainEditCommands()
                             = (v >= 0 && v < MAX_TRAJECTORY_PATHS) ? v : -1;
                     }
                     break;
+
+                // Generic attachment: set <kind>[idx].trajectoryPathIndex.
+                // Helper macro keeps the per-type cases minimal and identical.
+                #define MORPHOS_HANDLE_ATTACH(EditType, Array, MaxN)              \
+                    case ManifoldEdit::Type::EditType:                            \
+                        if (idx >= 0 && idx < (MaxN))                             \
+                        {                                                         \
+                            const int v = (int)e.x;                               \
+                            Array[idx].trajectoryPathIndex                        \
+                                = (v >= 0 && v < MAX_TRAJECTORY_PATHS) ? v : -1;  \
+                        }                                                         \
+                        break;
+                MORPHOS_HANDLE_ATTACH(SetFieldObjectTrajectoryPath,    fieldObjects_,   MAX_FIELD_OBJECTS)
+                MORPHOS_HANDLE_ATTACH(SetTimbralAnchorTrajectoryPath,  timbralAnchors_, MAX_TIMBRAL_ANCHORS)
+                MORPHOS_HANDLE_ATTACH(SetEffectZoneTrajectoryPath,     effectZones_,    MAX_EFFECT_ZONES)
+                MORPHOS_HANDLE_ATTACH(SetFluxGateTrajectoryPath,       fluxGates_,      MAX_FLUX_GATES)
+                MORPHOS_HANDLE_ATTACH(SetPathObjectTrajectoryPath,     pathObjects_,    MAX_PATH_OBJECTS)
+                MORPHOS_HANDLE_ATTACH(SetTangentPathTrajectoryPath,    tangentPaths_,   MAX_TANGENT_PATHS)
+                #undef MORPHOS_HANDLE_ATTACH
 
                 // ── Tangent-force ("Flow") path spawn / remove / edits ────────
                 case ManifoldEdit::Type::AddTangentPath:
@@ -1369,23 +1397,63 @@ void PhysicsEngine::advanceTrajectoryPaths(double dt)
 
 void PhysicsEngine::updateAttachedEmitters()
 {
-    for (auto& em : emitters_)
+    // Generalised across every attachable object type. The contract for each
+    // type: it has `.active`, `.x`, `.y`, and `.trajectoryPathIndex` fields.
+    // Any object with trajectoryPathIndex >= 0 gets its (x, y) sampled from
+    // the path's current t each tick; if the path was removed under it, the
+    // object detaches and holds its last position.
+    auto driveAttached = [this](auto& arrayLike, int count)
     {
-        if (!em.active) continue;
-        const int ti = em.trajectoryPathIndex;
-        if (ti < 0 || ti >= MAX_TRAJECTORY_PATHS) continue;
+        for (int i = 0; i < count; ++i)
+        {
+            auto& o = arrayLike[i];
+            if (!o.active) continue;
+            const int ti = o.trajectoryPathIndex;
+            if (ti < 0 || ti >= MAX_TRAJECTORY_PATHS) continue;
 
+            const auto& tp = trajectoryPaths_[ti];
+            if (!tp.active)
+            {
+                o.trajectoryPathIndex = -1;
+                continue;
+            }
+
+            float tx, ty;
+            trajectoryPathSample(tp, tp.currentT, tx, ty);
+            o.x = tx;
+            o.y = ty;
+        }
+    };
+
+    driveAttached(emitters_,        MAX_EMITTERS);
+    driveAttached(timbralAnchors_,  activeAnchorCount_);
+    driveAttached(effectZones_,     MAX_EFFECT_ZONES);
+    driveAttached(fluxGates_,       MAX_FLUX_GATES);
+    driveAttached(pathObjects_,     MAX_PATH_OBJECTS);
+    driveAttached(tangentPaths_,    MAX_TANGENT_PATHS);
+
+    // FieldObjects feed a precomputed force-grid; if we move any of them via
+    // a trajectory attachment, the grid must be invalidated so the next call
+    // to rebuildFieldGridIfDirty (later in the same tick) rebuilds it with the
+    // updated positions. Without this, the visual glyph slides along the
+    // trajectory but the actual force field stays at the original location.
+    for (int i = 0; i < MAX_FIELD_OBJECTS; ++i)
+    {
+        auto& o = fieldObjects_[i];
+        if (!o.active) continue;
+        const int ti = o.trajectoryPathIndex;
+        if (ti < 0 || ti >= MAX_TRAJECTORY_PATHS) continue;
         const auto& tp = trajectoryPaths_[ti];
         if (!tp.active)
         {
-            em.trajectoryPathIndex = -1;   // Detach: path was removed under us
+            o.trajectoryPathIndex = -1;
             continue;
         }
-
         float tx, ty;
         trajectoryPathSample(tp, tp.currentT, tx, ty);
-        em.x = tx;
-        em.y = ty;
+        o.x = tx;
+        o.y = ty;
+        fieldGrid_.dirty = true;
     }
 }
 
@@ -1652,6 +1720,7 @@ void PhysicsEngine::writeSnapshot()
         dst.strength  = src.strength;
         dst.radius    = src.radius;
         dst.chirality = src.chirality;
+        dst.trajectoryPathIndex = src.trajectoryPathIndex;
         dst.active    = src.active;
         if (src.active) ++activeObjs;
     }
@@ -1702,6 +1771,7 @@ void PhysicsEngine::writeSnapshot()
         dst.depth   = src.depth;
         dst.target  = src.target;
         dst.falloff = src.falloff;
+        dst.trajectoryPathIndex = src.trajectoryPathIndex;
         dst.active  = src.active;
         if (src.active) ++activeZones;
     }
@@ -1717,6 +1787,7 @@ void PhysicsEngine::writeSnapshot()
         dst.y        = src.y;
         dst.length   = src.length;
         dst.angleRad = src.angleRad;
+        dst.trajectoryPathIndex = src.trajectoryPathIndex;
         dst.active   = src.active;
         if (src.active) ++activeGates;
     }
@@ -1734,6 +1805,7 @@ void PhysicsEngine::writeSnapshot()
         dst.radius      = src.radius;
         dst.snapRadius  = src.snapRadius;
         dst.escapeForce = src.escapeForce;
+        dst.trajectoryPathIndex = src.trajectoryPathIndex;
         dst.active      = src.active;
         if (src.active) ++activePaths;
     }
@@ -1770,6 +1842,7 @@ void PhysicsEngine::writeSnapshot()
         dst.width     = src.width;
         dst.strength  = src.strength;
         dst.chirality = src.chirality;
+        dst.trajectoryPathIndex = src.trajectoryPathIndex;
         dst.active    = src.active;
         if (src.active) ++activeTangents;
     }
@@ -1785,6 +1858,7 @@ void PhysicsEngine::writeSnapshot()
         dst.y       = src.y;
         dst.timbreX = src.timbreX;
         dst.timbreY = src.timbreY;
+        dst.trajectoryPathIndex = src.trajectoryPathIndex;
         dst.active  = (i < activeAnchorCount_);
     }
 

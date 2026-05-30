@@ -49,5 +49,6 @@ struct EffectZone
     float       depth   = 0.5f;
     ZoneTarget  target  = ZoneTarget::TimbreX;
     ZoneFalloff falloff = ZoneFalloff::Gaussian;
+    int         trajectoryPathIndex = -1;  // -1 = stationary; else attached to traj[index]
     bool        active  = false;
 };

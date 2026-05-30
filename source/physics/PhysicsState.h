@@ -152,6 +152,7 @@ struct TimbralAnchorSnapshot
     float y       = 0.5f;
     float timbreX = 0.5f;   // spectral rolloff [0,1]
     float timbreY = 0.0f;   // inharmonicity    [0,1]
+    int   trajectoryPathIndex = -1;
     bool  active  = false;
 };
 
@@ -166,6 +167,7 @@ struct EffectZoneSnapshot
     float       depth   = 0.5f;
     ZoneTarget  target  = ZoneTarget::TimbreX;
     ZoneFalloff falloff = ZoneFalloff::Gaussian;
+    int         trajectoryPathIndex = -1;
     bool        active  = false;
 };
 
@@ -178,6 +180,7 @@ struct FluxGateSnapshot
     float y        = 0.5f;
     float length   = 0.20f;
     float angleRad = 0.0f;
+    int   trajectoryPathIndex = -1;
     bool  active   = false;
 };
 
@@ -192,6 +195,7 @@ struct PathObjectSnapshot
     float     radius      = 0.15f;
     float     snapRadius  = 0.04f;
     float     escapeForce = 0.0f;   // 0 = sticky; >0 = perpendicular force escape threshold
+    int       trajectoryPathIndex = -1;
     bool      active      = false;
 };
 
@@ -222,6 +226,7 @@ struct TangentPathSnapshot
     float     width     = 0.08f;
     float     strength  = 0.40f;
     float     chirality = 1.0f;
+    int       trajectoryPathIndex = -1;
     bool      active    = false;
 };
 
@@ -236,6 +241,7 @@ struct FieldObjectSnapshot
     float           strength  = 0.0f;
     float           radius    = 0.0f;
     float           chirality = 1.0f;
+    int             trajectoryPathIndex = -1;
     bool            active    = false;
 };
 
@@ -359,6 +365,14 @@ struct ManifoldEdit
         SetTrajectoryPathMode,       // x = (float)cast of TrajectoryMode uint8_t
         SetTrajectoryPathCurrentT,   // x = current t parameter [0, 1) — used in Manual mode
         SetEmitterTrajectoryPath,    // x = trajectory index [-1, MAX_TRAJECTORY_PATHS-1]
+        // Attach any other object type to a trajectory path's position output.
+        // Index parameter selects the object; x = trajectory index (-1 = detach).
+        SetFieldObjectTrajectoryPath,
+        SetTimbralAnchorTrajectoryPath,
+        SetEffectZoneTrajectoryPath,
+        SetFluxGateTrajectoryPath,
+        SetPathObjectTrajectoryPath,
+        SetTangentPathTrajectoryPath,
 
         // ── Tangent-force ("Flow") path spawn / remove / edits ────────────────
         AddTangentPath,              // Spawn a new TangentPath at (x,y)

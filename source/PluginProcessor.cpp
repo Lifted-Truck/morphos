@@ -341,6 +341,7 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         node.setProperty("strength",  fo.strength,  nullptr);
         node.setProperty("radius",    fo.radius,    nullptr);
         node.setProperty("chirality", fo.chirality, nullptr);
+        node.setProperty("trajPath",  fo.trajectoryPathIndex, nullptr);
         manifoldData.appendChild(node, nullptr);
     }
 
@@ -381,6 +382,7 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         node.setProperty("y",       a.y,       nullptr);
         node.setProperty("timbreX", a.timbreX, nullptr);
         node.setProperty("timbreY", a.timbreY, nullptr);
+        node.setProperty("trajPath", a.trajectoryPathIndex, nullptr);
         manifoldData.appendChild(node, nullptr);
     }
 
@@ -395,6 +397,7 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         node.setProperty("depth",   z.depth,        nullptr);
         node.setProperty("target",  (int)z.target,  nullptr);
         node.setProperty("falloff", (int)z.falloff, nullptr);
+        node.setProperty("trajPath", z.trajectoryPathIndex, nullptr);
         manifoldData.appendChild(node, nullptr);
     }
 
@@ -407,6 +410,7 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         node.setProperty("y",      fg.y,        nullptr);
         node.setProperty("length", fg.length,   nullptr);
         node.setProperty("angle",  fg.angleRad, nullptr);
+        node.setProperty("trajPath", fg.trajectoryPathIndex, nullptr);
         manifoldData.appendChild(node, nullptr);
     }
 
@@ -421,6 +425,7 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         node.setProperty("radius",      p.radius,        nullptr);
         node.setProperty("snapRadius",  p.snapRadius,    nullptr);
         node.setProperty("escapeForce", p.escapeForce,   nullptr);
+        node.setProperty("trajPath",    p.trajectoryPathIndex, nullptr);
         manifoldData.appendChild(node, nullptr);
     }
 
@@ -451,6 +456,7 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         node.setProperty("width",     tp.width,      nullptr);
         node.setProperty("strength",  tp.strength,   nullptr);
         node.setProperty("chirality", tp.chirality,  nullptr);
+        node.setProperty("trajPath",  tp.trajectoryPathIndex, nullptr);
         manifoldData.appendChild(node, nullptr);
     }
 
@@ -520,6 +526,7 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             fo.strength  = (float)child.getProperty("strength",  0.25f);
             fo.radius    = (float)child.getProperty("radius",    0.45f);
             fo.chirality = (float)child.getProperty("chirality", 1.0f);
+            fo.trajectoryPathIndex = (int)child.getProperty("trajPath", -1);
             fo.active    = true;
         }
         else if (child.hasType("Emitter") && emitterSlot < MAX_EMITTERS)
@@ -557,6 +564,7 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             a.y       = (float)child.getProperty("y",       0.5f);
             a.timbreX = (float)child.getProperty("timbreX", 0.5f);
             a.timbreY = (float)child.getProperty("timbreY", 0.0f);
+            a.trajectoryPathIndex = (int)child.getProperty("trajPath", -1);
             a.active  = true;
         }
         else if (child.hasType("Zone") && zoneSlot < MAX_EFFECT_ZONES)
@@ -568,6 +576,7 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             z.depth   = (float)child.getProperty("depth",  0.5f);
             z.target  = static_cast<ZoneTarget>( (int)child.getProperty("target",  0));
             z.falloff = static_cast<ZoneFalloff>((int)child.getProperty("falloff", 1));
+            z.trajectoryPathIndex = (int)child.getProperty("trajPath", -1);
             z.active  = true;
         }
         else if (child.hasType("Gate") && gateSlot < MAX_FLUX_GATES)
@@ -577,6 +586,7 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             fg.y        = (float)child.getProperty("y",      0.5f);
             fg.length   = (float)child.getProperty("length", 0.20f);
             fg.angleRad = (float)child.getProperty("angle",  0.0f);
+            fg.trajectoryPathIndex = (int)child.getProperty("trajPath", -1);
             fg.active   = true;
         }
         else if (child.hasType("Path") && pathSlot < MAX_PATH_OBJECTS)
@@ -588,6 +598,7 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             p.radius      = (float)child.getProperty("radius",      0.15f);
             p.snapRadius  = (float)child.getProperty("snapRadius",  0.04f);
             p.escapeForce = (float)child.getProperty("escapeForce", 0.0f);
+            p.trajectoryPathIndex = (int)child.getProperty("trajPath", -1);
             p.active      = true;
         }
         else if (child.hasType("Traj") && trajSlot < MAX_TRAJECTORY_PATHS)
@@ -612,6 +623,7 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             tp.width     = (float)child.getProperty("width",     0.08f);
             tp.strength  = (float)child.getProperty("strength",  0.40f);
             tp.chirality = (float)child.getProperty("chirality", 1.0f);
+            tp.trajectoryPathIndex = (int)child.getProperty("trajPath", -1);
             tp.active    = true;
         }
     }

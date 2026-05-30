@@ -281,8 +281,8 @@ private:
     juce::Slider sldFlowRadius_, sldFlowWidth_, sldFlowStrength_, sldFlowChirality_;
 
     // Emitter section addition: trajectory path attachment (in Emitter panel)
-    juce::Label  lblEmitTraj_;
-    juce::Slider sldEmitTraj_;
+    juce::Label  lblTrajAttach_;
+    juce::Slider sldTrajAttach_;
 
     // ── Per-Morphon trail buffer ───────────────────────────────────────────────
     struct Trail

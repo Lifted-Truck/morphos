@@ -29,6 +29,7 @@ struct FieldObject
     float           strength    = 0.3f;   // Force magnitude scale
     float           radius      = 0.4f;   // Influence radius, normalised to [0,1] space
     float           chirality   = 1.0f;   // Vortex: +1 = CCW, -1 = CW
+    int             trajectoryPathIndex = -1;  // -1 = stationary; else attached to traj[index]
     bool            active      = false;
 };
 
