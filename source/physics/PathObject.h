@@ -15,7 +15,10 @@
 //
 // Pin lifecycle:
 //   • Unpinned Morphon enters snap zone → pin (pathIndex = i)
-//   • Pinned Morphon stays pinned for its entire lifetime
+//   • Pinned Morphon stays pinned until either (a) the path is removed or
+//     (b) the path's escapeForce > 0 and the perpendicular field force at
+//     the contact point exceeds escapeForce — at which point the Morphon
+//     unpins and resumes free motion (escape).
 //   • Path removed → pinned Morphons unpin and resume free motion
 //   • Morphon released and Release envelope completes → m.active = false;
 //     next spawn into this slot starts fresh with pathIndex = -1.
@@ -40,6 +43,8 @@ struct PathObject
     float     y          = 0.5f;
     float     radius     = 0.15f;    // Shape size (circle radius for v1)
     float     snapRadius = 0.04f;    // Pin threshold — Morphons within this distance pin
+    float     escapeForce = 0.0f;    // 0 = sticky (no escape); >0 = perpendicular force
+                                     // magnitude at which pinned Morphons unpin and fly free
     bool      active     = false;
 };
 

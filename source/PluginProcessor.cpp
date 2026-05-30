@@ -399,11 +399,12 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         const auto& p = snap.pathObjects[i];
         if (!p.active) continue;
         auto node = juce::ValueTree("Path");
-        node.setProperty("shape",      (int)p.shape, nullptr);
-        node.setProperty("x",          p.x,          nullptr);
-        node.setProperty("y",          p.y,          nullptr);
-        node.setProperty("radius",     p.radius,     nullptr);
-        node.setProperty("snapRadius", p.snapRadius, nullptr);
+        node.setProperty("shape",       (int)p.shape,    nullptr);
+        node.setProperty("x",           p.x,             nullptr);
+        node.setProperty("y",           p.y,             nullptr);
+        node.setProperty("radius",      p.radius,        nullptr);
+        node.setProperty("snapRadius",  p.snapRadius,    nullptr);
+        node.setProperty("escapeForce", p.escapeForce,   nullptr);
         manifoldData.appendChild(node, nullptr);
     }
 
@@ -563,13 +564,14 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
         }
         else if (child.hasType("Path") && pathSlot < MAX_PATH_OBJECTS)
         {
-            auto& p      = patch.pathObjects[pathSlot++];
-            p.shape      = static_cast<PathShape>((int)child.getProperty("shape", 0));
-            p.x          = (float)child.getProperty("x",          0.5f);
-            p.y          = (float)child.getProperty("y",          0.5f);
-            p.radius     = (float)child.getProperty("radius",     0.15f);
-            p.snapRadius = (float)child.getProperty("snapRadius", 0.04f);
-            p.active     = true;
+            auto& p       = patch.pathObjects[pathSlot++];
+            p.shape       = static_cast<PathShape>((int)child.getProperty("shape", 0));
+            p.x           = (float)child.getProperty("x",           0.5f);
+            p.y           = (float)child.getProperty("y",           0.5f);
+            p.radius      = (float)child.getProperty("radius",      0.15f);
+            p.snapRadius  = (float)child.getProperty("snapRadius",  0.04f);
+            p.escapeForce = (float)child.getProperty("escapeForce", 0.0f);
+            p.active      = true;
         }
         else if (child.hasType("Traj") && trajSlot < MAX_TRAJECTORY_PATHS)
         {

@@ -211,8 +211,8 @@ private:
     juce::Slider sldGateLength_, sldGateAngle_;
 
     // Path object section (visible when a PathObject is selected)
-    juce::Label  lblPathRadius_, lblPathSnap_;
-    juce::Slider sldPathRadius_, sldPathSnap_;
+    juce::Label  lblPathRadius_, lblPathSnap_, lblPathEscape_;
+    juce::Slider sldPathRadius_, sldPathSnap_, sldPathEscape_;
 
     // Trajectory path section (visible when a TrajectoryPath is selected)
     juce::Label  lblTrajRadius_, lblTrajSpeed_;

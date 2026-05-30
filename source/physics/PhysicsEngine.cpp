@@ -636,6 +636,11 @@ void PhysicsEngine::drainEditCommands()
                         pathObjects_[idx].snapRadius = juce::jlimit(0.005f, 0.15f, e.x);
                     break;
 
+                case ManifoldEdit::Type::SetPathObjectEscapeForce:
+                    if (idx >= 0 && idx < MAX_PATH_OBJECTS)
+                        pathObjects_[idx].escapeForce = juce::jlimit(0.0f, 5.0f, e.x);
+                    break;
+
                 // ── Trajectory path spawn / remove / edits ────────────────────
                 case ManifoldEdit::Type::AddTrajectoryPath:
                 {
@@ -1365,21 +1370,36 @@ void PhysicsEngine::applyPathConstraints()
 
             const float dx = m.x - px;
             const float dy = m.y - py;
-            if (dx * dx + dy * dy <= p.snapRadius * p.snapRadius)
+            if (dx * dx + dy * dy > p.snapRadius * p.snapRadius)
+                continue;
+
+            // On escape-enabled rails, require the Morphon to actually be moving
+            // toward the contact point. Without this, a Morphon that just
+            // escaped outward would re-pin on the very next tick while it is
+            // still inside the snap zone but heading away.
+            if (p.escapeForce > 0.0f)
             {
-                m.pathIndex = i;
-                m.x = px;
-                m.y = py;
-                // Project current velocity onto tangent; discard normal component.
-                const float vDotT = m.vx * tx + m.vy * ty;
-                m.vx = tx * vDotT;
-                m.vy = ty * vDotT;
-                break;
+                const float toContactX = px - m.x;
+                const float toContactY = py - m.y;
+                const float vTowardPath = m.vx * toContactX + m.vy * toContactY;
+                if (vTowardPath <= 0.0f) continue;
             }
+
+            m.pathIndex = i;
+            m.x = px;
+            m.y = py;
+            // Project current velocity onto tangent; discard normal component.
+            const float vDotT = m.vx * tx + m.vy * ty;
+            m.vx = tx * vDotT;
+            m.vy = ty * vDotT;
+            break;
         }
     }
 
-    // Pass 2: snap pinned Morphons to their path each tick.
+    // Pass 2: snap pinned Morphons to their path each tick. Escape-enabled
+    // rails check the perpendicular field force at the contact point; if it
+    // exceeds escapeForce, the pin is released and the Morphon flies free
+    // with whatever velocity it accumulated during integration.
     for (auto& m : morphons_)
     {
         if (!m.active || m.pathIndex < 0) continue;
@@ -1393,6 +1413,24 @@ void PhysicsEngine::applyPathConstraints()
 
         float px, py, tx, ty;
         pathClosestPoint(p, m.x, m.y, px, py, tx, ty);
+
+        // Escape check: re-sample the field at the contact point and decompose
+        // into the outward-radial component. Skip on sticky rails (escapeForce == 0).
+        if (p.escapeForce > 0.0f)
+        {
+            float ffx = 0.0f, ffy = 0.0f;
+            fieldGrid_.sample(px, py, ffx, ffy);
+            // Outward radial normal at contact = tangent rotated −90° = (ty, -tx).
+            const float nx = ty;
+            const float ny = -tx;
+            const float fNormal = ffx * nx + ffy * ny;
+            if (std::abs(fNormal) > p.escapeForce)
+            {
+                m.pathIndex = -1;
+                continue;  // Skip snap and tangent projection — let it fly.
+            }
+        }
+
         m.x = px;
         m.y = py;
         const float vDotT = m.vx * tx + m.vy * ty;
@@ -1621,12 +1659,13 @@ void PhysicsEngine::writeSnapshot()
     {
         const auto& src = pathObjects_[i];
         auto&       dst = snap.pathObjects[i];
-        dst.shape      = src.shape;
-        dst.x          = src.x;
-        dst.y          = src.y;
-        dst.radius     = src.radius;
-        dst.snapRadius = src.snapRadius;
-        dst.active     = src.active;
+        dst.shape       = src.shape;
+        dst.x           = src.x;
+        dst.y           = src.y;
+        dst.radius      = src.radius;
+        dst.snapRadius  = src.snapRadius;
+        dst.escapeForce = src.escapeForce;
+        dst.active      = src.active;
         if (src.active) ++activePaths;
     }
     snap.activePathObjectCount = activePaths;

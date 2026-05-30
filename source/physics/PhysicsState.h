@@ -186,12 +186,13 @@ struct FluxGateSnapshot
 // ─────────────────────────────────────────────────────────────────────────────
 struct PathObjectSnapshot
 {
-    PathShape shape      = PathShape::Circle;
-    float     x          = 0.5f;
-    float     y          = 0.5f;
-    float     radius     = 0.15f;
-    float     snapRadius = 0.04f;
-    bool      active     = false;
+    PathShape shape       = PathShape::Circle;
+    float     x           = 0.5f;
+    float     y           = 0.5f;
+    float     radius      = 0.15f;
+    float     snapRadius  = 0.04f;
+    float     escapeForce = 0.0f;   // 0 = sticky; >0 = perpendicular force escape threshold
+    bool      active      = false;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -345,6 +346,7 @@ struct ManifoldEdit
         MovePathObject,           // x,y carry new Manifold coords [0,1] (centre)
         SetPathObjectRadius,      // x = radius [0.02, 0.45]
         SetPathObjectSnapRadius,  // x = snap radius [0.005, 0.15]
+        SetPathObjectEscapeForce, // x = escape force threshold [0.0, 5.0]; 0 = sticky
 
         // ── Trajectory path spawn / remove / edits ────────────────────────────
         AddTrajectoryPath,           // Spawn a new TrajectoryPath at (x,y)

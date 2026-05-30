@@ -310,6 +310,7 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     y = sectionTopY;
     layoutRow(lblPathRadius_, sldPathRadius_);
     layoutRow(lblPathSnap_,   sldPathSnap_);
+    layoutRow(lblPathEscape_, sldPathEscape_);
 
     // ── Trajectory path section ───────────────────────────────────────────────
     y = sectionTopY;
@@ -778,12 +779,16 @@ void MorphosEditor::setupSliders()
     // ── Path object sliders ────────────────────────────────────────────────────
     styleLabel(lblPathRadius_, "Radius");
     styleLabel(lblPathSnap_,   "Snap Radius");
+    styleLabel(lblPathEscape_, "Escape Force");
     styleSlider(sldPathRadius_, 0.02, 0.45);
     styleSlider(sldPathSnap_,   0.005, 0.15);
+    styleSlider(sldPathEscape_, 0.0,   5.0);
     sldPathRadius_.setNumDecimalPlacesToDisplay(2);
     sldPathSnap_  .setNumDecimalPlacesToDisplay(3);
+    sldPathEscape_.setNumDecimalPlacesToDisplay(2);
     addAndMakeVisible(lblPathRadius_); addAndMakeVisible(sldPathRadius_);
     addAndMakeVisible(lblPathSnap_);   addAndMakeVisible(sldPathSnap_);
+    addAndMakeVisible(lblPathEscape_); addAndMakeVisible(sldPathEscape_);
 
     sldPathRadius_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
@@ -794,6 +799,11 @@ void MorphosEditor::setupSliders()
         if (!ignoreSliderCallbacks_)
             sendEdit(ManifoldEdit::Type::SetPathObjectSnapRadius,
                      selection_.index, (float)sldPathSnap_.getValue());
+    };
+    sldPathEscape_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetPathObjectEscapeForce,
+                     selection_.index, (float)sldPathEscape_.getValue());
     };
 
     // ── Trajectory path sliders ────────────────────────────────────────────────
@@ -1027,6 +1037,7 @@ void MorphosEditor::updatePanel()
 
     lblPathRadius_.setVisible(false);       sldPathRadius_.setVisible(false);
     lblPathSnap_.setVisible(false);         sldPathSnap_.setVisible(false);
+    lblPathEscape_.setVisible(false);       sldPathEscape_.setVisible(false);
 
     lblTrajRadius_.setVisible(false);       sldTrajRadius_.setVisible(false);
     lblTrajSpeed_.setVisible(false);        sldTrajSpeed_.setVisible(false);
@@ -1221,11 +1232,13 @@ void MorphosEditor::updatePanel()
 
         lblPanelHeader_.setText("Rail " + juce::String(i), juce::dontSendNotification);
 
-        sldPathRadius_.setValue(p.radius,     juce::dontSendNotification);
-        sldPathSnap_  .setValue(p.snapRadius, juce::dontSendNotification);
+        sldPathRadius_.setValue(p.radius,      juce::dontSendNotification);
+        sldPathSnap_  .setValue(p.snapRadius,  juce::dontSendNotification);
+        sldPathEscape_.setValue(p.escapeForce, juce::dontSendNotification);
 
         lblPathRadius_.setVisible(true); sldPathRadius_.setVisible(true);
         lblPathSnap_  .setVisible(true); sldPathSnap_  .setVisible(true);
+        lblPathEscape_.setVisible(true); sldPathEscape_.setVisible(true);
     }
     else if (selection_.kind == ObjectKind::TrajectoryPath)
     {
