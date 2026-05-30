@@ -697,6 +697,18 @@ void PhysicsEngine::drainEditCommands()
                             static_cast<uint8_t>(static_cast<int>(e.x)));
                     break;
 
+                case ManifoldEdit::Type::SetTrajectoryPathCurrentT:
+                    if (idx >= 0 && idx < MAX_TRAJECTORY_PATHS)
+                    {
+                        // Wrap to [0, 1). Manual mode reads currentT directly;
+                        // AutoPlay's advanceTrajectoryPaths will overwrite it
+                        // next tick, which is the documented behavior.
+                        float t = std::fmod(e.x, 1.0f);
+                        if (t < 0.0f) t += 1.0f;
+                        trajectoryPaths_[idx].currentT = t;
+                    }
+                    break;
+
                 case ManifoldEdit::Type::SetEmitterTrajectoryPath:
                     if (idx >= 0 && idx < MAX_EMITTERS)
                     {

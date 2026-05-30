@@ -355,6 +355,7 @@ struct ManifoldEdit
         SetTrajectoryPathRadius,     // x = radius [0.02, 0.45]
         SetTrajectoryPathSpeed,      // x = t-per-second [-4.0, 4.0]; negative reverses
         SetTrajectoryPathMode,       // x = (float)cast of TrajectoryMode uint8_t
+        SetTrajectoryPathCurrentT,   // x = current t parameter [0, 1) — used in Manual mode
         SetEmitterTrajectoryPath,    // x = trajectory index [-1, MAX_TRAJECTORY_PATHS-1]
 
         // ── Tangent-force ("Flow") path spawn / remove / edits ────────────────

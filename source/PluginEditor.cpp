@@ -332,7 +332,20 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     // ── Trajectory path section ───────────────────────────────────────────────
     y = sectionTopY;
     layoutRow(lblTrajRadius_, sldTrajRadius_);
-    layoutRow(lblTrajSpeed_,  sldTrajSpeed_);
+    // Mode toggle: Auto | Manual
+    lblTrajMode_.setBounds(x, y, w, LABEL_H);
+    y += LABEL_H;
+    {
+        const int bw = w / 2;
+        btnTrajModeAuto_  .setBounds(x + bw * 0, y, bw,         BTN_ROW_H);
+        btnTrajModeManual_.setBounds(x + bw * 1, y, w - bw * 1, BTN_ROW_H);
+    }
+    y += BTN_ROW_H + 2;
+    // Speed (AutoPlay) and Position (Manual) overlap — only the active one is visible.
+    const int trajModeRowY = y;
+    layoutRow(lblTrajSpeed_, sldTrajSpeed_);
+    y = trajModeRowY;
+    layoutRow(lblTrajPos_,   sldTrajPos_);
     const int trajEndY = y;
 
     // ── Tangent-force ("Flow") path section ────────────────────────────────────
@@ -845,12 +858,20 @@ void MorphosEditor::setupSliders()
     // ── Trajectory path sliders ────────────────────────────────────────────────
     styleLabel(lblTrajRadius_, "Radius");
     styleLabel(lblTrajSpeed_,  "Speed (Hz)");
+    styleLabel(lblTrajPos_,    "Position (t)");
+    styleLabel(lblTrajMode_,   "Mode");
     styleSlider(sldTrajRadius_, 0.02, 0.45);
     styleSlider(sldTrajSpeed_,  -4.0,  4.0);
+    styleSlider(sldTrajPos_,     0.0,  1.0);
     sldTrajRadius_.setNumDecimalPlacesToDisplay(2);
     sldTrajSpeed_ .setNumDecimalPlacesToDisplay(2);
+    sldTrajPos_   .setNumDecimalPlacesToDisplay(3);
     addAndMakeVisible(lblTrajRadius_); addAndMakeVisible(sldTrajRadius_);
     addAndMakeVisible(lblTrajSpeed_);  addAndMakeVisible(sldTrajSpeed_);
+    addAndMakeVisible(lblTrajPos_);    addAndMakeVisible(sldTrajPos_);
+    addAndMakeVisible(lblTrajMode_);
+    styleBoundBtn(btnTrajModeAuto_);   addAndMakeVisible(btnTrajModeAuto_);
+    styleBoundBtn(btnTrajModeManual_); addAndMakeVisible(btnTrajModeManual_);
 
     sldTrajRadius_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
@@ -862,6 +883,27 @@ void MorphosEditor::setupSliders()
             sendEdit(ManifoldEdit::Type::SetTrajectoryPathSpeed,
                      selection_.index, (float)sldTrajSpeed_.getValue());
     };
+    sldTrajPos_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTrajectoryPathCurrentT,
+                     selection_.index, (float)sldTrajPos_.getValue());
+    };
+
+    auto trajModeClick = [this](TrajectoryMode m) {
+        sendEdit(ManifoldEdit::Type::SetTrajectoryPathMode, selection_.index,
+                 static_cast<float>(static_cast<uint8_t>(m)));
+        const bool autoMode   = (m == TrajectoryMode::AutoPlay);
+        const bool manualMode = (m == TrajectoryMode::Manual);
+        btnTrajModeAuto_  .setToggleState(autoMode,   juce::dontSendNotification);
+        btnTrajModeManual_.setToggleState(manualMode, juce::dontSendNotification);
+        // Toggle row visibility immediately — updatePanel runs only on
+        // selection change, not on the timer, so without this the swap
+        // wouldn't appear until the user re-selects the object.
+        lblTrajSpeed_.setVisible(autoMode);   sldTrajSpeed_.setVisible(autoMode);
+        lblTrajPos_  .setVisible(manualMode); sldTrajPos_  .setVisible(manualMode);
+    };
+    btnTrajModeAuto_  .onClick = [trajModeClick]{ trajModeClick(TrajectoryMode::AutoPlay); };
+    btnTrajModeManual_.onClick = [trajModeClick]{ trajModeClick(TrajectoryMode::Manual);   };
 
     // ── Tangent-force ("Flow") path sliders ────────────────────────────────────
     styleLabel(lblFlowRadius_,    "Radius");
@@ -1072,7 +1114,10 @@ void MorphosEditor::installPanelViewport()
         &lblPathEscape_,       &sldPathEscape_,
         // Trajectory
         &lblTrajRadius_,       &sldTrajRadius_,
+        &lblTrajMode_,
+        &btnTrajModeAuto_,     &btnTrajModeManual_,
         &lblTrajSpeed_,        &sldTrajSpeed_,
+        &lblTrajPos_,          &sldTrajPos_,
         // Flow
         &lblFlowRadius_,       &sldFlowRadius_,
         &lblFlowWidth_,        &sldFlowWidth_,
@@ -1160,6 +1205,9 @@ void MorphosEditor::updatePanel()
 
     lblTrajRadius_.setVisible(false);       sldTrajRadius_.setVisible(false);
     lblTrajSpeed_.setVisible(false);        sldTrajSpeed_.setVisible(false);
+    lblTrajPos_.setVisible(false);          sldTrajPos_.setVisible(false);
+    lblTrajMode_.setVisible(false);
+    btnTrajModeAuto_.setVisible(false);     btnTrajModeManual_.setVisible(false);
 
     lblFlowRadius_.setVisible(false);       sldFlowRadius_.setVisible(false);
     lblFlowWidth_.setVisible(false);        sldFlowWidth_.setVisible(false);
@@ -1370,11 +1418,22 @@ void MorphosEditor::updatePanel()
 
         lblPanelHeader_.setText("Traj " + juce::String(i), juce::dontSendNotification);
 
-        sldTrajRadius_.setValue(tp.radius, juce::dontSendNotification);
-        sldTrajSpeed_ .setValue(tp.speed,  juce::dontSendNotification);
+        sldTrajRadius_.setValue(tp.radius,   juce::dontSendNotification);
+        sldTrajSpeed_ .setValue(tp.speed,    juce::dontSendNotification);
+        sldTrajPos_   .setValue(tp.currentT, juce::dontSendNotification);
+
+        const bool autoMode   = (tp.mode == TrajectoryMode::AutoPlay);
+        const bool manualMode = (tp.mode == TrajectoryMode::Manual);
+        btnTrajModeAuto_  .setToggleState(autoMode,   juce::dontSendNotification);
+        btnTrajModeManual_.setToggleState(manualMode, juce::dontSendNotification);
 
         lblTrajRadius_.setVisible(true); sldTrajRadius_.setVisible(true);
-        lblTrajSpeed_ .setVisible(true); sldTrajSpeed_ .setVisible(true);
+        lblTrajMode_  .setVisible(true);
+        btnTrajModeAuto_  .setVisible(true);
+        btnTrajModeManual_.setVisible(true);
+        // Speed visible only in AutoPlay; Position visible only in Manual.
+        lblTrajSpeed_.setVisible(autoMode);   sldTrajSpeed_.setVisible(autoMode);
+        lblTrajPos_  .setVisible(manualMode); sldTrajPos_  .setVisible(manualMode);
     }
     else if (selection_.kind == ObjectKind::TangentPath)
     {
