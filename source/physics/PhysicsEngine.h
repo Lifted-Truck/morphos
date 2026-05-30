@@ -110,6 +110,20 @@ public:
     // ── Any thread (atomic writes) ───────────────────────────────────────────
     void setGlobalTimeScale(float scale) noexcept;
 
+    // ── Offline-rendering hooks ──────────────────────────────────────────────
+    // DAW bounce-out / freeze runs processBlock faster than wall clock, but
+    // the physics thread is locked to wall clock — left alone, bounced audio
+    // would reflect a near-static Manifold. Instead the processor calls
+    // setOfflineMode(true) before driving physics directly via advance(), and
+    // setOfflineMode(false) when returning to live playback.
+    //
+    // While offline mode is true the dedicated physics thread parks in a
+    // wait() loop; advance() runs tick() synchronously from the caller's
+    // thread, accumulating fractional buffer durations so the simulation
+    // advances by exactly `seconds` virtual time per call.
+    void setOfflineMode(bool offline) noexcept;
+    void advance(double seconds);
+
 private:
     // ── juce::Thread ──────────────────────────────────────────────────────────
     void run() override;
@@ -149,6 +163,14 @@ private:
 
     // ── Parameters (atomic) ───────────────────────────────────────────────────
     std::atomic<float> globalTimeScale_{ 1.0f };
+
+    // ── Offline-rendering state ───────────────────────────────────────────────
+    // offlineMode_ signals the run() loop to park in wait() rather than tick.
+    // offlineParked_ is set true by the thread once it is sitting in that
+    // wait() — advance() spins on this so the caller never overlaps a tick.
+    std::atomic<bool>  offlineMode_   { false };
+    std::atomic<bool>  offlineParked_ { false };
+    double             offlineAccumulator_ = 0.0;
 
     // ── Global manifold topology (physics thread; set via ManifoldEdit queue) ──
     BoundaryBehavior globalBoundary_    = BoundaryBehavior::Wrap;

@@ -142,6 +142,42 @@ void PhysicsEngine::setGlobalTimeScale(float scale) noexcept
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Offline rendering
+// ─────────────────────────────────────────────────────────────────────────────
+
+void PhysicsEngine::setOfflineMode(bool offline) noexcept
+{
+    const bool prev = offlineMode_.exchange(offline, std::memory_order_acq_rel);
+    if (offline && !prev)
+        offlineAccumulator_ = 0.0;   // Fresh accumulator for a new offline session
+    if (!offline)
+        notify();   // Wake the parked thread so it resumes wall-clock ticking
+}
+
+void PhysicsEngine::advance(double seconds)
+{
+    if (! offlineMode_.load(std::memory_order_acquire)) return;
+    if (seconds <= 0.0) return;
+
+    // Wait for the thread to confirm it's parked in wait() (i.e., not mid-tick).
+    // This spin happens only on the first advance() after offline mode is
+    // engaged; subsequent calls return immediately because the thread is
+    // already parked. Worst case is one tick (~2 ms) of yielding.
+    while (! offlineParked_.load(std::memory_order_acquire))
+        std::this_thread::yield();
+
+    const double timeScale = static_cast<double>(
+        globalTimeScale_.load(std::memory_order_relaxed));
+
+    offlineAccumulator_ += seconds;
+    while (offlineAccumulator_ >= TICK_INTERVAL_SEC)
+    {
+        tick(TICK_INTERVAL_SEC * timeScale);
+        offlineAccumulator_ -= TICK_INTERVAL_SEC;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Thread loop
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -155,6 +191,18 @@ void PhysicsEngine::run()
 
     while (!threadShouldExit())
     {
+        // Park the thread while the audio processor is driving physics
+        // synchronously for offline rendering. We never tick from this thread
+        // when offlineMode_ is true — that would race the caller's tick().
+        if (offlineMode_.load(std::memory_order_acquire))
+        {
+            offlineParked_.store(true, std::memory_order_release);
+            wait(50);   // ms; wakes early on notify() when offline ends
+            offlineParked_.store(false, std::memory_order_release);
+            nextTick = steady_clock::now();   // Discard backlog on resume
+            continue;
+        }
+
         const double timeScale = static_cast<double>(
             globalTimeScale_.load(std::memory_order_relaxed));
 

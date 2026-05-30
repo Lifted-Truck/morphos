@@ -99,9 +99,18 @@ MorphosEditor::~MorphosEditor()
 juce::Rectangle<int> MorphosEditor::getCanvasBounds() const
 {
     // Full inner area (8 px margin, 28 px status bar, panel on right)
-    auto r = getLocalBounds().reduced(8).withTrimmedBottom(28);
-    r.removeFromRight(PANEL_WIDTH + 8);   // +8 = gap between canvas and panel
-    return r;
+    auto avail = getLocalBounds().reduced(8).withTrimmedBottom(28);
+    avail.removeFromRight(PANEL_WIDTH + 8);   // +8 = gap between canvas and panel
+
+    // Lock the canvas (and therefore the Manifold) to a square aspect ratio so
+    // resizing the editor window doesn't visually warp objects/paths. Extra
+    // horizontal or vertical space becomes empty margin around the canvas.
+    // A future roadmap item exposes manifold size + aspect as parameters with
+    // rescaling logic for already-placed objects — until then, square it.
+    const int side = juce::jmin(avail.getWidth(), avail.getHeight());
+    if (side <= 0) return avail;   // Degenerate; fall back to whatever we have
+    return juce::Rectangle<int>(side, side)
+        .withCentre(avail.getCentre());
 }
 
 juce::Rectangle<int> MorphosEditor::getPanelBounds() const

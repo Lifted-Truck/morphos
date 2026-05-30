@@ -122,6 +122,21 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     physicsEngine_.setGlobalTimeScale(
         pGlobalTimeScale_->load(std::memory_order_relaxed));
 
+    // ── 3a. Offline rendering: drive physics synchronously ───────────────────
+    // During DAW bounce/freeze, processBlock runs faster than wall clock. The
+    // physics thread is parked and we advance the simulation here by the
+    // buffer's virtual duration so bounced audio reflects the same Manifold
+    // evolution as real-time playback.
+    {
+        const bool offline = isNonRealtime();
+        physicsEngine_.setOfflineMode(offline);
+        if (offline && sampleRate_ > 0.0)
+        {
+            const double bufferSeconds = (double) buffer.getNumSamples() / sampleRate_;
+            physicsEngine_.advance(bufferSeconds);
+        }
+    }
+
     // ── 4. Grab latest physics snapshot ──────────────────────────────────────
     const auto& snapshot = physicsEngine_.getLatestState();
 
