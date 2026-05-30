@@ -197,6 +197,11 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     // ── Glide time — portamento rate; always visible ───────────────────────────
     lblGlideTime_.setBounds(x, y,           w, LABEL_H);
     sldGlideTime_.setBounds(x, y + LABEL_H, w, SLIDER_H);
+    y += ROW_H;
+
+    // ── Global friction — extra damping applied to every Morphon; always visible
+    lblFriction_.setBounds(x, y,           w, LABEL_H);
+    sldFriction_.setBounds(x, y + LABEL_H, w, SLIDER_H);
     y += ROW_H + 4;
 
     // ── Header: name label + remove button (always visible, outside viewport) ─
@@ -1047,6 +1052,19 @@ void MorphosEditor::setupSliders()
         if (!ignoreSliderCallbacks_)
             sendEdit(ManifoldEdit::Type::SetGlideTime, 0, (float)sldGlideTime_.getValue());
     };
+
+    // Global friction — extra per-tick velocity damping on top of each
+    // Morphon's own drag. Range is small because it compounds at TICK_RATE_HZ.
+    styleLabel(lblFriction_, "Friction");
+    styleSlider(sldFriction_, 0.0, 0.1);
+    sldFriction_.setNumDecimalPlacesToDisplay(3);
+    addAndMakeVisible(lblFriction_);
+    addAndMakeVisible(sldFriction_);
+    sldFriction_.onValueChange = [this]
+    {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetGlobalFriction, 0, (float)sldFriction_.getValue());
+    };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1155,6 +1173,7 @@ void MorphosEditor::updatePanel()
 
         ignoreSliderCallbacks_ = true;
         sldGlideTime_.setValue(state.globalGlideTime, juce::dontSendNotification);
+        sldFriction_ .setValue(state.globalFriction,  juce::dontSendNotification);
         ignoreSliderCallbacks_ = false;
     }
 

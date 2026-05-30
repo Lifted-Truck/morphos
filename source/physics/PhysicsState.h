@@ -265,6 +265,7 @@ struct PhysicsStateSnapshot
     int              activeTangentPathCount   = 0;
     BoundaryBehavior globalBoundary           = BoundaryBehavior::Wrap;
     float            globalGlideTime          = 0.0f;   // Portamento seconds [0, 5]
+    float            globalFriction           = 0.0f;   // Per-tick velocity damping [0, 0.1]
     uint64_t         tickIndex                = 0;
     double           simulationTimeMs         = 0.0;
 };
@@ -313,6 +314,7 @@ struct ManifoldEdit
         SetTimbralAnchorTimbreX,
         SetTimbralAnchorTimbreY,
         SetGlideTime,          // x = portamento time in seconds [0, 5]; index unused
+        SetGlobalFriction,     // x = per-tick velocity damping fraction [0, 0.1]; index unused
 
         // ── Spawn / remove — x,y = initial position for Add types ────────────
         AddAttractor,          // Spawn a new Attractor at (x,y) with defaults

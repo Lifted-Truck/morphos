@@ -311,6 +311,7 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
     manifoldData.setProperty("version",     3,                             nullptr);
     manifoldData.setProperty("boundary",    (int)snap.globalBoundary,      nullptr);
     manifoldData.setProperty("glideTime",   snap.globalGlideTime,          nullptr);
+    manifoldData.setProperty("friction",    snap.globalFriction,           nullptr);
     manifoldData.setProperty("editorW",     editorWidth_,                  nullptr);
     manifoldData.setProperty("editorH",     editorHeight_,                 nullptr);
 
@@ -475,7 +476,8 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
     PatchState patch;
     patch.boundary     = static_cast<BoundaryBehavior>(
                              (int)manifoldData.getProperty("boundary",  0));
-    patch.glideTimeSec = (float)manifoldData.getProperty("glideTime", 0.0f);
+    patch.glideTimeSec   = (float)manifoldData.getProperty("glideTime", 0.0f);
+    patch.globalFriction = (float)manifoldData.getProperty("friction",  0.0f);
 
     // Window size (v2+). Defaults preserve the current editor size on older saves.
     if (patchVersion >= 2)

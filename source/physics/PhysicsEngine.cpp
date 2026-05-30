@@ -392,6 +392,10 @@ void PhysicsEngine::drainEditCommands()
                         timbralAnchors_[idx].timbreY = e.x;
                     break;
 
+                case ManifoldEdit::Type::SetGlobalFriction:
+                    globalFriction_ = juce::jlimit(0.0f, 0.1f, e.x);
+                    break;
+
                 case ManifoldEdit::Type::SetGlideTime:
                     globalGlideTimeSec_ = juce::jlimit(0.0f, 5.0f, e.x);
                     break;
@@ -1110,8 +1114,12 @@ void PhysicsEngine::integrateMorphons(double dt)
         // Semi-implicit Euler with drag:
         //   v' = v*(1 - drag) + a*dt
         //   x' = x + v'*dt
-        m.vx = m.vx * (1.0f - m.drag) + ax * dtF;
-        m.vy = m.vy * (1.0f - m.drag) + ay * dtF;
+        // Global friction is added on top of the Morphon's per-tick drag, so a
+        // single top-level slider can make the whole Manifold feel sticky
+        // without retuning every Emitter.
+        const float effDrag = juce::jlimit(0.0f, 1.0f, m.drag + globalFriction_);
+        m.vx = m.vx * (1.0f - effDrag) + ax * dtF;
+        m.vy = m.vy * (1.0f - effDrag) + ay * dtF;
 
         m.x += m.vx * dtF;
         m.y += m.vy * dtF;
@@ -1632,6 +1640,7 @@ void PhysicsEngine::writeSnapshot()
 
     snap.globalBoundary  = globalBoundary_;
     snap.globalGlideTime = globalGlideTimeSec_;
+    snap.globalFriction  = globalFriction_;
 
     // Copy effect zones for UI rendering
     int activeZones = 0;
@@ -1757,6 +1766,7 @@ void PhysicsEngine::applyPatch(const PatchState& patch)
     activeAnchorCount_  = patch.activeAnchorCount;
     globalBoundary_     = patch.boundary;
     globalGlideTimeSec_ = patch.glideTimeSec;
+    globalFriction_     = patch.globalFriction;
 
     morphons_        = {};    // Kill all active voices from the previous patch
     emitterHeldCount_.fill(0); // Drop any tracked held notes — old patch is gone

@@ -65,6 +65,7 @@ struct PatchState
     int              activeAnchorCount = 0;
     BoundaryBehavior boundary          = BoundaryBehavior::Wrap;
     float            glideTimeSec      = 0.0f;
+    float            globalFriction    = 0.0f;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -152,6 +153,10 @@ private:
     // ── Global manifold topology (physics thread; set via ManifoldEdit queue) ──
     BoundaryBehavior globalBoundary_    = BoundaryBehavior::Wrap;
     float            globalGlideTimeSec_ = 0.0f;   // Portamento time in seconds
+    // Extra per-Morphon velocity damping applied on top of m.drag each tick.
+    // Range [0, 1]; 0 = no extra friction, larger = quicker velocity decay.
+    // Treated as a per-tick fraction (compounds at TICK_RATE_HZ).
+    float            globalFriction_     = 0.0f;
 
     // ── Per-Emitter held-note stack — supports legato last-note priority ──────
     // On note-off, Legato/Slur Emitters fall back to the most recently pressed

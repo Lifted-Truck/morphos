@@ -247,6 +247,8 @@ private:
     // Glide (portamento) — always visible; applies in Legato + Slur modes
     juce::Label  lblGlideTime_;
     juce::Slider sldGlideTime_;
+    juce::Label  lblFriction_;
+    juce::Slider sldFriction_;
 
     // Effect zone section (visible when an EffectZone is selected)
     juce::Label  lblZoneRadius_,     lblZoneDepth_;
