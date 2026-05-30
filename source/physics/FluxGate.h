@@ -1,21 +1,29 @@
 #pragma once
+#include <cmath>
 #include <cstdint>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FluxGate.h — Crossing-triggered Manifold object
 //
-// A FluxGate is a line segment on the Manifold. When a Morphon's per-tick
-// trajectory (its segment from (prevX, prevY) to (x, y)) crosses the gate
-// segment, an event fires. Phase 5 fires a single hard-coded event:
+// A FluxGate fires an event when a Morphon's per-tick trajectory (segment
+// prev → cur) crosses its boundary. Phase 5 fires a single hard-coded event:
 //   • Envelope re-trigger (snap envStage to Attack on held voices).
+//
+// Two shapes are supported (closes the path-family trilogy alongside Rail and
+// Trajectory paths):
+//   • Line   — a straight line segment defined by centre + length + angle.
+//   • Circle — a closed ring of given centre + radius; a crossing is detected
+//              when the signed distance (|p − centre| − radius) flips sign
+//              between prev and cur (i.e. the Morphon traversed the ring
+//              boundary, either inward or outward).
 //
 // Phase 7 will broaden the action set as Transient Objects come online
 // (percussive event firing on crossing). Phase 6 may add MIDI/CV-style
 // crossing outputs once the mod matrix exists.
 //
-// Geometry: stored as center + length + angle rather than two endpoints. This
-// makes click-to-place trivial (one position) and lets the panel expose Length
-// and Angle as independent edits. Endpoints are derived per use.
+// Geometry: Line stores centre + length + angle so click-to-place is one
+// position and the panel can expose Length/Angle independently. Circle stores
+// centre + radius. Endpoints are derived per use.
 //
 // Crossing semantics for envelope re-trigger:
 //   • Voice must be held (noteReleased == false). Released voices ignore
@@ -29,15 +37,39 @@
 
 static constexpr int MAX_FLUX_GATES = 16;
 
+enum class FluxGateShape : uint8_t
+{
+    Line,    // Centre + length + angle define a segment
+    Circle,  // Centre + radius define a ring; crossing = radial sign flip
+};
+
 struct FluxGate
 {
+    FluxGateShape shape    = FluxGateShape::Line;
     float x        = 0.5f;     // Centre on Manifold, [0,1]
     float y        = 0.5f;
-    float length   = 0.20f;    // Endpoint distance along the gate line
-    float angleRad = 0.0f;     // 0 = horizontal; +π/2 = vertical
+    float length   = 0.20f;    // Line: endpoint distance along the gate line
+    float angleRad = 0.0f;     // Line: 0 = horizontal; +π/2 = vertical
+    float radius   = 0.15f;    // Circle: ring radius
     int   trajectoryPathIndex = -1;  // -1 = stationary; else attached to traj[index]
     bool  active   = false;
 };
+
+// Returns true if the segment (px,py)→(qx,qy) crosses the ring of radius r
+// centred at (cx,cy) — i.e. one endpoint is inside the disk and the other
+// outside. We don't distinguish inward vs outward crossings here; the gate
+// fires on either traversal direction.
+inline bool segmentCrossesCircle(float px, float py, float qx, float qy,
+                                  float cx, float cy, float r) noexcept
+{
+    const float dpx = px - cx, dpy = py - cy;
+    const float dqx = qx - cx, dqy = qy - cy;
+    const float dp2 = dpx * dpx + dpy * dpy;
+    const float dq2 = dqx * dqx + dqy * dqy;
+    const float r2  = r * r;
+    // sign(d² − r²) flips ⇔ Morphon crossed the ring boundary this tick.
+    return (dp2 < r2 && dq2 > r2) || (dp2 > r2 && dq2 < r2);
+}
 
 // Derive endpoint A (one end of the segment).
 inline void fluxGateEndpointA(const FluxGate& g, float& ax, float& ay) noexcept

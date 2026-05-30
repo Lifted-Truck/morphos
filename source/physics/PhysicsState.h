@@ -176,10 +176,12 @@ struct EffectZoneSnapshot
 // ─────────────────────────────────────────────────────────────────────────────
 struct FluxGateSnapshot
 {
+    FluxGateShape shape = FluxGateShape::Line;
     float x        = 0.5f;
     float y        = 0.5f;
     float length   = 0.20f;
     float angleRad = 0.0f;
+    float radius   = 0.15f;
     int   trajectoryPathIndex = -1;
     bool  active   = false;
 };
@@ -347,6 +349,8 @@ struct ManifoldEdit
         MoveFluxGate,             // x,y carry new Manifold coords [0,1] (centre)
         SetFluxGateLength,        // x = length [0.02, 0.9]
         SetFluxGateAngle,         // x = angleRad [-π, +π]
+        SetFluxGateShape,         // x = (float)cast of FluxGateShape uint8_t
+        SetFluxGateRadius,        // x = circle radius [0.02, 0.45]
 
         // ── Path object spawn / remove / edits ────────────────────────────────
         AddPathObject,            // Spawn a new PathObject at (x,y) with defaults

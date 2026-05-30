@@ -408,8 +408,10 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         auto node = juce::ValueTree("Gate");
         node.setProperty("x",      fg.x,        nullptr);
         node.setProperty("y",      fg.y,        nullptr);
-        node.setProperty("length", fg.length,   nullptr);
-        node.setProperty("angle",  fg.angleRad, nullptr);
+        node.setProperty("shape",  (int)fg.shape, nullptr);
+        node.setProperty("length", fg.length,     nullptr);
+        node.setProperty("angle",  fg.angleRad,   nullptr);
+        node.setProperty("radius", fg.radius,     nullptr);
         node.setProperty("trajPath", fg.trajectoryPathIndex, nullptr);
         manifoldData.appendChild(node, nullptr);
     }
@@ -584,8 +586,10 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             auto& fg    = patch.fluxGates[gateSlot++];
             fg.x        = (float)child.getProperty("x",      0.5f);
             fg.y        = (float)child.getProperty("y",      0.5f);
+            fg.shape    = static_cast<FluxGateShape>((int)child.getProperty("shape", 0));
             fg.length   = (float)child.getProperty("length", 0.20f);
             fg.angleRad = (float)child.getProperty("angle",  0.0f);
+            fg.radius   = (float)child.getProperty("radius", 0.15f);
             fg.trajectoryPathIndex = (int)child.getProperty("trajPath", -1);
             fg.active   = true;
         }

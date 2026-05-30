@@ -640,6 +640,17 @@ void PhysicsEngine::drainEditCommands()
                              juce::MathConstants<float>::pi, e.x);
                     break;
 
+                case ManifoldEdit::Type::SetFluxGateShape:
+                    if (idx >= 0 && idx < MAX_FLUX_GATES)
+                        fluxGates_[idx].shape = static_cast<FluxGateShape>(
+                            static_cast<uint8_t>(static_cast<int>(e.x)));
+                    break;
+
+                case ManifoldEdit::Type::SetFluxGateRadius:
+                    if (idx >= 0 && idx < MAX_FLUX_GATES)
+                        fluxGates_[idx].radius = juce::jlimit(0.02f, 0.45f, e.x);
+                    break;
+
                 // ── Path object spawn / remove / edits ────────────────────────
                 case ManifoldEdit::Type::AddPathObject:
                 {
@@ -1604,11 +1615,21 @@ void PhysicsEngine::applyFluxGates()
         {
             if (!g.active) continue;
 
-            float ax, ay, bx, by;
-            fluxGateEndpointA(g, ax, ay);
-            fluxGateEndpointB(g, bx, by);
+            bool crossed = false;
+            if (g.shape == FluxGateShape::Line)
+            {
+                float ax, ay, bx, by;
+                fluxGateEndpointA(g, ax, ay);
+                fluxGateEndpointB(g, bx, by);
+                crossed = segmentsCross(m.prevX, m.prevY, m.x, m.y, ax, ay, bx, by);
+            }
+            else   // Circle
+            {
+                crossed = segmentCrossesCircle(m.prevX, m.prevY, m.x, m.y,
+                                                g.x, g.y, g.radius);
+            }
 
-            if (segmentsCross(m.prevX, m.prevY, m.x, m.y, ax, ay, bx, by))
+            if (crossed)
             {
                 m.envStage        = EnvelopeStage::Attack;
                 m.terminusArmed   = false;
@@ -1783,10 +1804,12 @@ void PhysicsEngine::writeSnapshot()
     {
         const auto& src = fluxGates_[i];
         auto&       dst = snap.fluxGates[i];
+        dst.shape    = src.shape;
         dst.x        = src.x;
         dst.y        = src.y;
         dst.length   = src.length;
         dst.angleRad = src.angleRad;
+        dst.radius   = src.radius;
         dst.trajectoryPathIndex = src.trajectoryPathIndex;
         dst.active   = src.active;
         if (src.active) ++activeGates;

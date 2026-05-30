@@ -329,9 +329,24 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
 
     // ── Flux gate section ─────────────────────────────────────────────────────
     y = sectionTopY;
+    // Shape toggle: Line | Circle
+    lblGateShape_.setBounds(x, y, w, LABEL_H);
+    y += LABEL_H;
+    {
+        const int bw = w / 2;
+        btnGateShapeLine_  .setBounds(x + bw * 0, y, bw,         BTN_ROW_H);
+        btnGateShapeCircle_.setBounds(x + bw * 1, y, w - bw * 1, BTN_ROW_H);
+    }
+    y += BTN_ROW_H + 2;
+    // Line params (Length + Angle) and Circle param (Radius) overlap at the
+    // same y — updatePanel hides whichever set isn't relevant to the shape.
+    const int gateParamRowY = y;
     layoutRow(lblGateLength_, sldGateLength_);
     layoutRow(lblGateAngle_,  sldGateAngle_);
-    const int gateEndY = y;
+    const int gateLineEndY = y;
+    y = gateParamRowY;
+    layoutRow(lblGateRadius_, sldGateRadius_);
+    const int gateEndY = juce::jmax(gateLineEndY, y);
 
     // ── Path object section ───────────────────────────────────────────────────
     y = sectionTopY;
@@ -850,6 +865,39 @@ void MorphosEditor::setupSliders()
                      selection_.index, (float)sldGateAngle_.getValue());
     };
 
+    // Shape toggle + circle radius
+    styleLabel(lblGateShape_,  "Shape");
+    styleLabel(lblGateRadius_, "Radius");
+    styleSlider(sldGateRadius_, 0.02, 0.45);
+    sldGateRadius_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblGateShape_);
+    styleBoundBtn(btnGateShapeLine_);   addAndMakeVisible(btnGateShapeLine_);
+    styleBoundBtn(btnGateShapeCircle_); addAndMakeVisible(btnGateShapeCircle_);
+    addAndMakeVisible(lblGateRadius_);  addAndMakeVisible(sldGateRadius_);
+
+    sldGateRadius_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetFluxGateRadius,
+                     selection_.index, (float)sldGateRadius_.getValue());
+    };
+
+    auto gateShapeClick = [this](FluxGateShape s) {
+        sendEdit(ManifoldEdit::Type::SetFluxGateShape, selection_.index,
+                 static_cast<float>(static_cast<uint8_t>(s)));
+        const bool isLine   = (s == FluxGateShape::Line);
+        const bool isCircle = (s == FluxGateShape::Circle);
+        btnGateShapeLine_  .setToggleState(isLine,   juce::dontSendNotification);
+        btnGateShapeCircle_.setToggleState(isCircle, juce::dontSendNotification);
+        // Toggle row visibility immediately — updatePanel only runs on selection
+        // change, so without this the param swap wouldn't appear until the user
+        // re-selects the gate (same trick as the trajectory mode toggle).
+        lblGateLength_.setVisible(isLine);   sldGateLength_.setVisible(isLine);
+        lblGateAngle_ .setVisible(isLine);   sldGateAngle_ .setVisible(isLine);
+        lblGateRadius_.setVisible(isCircle); sldGateRadius_.setVisible(isCircle);
+    };
+    btnGateShapeLine_  .onClick = [gateShapeClick]{ gateShapeClick(FluxGateShape::Line);   };
+    btnGateShapeCircle_.onClick = [gateShapeClick]{ gateShapeClick(FluxGateShape::Circle); };
+
     // ── Path object sliders ────────────────────────────────────────────────────
     styleLabel(lblPathRadius_, "Radius");
     styleLabel(lblPathSnap_,   "Snap Radius");
@@ -1158,8 +1206,11 @@ void MorphosEditor::installPanelViewport()
         &btnZonePan_,     &btnZonePitch_,
         &btnZoneFalloffLinear_, &btnZoneFalloffGaussian_,
         // Gate
+        &lblGateShape_,
+        &btnGateShapeLine_,    &btnGateShapeCircle_,
         &lblGateLength_,       &sldGateLength_,
         &lblGateAngle_,        &sldGateAngle_,
+        &lblGateRadius_,       &sldGateRadius_,
         // Path
         &lblPathRadius_,       &sldPathRadius_,
         &lblPathSnap_,         &sldPathSnap_,
@@ -1251,6 +1302,9 @@ void MorphosEditor::updatePanel()
 
     lblGateLength_.setVisible(false);       sldGateLength_.setVisible(false);
     lblGateAngle_.setVisible(false);        sldGateAngle_.setVisible(false);
+    lblGateRadius_.setVisible(false);       sldGateRadius_.setVisible(false);
+    lblGateShape_.setVisible(false);
+    btnGateShapeLine_.setVisible(false);    btnGateShapeCircle_.setVisible(false);
 
     lblPathRadius_.setVisible(false);       sldPathRadius_.setVisible(false);
     lblPathSnap_.setVisible(false);         sldPathSnap_.setVisible(false);
@@ -1448,9 +1502,20 @@ void MorphosEditor::updatePanel()
 
         sldGateLength_.setValue(gate.length,   juce::dontSendNotification);
         sldGateAngle_ .setValue(gate.angleRad, juce::dontSendNotification);
+        sldGateRadius_.setValue(gate.radius,   juce::dontSendNotification);
 
-        lblGateLength_.setVisible(true); sldGateLength_.setVisible(true);
-        lblGateAngle_ .setVisible(true); sldGateAngle_ .setVisible(true);
+        const bool isLine   = (gate.shape == FluxGateShape::Line);
+        const bool isCircle = (gate.shape == FluxGateShape::Circle);
+        btnGateShapeLine_  .setToggleState(isLine,   juce::dontSendNotification);
+        btnGateShapeCircle_.setToggleState(isCircle, juce::dontSendNotification);
+
+        lblGateShape_.setVisible(true);
+        btnGateShapeLine_  .setVisible(true);
+        btnGateShapeCircle_.setVisible(true);
+        // Line / Circle params overlap; only the relevant set shows.
+        lblGateLength_.setVisible(isLine);   sldGateLength_.setVisible(isLine);
+        lblGateAngle_ .setVisible(isLine);   sldGateAngle_ .setVisible(isLine);
+        lblGateRadius_.setVisible(isCircle); sldGateRadius_.setVisible(isCircle);
     }
     else if (selection_.kind == ObjectKind::PathObject)
     {
@@ -1805,12 +1870,23 @@ MorphosEditor::Selection MorphosEditor::hitTest(juce::Point<float> canvasPt,
             return { ObjectKind::TangentPath, i };
     }
 
-    // Priority 6: Flux gates — hit on the line segment itself, using point-to-
-    // segment distance so the whole tripwire is grabbable (not just the centre).
+    // Priority 6: Flux gates — Line uses point-to-segment distance so the
+    // whole tripwire is grabbable; Circle uses ring hit-test in manifold
+    // space (matches Rail/Trajectory grabbability).
     for (int i = 0; i < MAX_FLUX_GATES; ++i)
     {
         const auto& g = state.fluxGates[i];
         if (!g.active) continue;
+
+        if (g.shape == FluxGateShape::Circle)
+        {
+            const float dx   = cursorMfd.x - g.x;
+            const float dy   = cursorMfd.y - g.y;
+            const float dMfd = std::sqrt(dx * dx + dy * dy);
+            if (std::abs(dMfd - g.radius) <= hitMfd)
+                return { ObjectKind::FluxGate, i };
+            continue;
+        }
 
         const float half = g.length * 0.5f;
         const auto a = manifoldToCanvas(g.x - std::cos(g.angleRad) * half,
@@ -2633,28 +2709,53 @@ void MorphosEditor::drawFluxGates(juce::Graphics& g,
         float cx = gate.x, cy = gate.y;
         isObjectDragging(ObjectKind::FluxGate, i, cx, cy);
 
-        const float half = gate.length * 0.5f;
-        const auto a = manifoldToCanvas(cx - std::cos(gate.angleRad) * half,
-                                        cy - std::sin(gate.angleRad) * half, canvas);
-        const auto b = manifoldToCanvas(cx + std::cos(gate.angleRad) * half,
-                                        cy + std::sin(gate.angleRad) * half, canvas);
+        const bool selected = isObjectSelected(ObjectKind::FluxGate, i);
 
-        // Selection halo — wide, low-alpha line under the main stroke
-        if (isObjectSelected(ObjectKind::FluxGate, i))
+        if (gate.shape == FluxGateShape::Line)
         {
-            g.setColour(Colour::SelectRing.withAlpha(0.55f));
-            g.drawLine(a.x, a.y, b.x, b.y, 5.0f);
+            const float half = gate.length * 0.5f;
+            const auto a = manifoldToCanvas(cx - std::cos(gate.angleRad) * half,
+                                            cy - std::sin(gate.angleRad) * half, canvas);
+            const auto b = manifoldToCanvas(cx + std::cos(gate.angleRad) * half,
+                                            cy + std::sin(gate.angleRad) * half, canvas);
+
+            if (selected)
+            {
+                g.setColour(Colour::SelectRing.withAlpha(0.55f));
+                g.drawLine(a.x, a.y, b.x, b.y, 5.0f);
+            }
+
+            g.setColour(c.withAlpha(0.85f));
+            g.drawLine(a.x, a.y, b.x, b.y, 2.0f);
+
+            constexpr float ER = 3.0f;
+            g.setColour(c);
+            g.fillEllipse(a.x - ER, a.y - ER, ER * 2.0f, ER * 2.0f);
+            g.fillEllipse(b.x - ER, b.y - ER, ER * 2.0f, ER * 2.0f);
         }
+        else   // Circle — closed ring; crossings fire on inward or outward traversal
+        {
+            const auto  centre = manifoldToCanvas(cx, cy, canvas);
+            const float rxPx   = gate.radius * canvas.getWidth();
+            const float ryPx   = gate.radius * canvas.getHeight();
 
-        // Main line
-        g.setColour(c.withAlpha(0.85f));
-        g.drawLine(a.x, a.y, b.x, b.y, 2.0f);
+            if (selected)
+            {
+                g.setColour(Colour::SelectRing.withAlpha(0.55f));
+                g.drawEllipse(centre.x - rxPx - 2.0f, centre.y - ryPx - 2.0f,
+                              rxPx * 2.0f + 4.0f, ryPx * 2.0f + 4.0f, 1.4f);
+            }
 
-        // Endpoint dots so the gate's extent reads at a glance
-        constexpr float ER = 3.0f;
-        g.setColour(c);
-        g.fillEllipse(a.x - ER, a.y - ER, ER * 2.0f, ER * 2.0f);
-        g.fillEllipse(b.x - ER, b.y - ER, ER * 2.0f, ER * 2.0f);
+            // Dashed ring so circle gates read as a distinct geometry from
+            // the solid rail rings, while sharing the path-family colour scheme.
+            juce::Path ring;
+            ring.addEllipse(centre.x - rxPx, centre.y - ryPx, rxPx * 2.0f, ryPx * 2.0f);
+            const float dashes[] = { 6.0f, 4.0f };
+            juce::Path dashed;
+            juce::PathStrokeType(1.6f).createDashedStroke(dashed, ring, dashes, 2);
+            g.setColour(c.withAlpha(0.90f));
+            g.strokePath(dashed, juce::PathStrokeType(1.6f));
+        }
     }
 }
 

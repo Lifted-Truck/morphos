@@ -263,8 +263,10 @@ private:
     juce::TextButton btnZoneFalloffGaussian_ { "Gauss"    };
 
     // Flux gate section (visible when a FluxGate is selected)
-    juce::Label  lblGateLength_, lblGateAngle_;
-    juce::Slider sldGateLength_, sldGateAngle_;
+    juce::Label  lblGateLength_, lblGateAngle_, lblGateRadius_, lblGateShape_;
+    juce::Slider sldGateLength_, sldGateAngle_, sldGateRadius_;
+    juce::TextButton btnGateShapeLine_   { "Line"   };
+    juce::TextButton btnGateShapeCircle_ { "Circle" };
 
     // Path object section (visible when a PathObject is selected)
     juce::Label  lblPathRadius_, lblPathSnap_, lblPathEscape_;
