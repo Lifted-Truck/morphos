@@ -81,6 +81,7 @@ MorphosEditor::MorphosEditor(MorphosProcessor& p)
     setWantsKeyboardFocus(true);
 
     setupSliders();
+    installPanelViewport();   // Re-parent per-section components into the scrollable viewport
     updatePanel();    // Initialise panel to "No Selection" state
 
     startTimerHz(30);
@@ -148,8 +149,8 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     constexpr int BTN_ROW_H  = 22;
 
     int y = panel.getY() + 4;
-    const int x = panel.getX();
-    const int w = panel.getWidth();
+    int x = panel.getX();
+    int w = panel.getWidth();
 
     // ── Spawn rows — 3 × 3 grid (9 object types) ─────────────────────────────
     // Phase 10's right-click context menu will subsume these buttons; until
@@ -198,11 +199,21 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     sldGlideTime_.setBounds(x, y + LABEL_H, w, SLIDER_H);
     y += ROW_H + 4;
 
-    // ── Header: name label + remove button ────────────────────────────────────
+    // ── Header: name label + remove button (always visible, outside viewport) ─
     constexpr int REMOVE_W = 20;
     lblPanelHeader_.setBounds(x, y, w - REMOVE_W - 2, HEADER_H);
     btnRemove_     .setBounds(x + w - REMOVE_W, y, REMOVE_W, HEADER_H);
     y += HEADER_H + SECTION_GAP;
+
+    // ── Viewport — per-selection sections live inside this scrollable area ───
+    constexpr int SCROLLBAR_W = 8;
+    panelViewport_.setBounds(x, y, w, panel.getBottom() - y);
+
+    // From here on, x/y/w are LOCAL to panelContent_ (scrollable). The layoutRow
+    // lambda below captures these by reference so it uses the new local coords.
+    x = 0;
+    w = w - SCROLLBAR_W;
+    y = 0;
 
     auto layoutRow = [&](juce::Label& lbl, juce::Slider& sld)
     {
@@ -213,23 +224,25 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
 
     // ── Per-selection sections share the same top y ──────────────────────────
     // Only one section is visible at a time (Anchor / FieldObject / Emitter /
-    // Zone / Gate), so stacking them sequentially wastes ~500px of layout space
-    // beneath invisible sliders. Instead they all start at sectionTopY and
-    // overlap in canvas space; the visible-state toggles in updatePanel ensure
-    // exactly one section paints. Panel total height becomes header + tallest
-    // section instead of the sum of every section.
-    const int sectionTopY = y;
+    // Zone / Gate / Path / Trajectory / Flow), so they all start at sectionTopY
+    // and overlap in panelContent_ space; the visible-state toggles in
+    // updatePanel ensure exactly one section paints. We track each section's
+    // end y so panelContent_ can be sized to just the currently selected
+    // section's height (no empty scroll space).
+    const int sectionTopY = 0;
 
     // ── Anchor section ────────────────────────────────────────────────────────
     y = sectionTopY;
     layoutRow(lblBrightness_,    sldBrightness_);
     layoutRow(lblInharmonicity_, sldInharmonicity_);
+    const int anchorEndY = y;
 
     // ── Field object section ──────────────────────────────────────────────────
     y = sectionTopY;
     layoutRow(lblFOStrength_,  sldFOStrength_);
     layoutRow(lblFORadius_,    sldFORadius_);
     layoutRow(lblFOChirality_, sldFOChirality_);
+    const int fieldEndY = y;
 
     // ── Emitter section ───────────────────────────────────────────────────────
     y = sectionTopY;
@@ -269,6 +282,7 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
 
     // Trajectory attachment selector (Emitter sub-section)
     layoutRow(lblEmitTraj_, sldEmitTraj_);
+    const int emitterEndY = y;
 
     // ── Effect zone section ───────────────────────────────────────────────────
     y = sectionTopY;
@@ -300,22 +314,26 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
         btnZoneFalloffGaussian_.setBounds(x + bw * 1, y, w - bw * 1, BTN_ROW_H);
     }
     y += BTN_ROW_H + 2;
+    const int zoneEndY = y;
 
     // ── Flux gate section ─────────────────────────────────────────────────────
     y = sectionTopY;
     layoutRow(lblGateLength_, sldGateLength_);
     layoutRow(lblGateAngle_,  sldGateAngle_);
+    const int gateEndY = y;
 
     // ── Path object section ───────────────────────────────────────────────────
     y = sectionTopY;
     layoutRow(lblPathRadius_, sldPathRadius_);
     layoutRow(lblPathSnap_,   sldPathSnap_);
     layoutRow(lblPathEscape_, sldPathEscape_);
+    const int pathEndY = y;
 
     // ── Trajectory path section ───────────────────────────────────────────────
     y = sectionTopY;
     layoutRow(lblTrajRadius_, sldTrajRadius_);
     layoutRow(lblTrajSpeed_,  sldTrajSpeed_);
+    const int trajEndY = y;
 
     // ── Tangent-force ("Flow") path section ────────────────────────────────────
     y = sectionTopY;
@@ -323,6 +341,24 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     layoutRow(lblFlowWidth_,     sldFlowWidth_);
     layoutRow(lblFlowStrength_,  sldFlowStrength_);
     layoutRow(lblFlowChirality_, sldFlowChirality_);
+    const int flowEndY = y;
+
+    // ── Size panelContent_ to the currently selected section's height ────────
+    // No selection → use the smallest (Anchor) so the viewport stays compact.
+    int contentH = anchorEndY;
+    switch (selection_.kind)
+    {
+        case ObjectKind::TimbralAnchor:  contentH = anchorEndY;  break;
+        case ObjectKind::FieldObject:    contentH = fieldEndY;   break;
+        case ObjectKind::Emitter:        contentH = emitterEndY; break;
+        case ObjectKind::EffectZone:     contentH = zoneEndY;    break;
+        case ObjectKind::FluxGate:       contentH = gateEndY;    break;
+        case ObjectKind::PathObject:     contentH = pathEndY;    break;
+        case ObjectKind::TrajectoryPath: contentH = trajEndY;    break;
+        case ObjectKind::TangentPath:    contentH = flowEndY;    break;
+        default:                          contentH = anchorEndY;  break;
+    }
+    panelContent_.setSize(w, contentH);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -974,6 +1010,80 @@ void MorphosEditor::setupSliders()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// installPanelViewport — wrap per-selection sections in a scrollable Viewport
+//
+// Called once from the constructor, after setupSliders() has parented every
+// component to `this`. We re-parent the per-section components (Anchor /
+// FieldObject / Emitter / Zone / Gate / Path / Trajectory / Flow sliders +
+// buttons) into panelContent_, which becomes the viewed component of
+// panelViewport_. Always-visible widgets (spawn buttons, topology row, glide
+// slider, panel header, remove button) remain direct children of `this`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+void MorphosEditor::installPanelViewport()
+{
+    panelViewport_.setScrollBarsShown(true, false);
+    panelViewport_.setScrollBarThickness(8);
+    panelViewport_.setViewedComponent(&panelContent_, false);
+    addAndMakeVisible(panelViewport_);
+
+    juce::Component* perSection[] = {
+        // Anchor
+        &lblBrightness_,       &sldBrightness_,
+        &lblInharmonicity_,    &sldInharmonicity_,
+        // Field object
+        &lblFOStrength_,       &sldFOStrength_,
+        &lblFORadius_,         &sldFORadius_,
+        &lblFOChirality_,      &sldFOChirality_,
+        // Emitter — voice mode buttons
+        &lblEmitPolyMode_,
+        &btnEmitPoly_, &btnEmitMono_, &btnEmitLegato_, &btnEmitSlur_,
+        // Emitter — sliders / toggles
+        &lblKeyLow_,           &sldKeyLow_,
+        &lblKeyHigh_,          &sldKeyHigh_,
+        &lblTransposeOct_,     &sldTransposeOct_,
+        &lblTransposeSemi_,    &sldTransposeSemi_,
+        &lblTransposeCents_,   &sldTransposeCents_,
+        &lblEmitPan_,          &sldEmitPan_,
+        &lblEmitMass_,         &sldEmitMass_,
+        &lblEmitAngle_,        &sldEmitAngle_,
+        &lblEmitSpeed_,        &sldEmitSpeed_,
+        &lblEmitAttack_,       &sldEmitAttack_,
+        &lblEmitDecay_,        &sldEmitDecay_,
+        &lblEmitSustain_,      &sldEmitSustain_,
+        &lblEmitRelease_,      &sldEmitRelease_,
+        &btnTerminusEnabled_,
+        &lblTerminusStrength_, &sldTerminusStrength_,
+        &lblTerminusRadius_,   &sldTerminusRadius_,
+        &lblEmitTraj_,         &sldEmitTraj_,
+        // Zone
+        &lblZoneRadius_,       &sldZoneRadius_,
+        &lblZoneDepth_,        &sldZoneDepth_,
+        &lblZoneTarget_,       &lblZoneFalloff_,
+        &btnZoneTimbreX_, &btnZoneTimbreY_, &btnZoneAmp_,
+        &btnZonePan_,     &btnZonePitch_,
+        &btnZoneFalloffLinear_, &btnZoneFalloffGaussian_,
+        // Gate
+        &lblGateLength_,       &sldGateLength_,
+        &lblGateAngle_,        &sldGateAngle_,
+        // Path
+        &lblPathRadius_,       &sldPathRadius_,
+        &lblPathSnap_,         &sldPathSnap_,
+        &lblPathEscape_,       &sldPathEscape_,
+        // Trajectory
+        &lblTrajRadius_,       &sldTrajRadius_,
+        &lblTrajSpeed_,        &sldTrajSpeed_,
+        // Flow
+        &lblFlowRadius_,       &sldFlowRadius_,
+        &lblFlowWidth_,        &sldFlowWidth_,
+        &lblFlowStrength_,     &sldFlowStrength_,
+        &lblFlowChirality_,    &sldFlowChirality_,
+    };
+    for (auto* c : perSection)
+        panelContent_.addAndMakeVisible(*c);   // Re-parents from `this` to panelContent_
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // updatePanel — refresh slider visibility + values from current snapshot
 // Call on selection change; NOT in the timer (sliders only reflect state at
 // time of selection — they are not live-updated by physics output).
@@ -981,6 +1091,15 @@ void MorphosEditor::setupSliders()
 
 void MorphosEditor::updatePanel()
 {
+    // Re-layout the panel viewport's content when the selected section changes,
+    // so panelContent_ is sized to fit the current section (and scrollbar
+    // appears only when that specific section overflows the panel area).
+    if (selection_.kind != lastPanelLayoutKind_)
+    {
+        lastPanelLayoutKind_ = selection_.kind;
+        layoutPanel(getPanelBounds());
+    }
+
     // ── Always-visible: global topology + glide ──────────────────────────────
     {
         const auto& state = processor_.getPhysicsStateForUI();

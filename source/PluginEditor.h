@@ -123,8 +123,23 @@ private:
 
     // ── Parameter panel ────────────────────────────────────────────────────────
     void setupSliders();
+    void installPanelViewport();                          // Re-parent per-section comps into the viewport
     void layoutPanel  (juce::Rectangle<int> panelArea);  // Set component bounds
     void updatePanel  ();                                 // Refresh values + visibility
+
+    // ── Scroll viewport for per-selection sections ────────────────────────────
+    // The always-visible top (spawn buttons, topology, glide, header) remains
+    // a direct child of `this`. Per-selection slider/button sections live
+    // inside panelContent_, which is the viewed component of panelViewport_;
+    // when a section (e.g. Emitter) is taller than the panel area, the
+    // viewport scrolls vertically. Content height is sized to the currently
+    // selected section so empty scroll space doesn't appear.
+    juce::Viewport  panelViewport_;
+    juce::Component panelContent_;
+    // Tracks the section kind the viewport content was last sized for, so
+    // updatePanel() only re-runs layoutPanel when the selection's section
+    // actually changes (avoids relayouting on every 30Hz timer tick).
+    ObjectKind      lastPanelLayoutKind_ = ObjectKind::None;
 
     // Helper: send a single edit command to the physics thread
     void sendEdit(ManifoldEdit::Type type, int index, float x, float y = 0.0f);
