@@ -1,4 +1,6 @@
 #pragma once
+#include <vector>
+
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -114,6 +116,43 @@ private:
 
     Selection selection_;
     DragState drag_;
+
+    // ── Multi-select & marquee ──────────────────────────────────────────────────
+    // multiSelection_ is populated when the user marquee-drags to select more
+    // than one object, OR is updated to mirror selection_ for single selection
+    // (size 1 == single selection; size > 1 == multi). When size > 1 the
+    // parameter panel collapses to "Multi (N)" and clicking-and-dragging any
+    // selected object translates the entire group.
+    std::vector<Selection> multiSelection_;
+
+    struct GroupDragEntry
+    {
+        ObjectKind kind;
+        int        index;
+        float      startX, startY;   // Manifold position at mouseDown
+        float      pendingX, pendingY;  // Pending position during drag
+    };
+    std::vector<GroupDragEntry> groupDrag_;
+    juce::Point<float>          groupDragCursorStart_{ 0.5f, 0.5f };  // Manifold coords
+
+    bool                marqueeActive_   = false;
+    juce::Point<float>  marqueeStartPx_  { 0.0f, 0.0f };   // Canvas (pixel) coords
+    juce::Point<float>  marqueeCurrentPx_{ 0.0f, 0.0f };
+
+    // ── Multi-select helpers ────────────────────────────────────────────────────
+    bool isObjectSelected(ObjectKind k, int i) const noexcept;
+    bool isObjectDragging(ObjectKind k, int i, float& outX, float& outY) const noexcept;
+    void clearMultiSelection() noexcept;
+    void buildMultiSelectionFromMarquee(const PhysicsStateSnapshot& state,
+                                         juce::Rectangle<int> canvas);
+    void beginGroupDrag(const PhysicsStateSnapshot& state, juce::Point<float> clickMfd);
+
+    // ── Static (kind, index) → snapshot / edit-type helpers ─────────────────────
+    static bool readObjectPos(const PhysicsStateSnapshot& state,
+                              ObjectKind kind, int index,
+                              float& outX, float& outY) noexcept;
+    static ManifoldEdit::Type moveEditTypeFor  (ObjectKind kind) noexcept;
+    static ManifoldEdit::Type removeEditTypeFor(ObjectKind kind) noexcept;
 
     // Returns the top-priority object under canvasPt, or None if nothing hit.
     // Priority: TimbralAnchors > Emitters > FieldObjects.

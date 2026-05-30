@@ -473,22 +473,20 @@ void MorphosEditor::setupSliders()
 
     btnRemove_.onClick = [this]
     {
-        if (!selection_.valid()) return;
-        ManifoldEdit::Type t;
-        switch (selection_.kind)
+        // Multi-select: remove every selected object. Single-select: remove
+        // selection_. Either way, end up with an empty selection.
+        if (multiSelection_.size() > 1)
         {
-            case ObjectKind::FieldObject:   t = ManifoldEdit::Type::RemoveFieldObject;   break;
-            case ObjectKind::Emitter:       t = ManifoldEdit::Type::RemoveEmitter;       break;
-            case ObjectKind::TimbralAnchor: t = ManifoldEdit::Type::RemoveTimbralAnchor; break;
-            case ObjectKind::EffectZone:    t = ManifoldEdit::Type::RemoveEffectZone;    break;
-            case ObjectKind::FluxGate:      t = ManifoldEdit::Type::RemoveFluxGate;      break;
-            case ObjectKind::PathObject:    t = ManifoldEdit::Type::RemovePathObject;    break;
-            case ObjectKind::TrajectoryPath:t = ManifoldEdit::Type::RemoveTrajectoryPath;break;
-            case ObjectKind::TangentPath:   t = ManifoldEdit::Type::RemoveTangentPath;   break;
-            default: return;
+            for (const auto& s : multiSelection_)
+                sendEdit(removeEditTypeFor(s.kind), s.index, 0.0f, 0.0f);
+            clearMultiSelection();
+            updatePanel();
+            repaint();
+            return;
         }
-        sendEdit(t, selection_.index, 0.0f, 0.0f);
-        selection_ = {};
+        if (!selection_.valid()) return;
+        sendEdit(removeEditTypeFor(selection_.kind), selection_.index, 0.0f, 0.0f);
+        clearMultiSelection();
         drag_.active = false;
         updatePanel();
         repaint();
@@ -1216,6 +1214,17 @@ void MorphosEditor::updatePanel()
 
     lblEmitTraj_.setVisible(false);         sldEmitTraj_.setVisible(false);
 
+    // Multi-selection — show count, keep Remove visible (acts on the whole set),
+    // hide every per-section panel. No parameters to display for a heterogeneous
+    // group.
+    if (multiSelection_.size() > 1)
+    {
+        lblPanelHeader_.setText("Multi: " + juce::String((int)multiSelection_.size())
+                                + " objects", juce::dontSendNotification);
+        btnRemove_.setVisible(true);
+        return;
+    }
+
     const bool hasSelection = selection_.valid();
     btnRemove_.setVisible(hasSelection);
 
@@ -1528,24 +1537,31 @@ bool MorphosEditor::keyPressed(const juce::KeyPress& key)
         }
     }
 
-    if (selection_.valid()
-        && (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey))
+    if (key == juce::KeyPress::escapeKey
+        && (selection_.valid() || !multiSelection_.empty() || marqueeActive_))
     {
-        ManifoldEdit::Type t;
-        switch (selection_.kind)
+        marqueeActive_ = false;
+        clearMultiSelection();
+        drag_.active = false;
+        updatePanel();
+        repaint();
+        return true;
+    }
+
+    // Delete / Backspace: remove either the multi-selected set or the single object.
+    if ((key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
+        && (selection_.valid() || multiSelection_.size() > 1))
+    {
+        if (multiSelection_.size() > 1)
         {
-            case ObjectKind::FieldObject:   t = ManifoldEdit::Type::RemoveFieldObject;   break;
-            case ObjectKind::Emitter:       t = ManifoldEdit::Type::RemoveEmitter;       break;
-            case ObjectKind::TimbralAnchor: t = ManifoldEdit::Type::RemoveTimbralAnchor; break;
-            case ObjectKind::EffectZone:    t = ManifoldEdit::Type::RemoveEffectZone;    break;
-            case ObjectKind::FluxGate:      t = ManifoldEdit::Type::RemoveFluxGate;      break;
-            case ObjectKind::PathObject:    t = ManifoldEdit::Type::RemovePathObject;    break;
-            case ObjectKind::TrajectoryPath:t = ManifoldEdit::Type::RemoveTrajectoryPath;break;
-            case ObjectKind::TangentPath:   t = ManifoldEdit::Type::RemoveTangentPath;   break;
-            default: return false;
+            for (const auto& s : multiSelection_)
+                sendEdit(removeEditTypeFor(s.kind), s.index, 0.0f, 0.0f);
         }
-        sendEdit(t, selection_.index, 0.0f, 0.0f);
-        selection_ = {};
+        else
+        {
+            sendEdit(removeEditTypeFor(selection_.kind), selection_.index, 0.0f, 0.0f);
+        }
+        clearMultiSelection();
         drag_.active = false;
         updatePanel();
         repaint();
@@ -1697,6 +1713,204 @@ MorphosEditor::Selection MorphosEditor::hitTest(juce::Point<float> canvasPt,
     return { ObjectKind::None, -1 };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Multi-select helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+bool MorphosEditor::isObjectSelected(ObjectKind k, int i) const noexcept
+{
+    for (const auto& s : multiSelection_)
+        if (s.kind == k && s.index == i) return true;
+    return false;
+}
+
+bool MorphosEditor::isObjectDragging(ObjectKind k, int i, float& outX, float& outY) const noexcept
+{
+    // Single drag takes priority (it's the only case in the common path).
+    if (drag_.active && selection_.kind == k && selection_.index == i)
+    {
+        outX = drag_.pendingX;
+        outY = drag_.pendingY;
+        return true;
+    }
+    for (const auto& e : groupDrag_)
+        if (e.kind == k && e.index == i)
+        {
+            outX = e.pendingX;
+            outY = e.pendingY;
+            return true;
+        }
+    return false;
+}
+
+void MorphosEditor::clearMultiSelection() noexcept
+{
+    multiSelection_.clear();
+    groupDrag_.clear();
+    selection_ = {};
+}
+
+// Read the current manifold position of an object referenced by (kind, index)
+// from the latest snapshot. Returns false for inactive/invalid slots.
+bool MorphosEditor::readObjectPos(const PhysicsStateSnapshot& state,
+                                   ObjectKind kind, int index,
+                                   float& outX, float& outY) noexcept
+{
+    using K = ObjectKind;
+    switch (kind)
+    {
+        case K::TimbralAnchor:
+            if (index < 0 || index >= MAX_TIMBRAL_ANCHORS) return false;
+            if (!state.timbralAnchors[index].active) return false;
+            outX = state.timbralAnchors[index].x; outY = state.timbralAnchors[index].y; return true;
+        case K::Emitter:
+            if (index < 0 || index >= MAX_EMITTERS) return false;
+            if (!state.emitters[index].active) return false;
+            outX = state.emitters[index].x; outY = state.emitters[index].y; return true;
+        case K::FieldObject:
+            if (index < 0 || index >= MAX_FIELD_OBJECTS) return false;
+            if (!state.fieldObjects[index].active) return false;
+            outX = state.fieldObjects[index].x; outY = state.fieldObjects[index].y; return true;
+        case K::EffectZone:
+            if (index < 0 || index >= MAX_EFFECT_ZONES) return false;
+            if (!state.effectZones[index].active) return false;
+            outX = state.effectZones[index].x; outY = state.effectZones[index].y; return true;
+        case K::FluxGate:
+            if (index < 0 || index >= MAX_FLUX_GATES) return false;
+            if (!state.fluxGates[index].active) return false;
+            outX = state.fluxGates[index].x; outY = state.fluxGates[index].y; return true;
+        case K::PathObject:
+            if (index < 0 || index >= MAX_PATH_OBJECTS) return false;
+            if (!state.pathObjects[index].active) return false;
+            outX = state.pathObjects[index].x; outY = state.pathObjects[index].y; return true;
+        case K::TrajectoryPath:
+            if (index < 0 || index >= MAX_TRAJECTORY_PATHS) return false;
+            if (!state.trajectoryPaths[index].active) return false;
+            outX = state.trajectoryPaths[index].x; outY = state.trajectoryPaths[index].y; return true;
+        case K::TangentPath:
+            if (index < 0 || index >= MAX_TANGENT_PATHS) return false;
+            if (!state.tangentPaths[index].active) return false;
+            outX = state.tangentPaths[index].x; outY = state.tangentPaths[index].y; return true;
+        default: return false;
+    }
+}
+
+// Map an ObjectKind to the corresponding Move ManifoldEdit type.
+ManifoldEdit::Type MorphosEditor::moveEditTypeFor(ObjectKind kind) noexcept
+{
+    using K = ObjectKind;
+    switch (kind)
+    {
+        case K::TimbralAnchor:   return ManifoldEdit::Type::MoveTimbralAnchor;
+        case K::Emitter:         return ManifoldEdit::Type::MoveEmitter;
+        case K::FieldObject:     return ManifoldEdit::Type::MoveFieldObject;
+        case K::EffectZone:      return ManifoldEdit::Type::MoveEffectZone;
+        case K::FluxGate:        return ManifoldEdit::Type::MoveFluxGate;
+        case K::PathObject:      return ManifoldEdit::Type::MovePathObject;
+        case K::TrajectoryPath:  return ManifoldEdit::Type::MoveTrajectoryPath;
+        case K::TangentPath:     return ManifoldEdit::Type::MoveTangentPath;
+        default:                 return ManifoldEdit::Type::MoveFieldObject;
+    }
+}
+
+// Map an ObjectKind to the corresponding Remove ManifoldEdit type.
+ManifoldEdit::Type MorphosEditor::removeEditTypeFor(ObjectKind kind) noexcept
+{
+    using K = ObjectKind;
+    switch (kind)
+    {
+        case K::TimbralAnchor:   return ManifoldEdit::Type::RemoveTimbralAnchor;
+        case K::Emitter:         return ManifoldEdit::Type::RemoveEmitter;
+        case K::FieldObject:     return ManifoldEdit::Type::RemoveFieldObject;
+        case K::EffectZone:      return ManifoldEdit::Type::RemoveEffectZone;
+        case K::FluxGate:        return ManifoldEdit::Type::RemoveFluxGate;
+        case K::PathObject:      return ManifoldEdit::Type::RemovePathObject;
+        case K::TrajectoryPath:  return ManifoldEdit::Type::RemoveTrajectoryPath;
+        case K::TangentPath:     return ManifoldEdit::Type::RemoveTangentPath;
+        default:                 return ManifoldEdit::Type::RemoveFieldObject;
+    }
+}
+
+void MorphosEditor::buildMultiSelectionFromMarquee(const PhysicsStateSnapshot& state,
+                                                    juce::Rectangle<int> canvas)
+{
+    // Normalised canvas-space rect from start → current cursor positions.
+    juce::Rectangle<float> rect{ marqueeStartPx_, marqueeCurrentPx_ };
+    if (rect.getWidth() < 4.0f && rect.getHeight() < 4.0f)
+    {
+        // Tiny drag — treat as a click; leave selection cleared.
+        multiSelection_.clear();
+        selection_ = {};
+        return;
+    }
+
+    auto isInside = [&](float mx, float my) {
+        return rect.contains(manifoldToCanvas(mx, my, canvas));
+    };
+
+    multiSelection_.clear();
+    auto scan = [&](ObjectKind k, int maxN, auto getActive, auto getX, auto getY)
+    {
+        for (int i = 0; i < maxN; ++i)
+            if (getActive(i) && isInside(getX(i), getY(i)))
+                multiSelection_.push_back({ k, i });
+    };
+    scan(ObjectKind::TimbralAnchor,  state.activeTimbralAnchorCount,
+         [&](int i){ return state.timbralAnchors[i].active; },
+         [&](int i){ return state.timbralAnchors[i].x; },
+         [&](int i){ return state.timbralAnchors[i].y; });
+    scan(ObjectKind::Emitter,        MAX_EMITTERS,
+         [&](int i){ return state.emitters[i].active; },
+         [&](int i){ return state.emitters[i].x; },
+         [&](int i){ return state.emitters[i].y; });
+    scan(ObjectKind::FieldObject,    MAX_FIELD_OBJECTS,
+         [&](int i){ return state.fieldObjects[i].active; },
+         [&](int i){ return state.fieldObjects[i].x; },
+         [&](int i){ return state.fieldObjects[i].y; });
+    scan(ObjectKind::EffectZone,     MAX_EFFECT_ZONES,
+         [&](int i){ return state.effectZones[i].active; },
+         [&](int i){ return state.effectZones[i].x; },
+         [&](int i){ return state.effectZones[i].y; });
+    scan(ObjectKind::FluxGate,       MAX_FLUX_GATES,
+         [&](int i){ return state.fluxGates[i].active; },
+         [&](int i){ return state.fluxGates[i].x; },
+         [&](int i){ return state.fluxGates[i].y; });
+    scan(ObjectKind::PathObject,     MAX_PATH_OBJECTS,
+         [&](int i){ return state.pathObjects[i].active; },
+         [&](int i){ return state.pathObjects[i].x; },
+         [&](int i){ return state.pathObjects[i].y; });
+    scan(ObjectKind::TrajectoryPath, MAX_TRAJECTORY_PATHS,
+         [&](int i){ return state.trajectoryPaths[i].active; },
+         [&](int i){ return state.trajectoryPaths[i].x; },
+         [&](int i){ return state.trajectoryPaths[i].y; });
+    scan(ObjectKind::TangentPath,    MAX_TANGENT_PATHS,
+         [&](int i){ return state.tangentPaths[i].active; },
+         [&](int i){ return state.tangentPaths[i].x; },
+         [&](int i){ return state.tangentPaths[i].y; });
+
+    // Mirror single selection when exactly one object got picked, so the
+    // parameter panel still shows its parameters.
+    if (multiSelection_.size() == 1) selection_ = multiSelection_[0];
+    else                              selection_ = {};
+}
+
+void MorphosEditor::beginGroupDrag(const PhysicsStateSnapshot& state,
+                                    juce::Point<float> clickMfd)
+{
+    groupDrag_.clear();
+    groupDragCursorStart_ = clickMfd;
+    for (const auto& s : multiSelection_)
+    {
+        GroupDragEntry e;
+        e.kind  = s.kind;
+        e.index = s.index;
+        if (!readObjectPos(state, s.kind, s.index, e.startX, e.startY)) continue;
+        e.pendingX = e.startX;
+        e.pendingY = e.startY;
+        groupDrag_.push_back(e);
+    }
+}
+
 void MorphosEditor::mouseDown(const juce::MouseEvent& event)
 {
     const auto canvas = getCanvasBounds();
@@ -1739,10 +1953,39 @@ void MorphosEditor::mouseDown(const juce::MouseEvent& event)
     if (pendingSpawn_ != SpawnKind::None && hit.valid())
         clearPlacementMode();
 
-    const bool selectionChanged = (hit.kind != selection_.kind || hit.index != selection_.index);
+    // ── Multi-select branch: clicked an object already in a multi-select ─────
+    // Don't change the selection set — just begin a group drag.
+    if (hit.valid() && multiSelection_.size() > 1
+        && isObjectSelected(hit.kind, hit.index))
+    {
+        const auto clickMfd = canvasToManifold(event.getPosition().toFloat(), canvas);
+        beginGroupDrag(state, clickMfd);
+        drag_.active = false;   // Single-drag stays disabled during group drag.
+        repaint();
+        return;
+    }
+
+    // ── Empty click: start a marquee selection rectangle ─────────────────────
+    if (!hit.valid())
+    {
+        marqueeActive_    = true;
+        marqueeStartPx_   = event.getPosition().toFloat();
+        marqueeCurrentPx_ = marqueeStartPx_;
+        // Clear any prior selection so the panel reflects the in-progress drag.
+        clearMultiSelection();
+        drag_.active = false;
+        updatePanel();
+        repaint();
+        return;
+    }
+
+    // ── Single click on an object: clear multi, single-select, start drag ────
+    const bool selectionChanged = (hit.kind != selection_.kind || hit.index != selection_.index)
+                                 || multiSelection_.size() > 1;
+    multiSelection_.clear();
+    multiSelection_.push_back(hit);
     selection_ = hit;
 
-    if (hit.valid())
     {
         drag_.active = true;
         // Seed drag position from snapshot so first drag renders correctly
@@ -1791,10 +2034,6 @@ void MorphosEditor::mouseDown(const juce::MouseEvent& event)
         drag_.offsetX = drag_.pendingX - clickMfd.x;
         drag_.offsetY = drag_.pendingY - clickMfd.y;
     }
-    else
-    {
-        drag_.active = false;
-    }
 
     if (selectionChanged)
         updatePanel();
@@ -1804,6 +2043,32 @@ void MorphosEditor::mouseDown(const juce::MouseEvent& event)
 
 void MorphosEditor::mouseDrag(const juce::MouseEvent& event)
 {
+    // ── Marquee selection rectangle ──────────────────────────────────────────
+    if (marqueeActive_)
+    {
+        marqueeCurrentPx_ = event.getPosition().toFloat();
+        repaint();
+        return;
+    }
+
+    // ── Group drag: translate every selected object by the cursor's delta ─────
+    if (!groupDrag_.empty())
+    {
+        const auto canvas    = getCanvasBounds();
+        const auto cursorMfd = canvasToManifold(event.getPosition().toFloat(), canvas);
+        const float dx = cursorMfd.x - groupDragCursorStart_.x;
+        const float dy = cursorMfd.y - groupDragCursorStart_.y;
+        for (auto& e : groupDrag_)
+        {
+            e.pendingX = juce::jlimit(0.0f, 1.0f, e.startX + dx);
+            e.pendingY = juce::jlimit(0.0f, 1.0f, e.startY + dy);
+            sendEdit(moveEditTypeFor(e.kind), e.index, e.pendingX, e.pendingY);
+        }
+        repaint();
+        return;
+    }
+
+    // ── Single drag (existing behavior) ──────────────────────────────────────
     if (!drag_.active || !selection_.valid()) return;
 
     const auto canvas     = getCanvasBounds();
@@ -1814,27 +2079,23 @@ void MorphosEditor::mouseDrag(const juce::MouseEvent& event)
     drag_.pendingX = juce::jlimit(0.0f, 1.0f, manifoldPt.x + drag_.offsetX);
     drag_.pendingY = juce::jlimit(0.0f, 1.0f, manifoldPt.y + drag_.offsetY);
 
-    ManifoldEdit::Type moveType;
-    switch (selection_.kind)
-    {
-        case ObjectKind::TimbralAnchor: moveType = ManifoldEdit::Type::MoveTimbralAnchor; break;
-        case ObjectKind::Emitter:       moveType = ManifoldEdit::Type::MoveEmitter;        break;
-        case ObjectKind::FieldObject:   moveType = ManifoldEdit::Type::MoveFieldObject;    break;
-        case ObjectKind::EffectZone:    moveType = ManifoldEdit::Type::MoveEffectZone;     break;
-        case ObjectKind::FluxGate:      moveType = ManifoldEdit::Type::MoveFluxGate;       break;
-        case ObjectKind::PathObject:    moveType = ManifoldEdit::Type::MovePathObject;     break;
-        case ObjectKind::TrajectoryPath:moveType = ManifoldEdit::Type::MoveTrajectoryPath; break;
-        case ObjectKind::TangentPath:   moveType = ManifoldEdit::Type::MoveTangentPath;    break;
-        default: return;
-    }
-
-    sendEdit(moveType, selection_.index, drag_.pendingX, drag_.pendingY);
+    sendEdit(moveEditTypeFor(selection_.kind), selection_.index,
+             drag_.pendingX, drag_.pendingY);
     repaint();
 }
 
 void MorphosEditor::mouseUp(const juce::MouseEvent&)
 {
+    // ── Finalise marquee → multi-selection ───────────────────────────────────
+    if (marqueeActive_)
+    {
+        marqueeActive_ = false;
+        const auto& state = processor_.getPhysicsStateForUI();
+        buildMultiSelectionFromMarquee(state, getCanvasBounds());
+        updatePanel();
+    }
     drag_.active = false;
+    groupDrag_.clear();
     repaint();
 }
 
@@ -1881,6 +2142,25 @@ void MorphosEditor::paint(juce::Graphics& g)
     drawTimbralAnchors  (g, state, canvas);
     drawTrails          (g, canvas);
     drawMorphons        (g, state, canvas);
+
+    // ── Marquee selection rectangle ──────────────────────────────────────────
+    // Drawn above all canvas content but beneath the panel; clipped to the
+    // canvas so a marquee started inside doesn't bleed into the panel area.
+    if (marqueeActive_)
+    {
+        juce::Rectangle<float> rect{ marqueeStartPx_, marqueeCurrentPx_ };
+        juce::Graphics::ScopedSaveState save(g);
+        g.reduceClipRegion(canvas);
+        g.setColour(Colour::SelectRing.withAlpha(0.08f));
+        g.fillRect(rect);
+        g.setColour(Colour::SelectRing.withAlpha(0.65f));
+        const float dashes[] = { 4.0f, 3.0f };
+        juce::Path border;
+        border.addRectangle(rect);
+        juce::PathStrokeType(1.0f).createDashedStroke(border, border, dashes, 2);
+        g.strokePath(border, juce::PathStrokeType(1.0f));
+    }
+
     drawPanelBackground (g);
     drawStatusBar       (g, state);
 }
@@ -1929,11 +2209,7 @@ void MorphosEditor::drawEffectZones(juce::Graphics& g,
         if (!z.active) continue;
 
         float px = z.x, py = z.y;
-        if (drag_.active && selection_.kind == ObjectKind::EffectZone && selection_.index == i)
-        {
-            px = drag_.pendingX;
-            py = drag_.pendingY;
-        }
+        isObjectDragging(ObjectKind::EffectZone, i, px, py);
 
         const auto         centre = manifoldToCanvas(px, py, canvas);
         // Manifold-space circle → canvas ellipse; see drawFieldObjects note.
@@ -1970,7 +2246,7 @@ void MorphosEditor::drawEffectZones(juce::Graphics& g,
                    juce::Justification::centred, false);
 
         // Selection ring
-        if (selection_.kind == ObjectKind::EffectZone && selection_.index == i)
+        if (isObjectSelected(ObjectKind::EffectZone, i))
         {
             g.setColour(Colour::SelectRing.withAlpha(0.8f));
             g.drawEllipse(centre.x - GLYPH_R - 3.0f, centre.y - GLYPH_R - 3.0f,
@@ -1995,11 +2271,7 @@ void MorphosEditor::drawPathObjects(juce::Graphics& g,
         if (!p.active) continue;
 
         float cx = p.x, cy = p.y;
-        if (drag_.active && selection_.kind == ObjectKind::PathObject && selection_.index == i)
-        {
-            cx = drag_.pendingX;
-            cy = drag_.pendingY;
-        }
+        isObjectDragging(ObjectKind::PathObject, i, cx, cy);
 
         const auto  centre = manifoldToCanvas(cx, cy, canvas);
         // Manifold-space circle → canvas ellipse so the rendering matches the
@@ -2051,7 +2323,7 @@ void MorphosEditor::drawPathObjects(juce::Graphics& g,
         }
 
         // Selection ring — thinner re-stroke of the rail
-        if (selection_.kind == ObjectKind::PathObject && selection_.index == i)
+        if (isObjectSelected(ObjectKind::PathObject, i))
         {
             g.setColour(Colour::SelectRing.withAlpha(0.70f));
             g.drawEllipse(centre.x - rxPx, centre.y - ryPx,
@@ -2076,12 +2348,7 @@ void MorphosEditor::drawTrajectoryPaths(juce::Graphics& g,
         if (!tp.active) continue;
 
         float cx = tp.x, cy = tp.y;
-        if (drag_.active && selection_.kind == ObjectKind::TrajectoryPath
-            && selection_.index == i)
-        {
-            cx = drag_.pendingX;
-            cy = drag_.pendingY;
-        }
+        isObjectDragging(ObjectKind::TrajectoryPath, i, cx, cy);
 
         const auto  centre = manifoldToCanvas(cx, cy, canvas);
         // Manifold-space circle → canvas ellipse (see drawFieldObjects note).
@@ -2118,7 +2385,7 @@ void MorphosEditor::drawTrajectoryPaths(juce::Graphics& g,
         }
 
         // Selection ring
-        if (selection_.kind == ObjectKind::TrajectoryPath && selection_.index == i)
+        if (isObjectSelected(ObjectKind::TrajectoryPath, i))
         {
             g.setColour(Colour::SelectRing.withAlpha(0.70f));
             g.drawEllipse(centre.x - rxPx, centre.y - ryPx,
@@ -2148,12 +2415,7 @@ void MorphosEditor::drawTangentPaths(juce::Graphics& g,
         if (!tp.active) continue;
 
         float cx = tp.x, cy = tp.y;
-        if (drag_.active && selection_.kind == ObjectKind::TangentPath
-            && selection_.index == i)
-        {
-            cx = drag_.pendingX;
-            cy = drag_.pendingY;
-        }
+        isObjectDragging(ObjectKind::TangentPath, i, cx, cy);
 
         const auto  centre = manifoldToCanvas(cx, cy, canvas);
         // Manifold-space circle → canvas ellipse (see drawFieldObjects note).
@@ -2221,7 +2483,7 @@ void MorphosEditor::drawTangentPaths(juce::Graphics& g,
         }
 
         // Selection ring
-        if (selection_.kind == ObjectKind::TangentPath && selection_.index == i)
+        if (isObjectSelected(ObjectKind::TangentPath, i))
         {
             g.setColour(Colour::SelectRing.withAlpha(0.70f));
             g.drawEllipse(centre.x - rxPx, centre.y - ryPx,
@@ -2246,11 +2508,7 @@ void MorphosEditor::drawFluxGates(juce::Graphics& g,
         if (!gate.active) continue;
 
         float cx = gate.x, cy = gate.y;
-        if (drag_.active && selection_.kind == ObjectKind::FluxGate && selection_.index == i)
-        {
-            cx = drag_.pendingX;
-            cy = drag_.pendingY;
-        }
+        isObjectDragging(ObjectKind::FluxGate, i, cx, cy);
 
         const float half = gate.length * 0.5f;
         const auto a = manifoldToCanvas(cx - std::cos(gate.angleRad) * half,
@@ -2259,7 +2517,7 @@ void MorphosEditor::drawFluxGates(juce::Graphics& g,
                                         cy + std::sin(gate.angleRad) * half, canvas);
 
         // Selection halo — wide, low-alpha line under the main stroke
-        if (selection_.kind == ObjectKind::FluxGate && selection_.index == i)
+        if (isObjectSelected(ObjectKind::FluxGate, i))
         {
             g.setColour(Colour::SelectRing.withAlpha(0.55f));
             g.drawLine(a.x, a.y, b.x, b.y, 5.0f);
@@ -2298,13 +2556,9 @@ void MorphosEditor::drawFieldObjects(juce::Graphics& g,
             case FieldObjectType::Vortex:    c = Colour::Vortex;    break;
         }
 
-        // If this object is being dragged, use the pending position
+        // If this object is being dragged (single or group), use the pending position
         float px = obj.x, py = obj.y;
-        if (drag_.active && selection_.kind == ObjectKind::FieldObject && selection_.index == i)
-        {
-            px = drag_.pendingX;
-            py = drag_.pendingY;
-        }
+        isObjectDragging(ObjectKind::FieldObject, i, px, py);
 
         const auto  centre = manifoldToCanvas(px, py, canvas);
         // Manifold-space circle of radius r maps to a canvas-space ellipse with
@@ -2329,7 +2583,7 @@ void MorphosEditor::drawFieldObjects(juce::Graphics& g,
                       GLYPH_R * 2.0f, GLYPH_R * 2.0f);
 
         // Selection ring
-        const bool selected = (selection_.kind == ObjectKind::FieldObject && selection_.index == i);
+        const bool selected = isObjectSelected(ObjectKind::FieldObject, i);
         if (selected)
         {
             g.setColour(Colour::SelectRing.withAlpha(0.8f));
@@ -2410,13 +2664,9 @@ void MorphosEditor::drawEmitters(juce::Graphics& g,
         const auto& e = state.emitters[i];
         if (!e.active) continue;
 
-        // Use pending drag position if this emitter is being dragged
+        // Use pending drag position if this emitter is being dragged (single or group)
         float px = e.x, py = e.y;
-        if (drag_.active && selection_.kind == ObjectKind::Emitter && selection_.index == i)
-        {
-            px = drag_.pendingX;
-            py = drag_.pendingY;
-        }
+        isObjectDragging(ObjectKind::Emitter, i, px, py);
 
         const auto centre = manifoldToCanvas(px, py, canvas);
 
@@ -2433,7 +2683,7 @@ void MorphosEditor::drawEmitters(juce::Graphics& g,
                       GLYPH_R * 2.0f, GLYPH_R * 2.0f);
 
         // Selection ring
-        const bool selected = (selection_.kind == ObjectKind::Emitter && selection_.index == i);
+        const bool selected = isObjectSelected(ObjectKind::Emitter, i);
         if (selected)
         {
             g.setColour(Colour::SelectRing.withAlpha(0.8f));
@@ -2494,16 +2744,12 @@ void MorphosEditor::drawTimbralAnchors(juce::Graphics& g,
         const auto& a = state.timbralAnchors[i];
         if (!a.active) continue;
 
-        // Use pending drag position if this anchor is being dragged
+        // Use pending drag position if this anchor is being dragged (single or group)
         float px = a.x, py = a.y;
-        if (drag_.active && selection_.kind == ObjectKind::TimbralAnchor && selection_.index == i)
-        {
-            px = drag_.pendingX;
-            py = drag_.pendingY;
-        }
+        isObjectDragging(ObjectKind::TimbralAnchor, i, px, py);
 
         const auto centre = manifoldToCanvas(px, py, canvas);
-        const bool selected = (selection_.kind == ObjectKind::TimbralAnchor && selection_.index == i);
+        const bool selected = isObjectSelected(ObjectKind::TimbralAnchor, i);
 
         // Tint: blend from teal (dark/harmonic) toward amber (bright/inharmonic)
         const float tintT = a.timbreX * 0.6f + a.timbreY * 0.4f;
