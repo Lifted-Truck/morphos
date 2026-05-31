@@ -162,9 +162,33 @@ private:
 
     // ── Parameter panel ────────────────────────────────────────────────────────
     void setupSliders();
+    void setupModMatrix();                                // Build mod-tab widgets + dropdowns
     void installPanelViewport();                          // Re-parent per-section comps into the viewport
     void layoutPanel  (juce::Rectangle<int> panelArea);  // Set component bounds
+    void layoutModTab (int contentW);                     // Layout for mod-matrix rows; returns end y
+    int  layoutModTabContent(int contentW);               // Helper returning total height
     void updatePanel  ();                                 // Refresh values + visibility
+    void updateModTab ();                                 // Refresh mod row values + visibility
+
+    // ── Panel tab mode ──────────────────────────────────────────────────────────
+    // Inspector = per-selection sliders (the default panel content).
+    // Mod       = list of mod-matrix connections with source/dest dropdowns.
+    enum class PanelMode { Inspector, Mod };
+    PanelMode panelMode_ = PanelMode::Inspector;
+    juce::TextButton btnTabInspector_ { "Inspector" };
+    juce::TextButton btnTabMod_       { "Mod"       };
+
+    // Mod-matrix UI — one row per connection slot, hidden when slot is inactive.
+    // ComboBox itemIds encode (type * 256 + index) — see encodeSrcChoice /
+    // decodeSrcChoice helpers in PluginEditor.cpp for the actual packing.
+    std::array<juce::ComboBox,   MAX_MOD_CONNECTIONS> modSrcCombos_;
+    std::array<juce::ComboBox,   MAX_MOD_CONNECTIONS> modDstCombos_;
+    std::array<juce::Slider,     MAX_MOD_CONNECTIONS> modDepthSliders_;
+    std::array<juce::Label,      MAX_MOD_CONNECTIONS> modDepthLabels_;
+    std::array<juce::TextButton, MAX_MOD_CONNECTIONS> modRemoveBtns_;
+    juce::Label      lblModHeader_;
+    juce::TextButton btnModAdd_       { "+ Add Mod" };
+    int              lastModActiveCount_ = -1;   // -1 forces a relayout on first tick
 
     // ── Scroll viewport for per-selection sections ────────────────────────────
     // The always-visible top (spawn buttons, topology, glide, header) remains
@@ -174,7 +198,8 @@ private:
     // viewport scrolls vertically. Content height is sized to the currently
     // selected section so empty scroll space doesn't appear.
     juce::Viewport  panelViewport_;
-    juce::Component panelContent_;
+    juce::Component panelContent_;       // Inspector tab — per-selection sliders.
+    juce::Component panelContentMod_;    // Mod tab — connection rows.
     // Tracks the section kind the viewport content was last sized for, so
     // updatePanel() only re-runs layoutPanel when the selection's section
     // actually changes (avoids relayouting on every 30Hz timer tick).

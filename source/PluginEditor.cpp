@@ -81,6 +81,7 @@ MorphosEditor::MorphosEditor(MorphosProcessor& p)
     setWantsKeyboardFocus(true);
 
     setupSliders();
+    setupModMatrix();         // Build mod-tab dropdowns + per-row widgets
     installPanelViewport();   // Re-parent per-section components into the scrollable viewport
     updatePanel();    // Initialise panel to "No Selection" state
 
@@ -213,15 +214,43 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     sldFriction_.setBounds(x, y + LABEL_H, w, SLIDER_H);
     y += ROW_H + 4;
 
-    // ── Header: name label + remove button (always visible, outside viewport) ─
+    // ── Tab buttons (Inspector | Mod) ────────────────────────────────────────
+    {
+        const int bw = w / 2;
+        btnTabInspector_.setBounds(x + bw * 0, y, bw,         BTN_ROW_H);
+        btnTabMod_      .setBounds(x + bw * 1, y, w - bw * 1, BTN_ROW_H);
+    }
+    y += BTN_ROW_H + 4;
+
+    const bool inspectorMode = (panelMode_ == PanelMode::Inspector);
+
+    // ── Header: name label + remove button (Inspector only, outside viewport)
     constexpr int REMOVE_W = 20;
-    lblPanelHeader_.setBounds(x, y, w - REMOVE_W - 2, HEADER_H);
-    btnRemove_     .setBounds(x + w - REMOVE_W, y, REMOVE_W, HEADER_H);
-    y += HEADER_H + SECTION_GAP;
+    lblPanelHeader_.setVisible(inspectorMode);
+    btnRemove_     .setVisible(inspectorMode && (selection_.valid() || multiSelection_.size() > 1));
+    if (inspectorMode)
+    {
+        lblPanelHeader_.setBounds(x, y, w - REMOVE_W - 2, HEADER_H);
+        btnRemove_     .setBounds(x + w - REMOVE_W, y, REMOVE_W, HEADER_H);
+        y += HEADER_H + SECTION_GAP;
+    }
 
     // ── Viewport — per-selection sections live inside this scrollable area ───
     constexpr int SCROLLBAR_W = 8;
     panelViewport_.setBounds(x, y, w, panel.getBottom() - y);
+
+    // Swap which content the viewport is displaying based on the active tab.
+    auto* desiredViewed = inspectorMode ? &panelContent_ : &panelContentMod_;
+    if (panelViewport_.getViewedComponent() != desiredViewed)
+        panelViewport_.setViewedComponent(desiredViewed, false);
+
+    // ── Mod tab ───────────────────────────────────────────────────────────────
+    if (!inspectorMode)
+    {
+        const int contentH = layoutModTabContent(w - SCROLLBAR_W);
+        panelContentMod_.setSize(w - SCROLLBAR_W, contentH);
+        return;
+    }
 
     // From here on, x/y/w are LOCAL to panelContent_ (scrollable). The layoutRow
     // lambda below captures these by reference so it uses the new local coords.
@@ -1229,6 +1258,219 @@ void MorphosEditor::installPanelViewport()
     };
     for (auto* c : perSection)
         panelContent_.addAndMakeVisible(*c);   // Re-parents from `this` to panelContent_
+
+    // Mod-tab widgets live in their own content component so the viewport can
+    // swap between Inspector (panelContent_) and Mod (panelContentMod_) by
+    // changing its viewed component on tab click.
+    panelContentMod_.addAndMakeVisible(lblModHeader_);
+    panelContentMod_.addAndMakeVisible(btnModAdd_);
+    for (int i = 0; i < MAX_MOD_CONNECTIONS; ++i)
+    {
+        panelContentMod_.addAndMakeVisible(modSrcCombos_[i]);
+        panelContentMod_.addAndMakeVisible(modDstCombos_[i]);
+        panelContentMod_.addAndMakeVisible(modDepthSliders_[i]);
+        panelContentMod_.addAndMakeVisible(modDepthLabels_[i]);
+        panelContentMod_.addAndMakeVisible(modRemoveBtns_[i]);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// setupModMatrix — build the Mod tab's row widgets and dropdowns
+//
+// One row per connection slot is constructed up front; rows for inactive slots
+// are simply hidden in updateModTab(). Each row has a source ComboBox, a dest
+// ComboBox, a depth Slider, a label showing "→", and an × Remove button.
+// ComboBox itemIds encode (type << 8 | index) so a single selection
+// round-trips both fields in one onChange.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace
+{
+    // Pack/unpack (type, index) into a single 32-bit id for ComboBox itemIds.
+    // We add 1 because JUCE's ComboBox treats id 0 as "no selection".
+    constexpr int packTypeIdx(int type, int index) noexcept { return ((type & 0xff) << 8 | (index & 0xff)) + 1; }
+    constexpr int unpackType(int id) noexcept { return ((id - 1) >> 8) & 0xff; }
+    constexpr int unpackIdx (int id) noexcept { return  (id - 1)       & 0xff; }
+}
+
+void MorphosEditor::setupModMatrix()
+{
+    // ── Tab buttons ──────────────────────────────────────────────────────────
+    auto styleTabBtn = [](juce::TextButton& b)
+    {
+        b.setColour(juce::TextButton::buttonColourId,   juce::Colour(0xFF1F1F1D));
+        b.setColour(juce::TextButton::buttonOnColourId, juce::Colour(0xFF3A3A35));
+        b.setColour(juce::TextButton::textColourOffId,  juce::Colour(0xFFB3B0A6));
+        b.setColour(juce::TextButton::textColourOnId,   juce::Colour(0xFFEDE9DA));
+        b.setClickingTogglesState(false);
+    };
+    styleTabBtn(btnTabInspector_);
+    styleTabBtn(btnTabMod_);
+    btnTabInspector_.setToggleState(true,  juce::dontSendNotification);
+    btnTabMod_      .setToggleState(false, juce::dontSendNotification);
+    btnTabInspector_.onClick = [this] {
+        if (panelMode_ == PanelMode::Inspector) return;
+        panelMode_ = PanelMode::Inspector;
+        btnTabInspector_.setToggleState(true,  juce::dontSendNotification);
+        btnTabMod_      .setToggleState(false, juce::dontSendNotification);
+        // Force a re-layout so the viewport content swaps over.
+        lastPanelLayoutKind_ = ObjectKind::None;
+        resized();
+        updatePanel();
+    };
+    btnTabMod_.onClick = [this] {
+        if (panelMode_ == PanelMode::Mod) return;
+        panelMode_ = PanelMode::Mod;
+        btnTabInspector_.setToggleState(false, juce::dontSendNotification);
+        btnTabMod_      .setToggleState(true,  juce::dontSendNotification);
+        resized();
+        updateModTab();
+    };
+    addAndMakeVisible(btnTabInspector_);
+    addAndMakeVisible(btnTabMod_);
+
+    // ── Mod-row widgets ──────────────────────────────────────────────────────
+    // Source dropdown menu: assemble once and clone into each row.
+    auto populateSourceCombo = [](juce::ComboBox& cb)
+    {
+        cb.clear(juce::dontSendNotification);
+        cb.addItem("(none)", packTypeIdx((int)ModSourceType::None, 0));
+        for (int i = 0; i < MAX_TRAJECTORY_PATHS; ++i)
+        {
+            cb.addItem("Traj " + juce::String(i) + " t", packTypeIdx((int)ModSourceType::TrajectoryT, i));
+            cb.addItem("Traj " + juce::String(i) + " x", packTypeIdx((int)ModSourceType::TrajectoryX, i));
+            cb.addItem("Traj " + juce::String(i) + " y", packTypeIdx((int)ModSourceType::TrajectoryY, i));
+        }
+    };
+    auto populateDestCombo = [](juce::ComboBox& cb)
+    {
+        cb.clear(juce::dontSendNotification);
+        cb.addItem("(none)", packTypeIdx((int)ModDestType::None, 0));
+
+        // Object positions — grouped by object type so the user can scan a
+        // contiguous block. Using ComboBox section headers to delimit groups.
+        cb.addSectionHeading("Positions");
+        for (int i = 0; i < MAX_FIELD_OBJECTS; ++i)
+        {
+            cb.addItem("Field " + juce::String(i) + " x", packTypeIdx((int)ModDestType::FieldObjectX, i));
+            cb.addItem("Field " + juce::String(i) + " y", packTypeIdx((int)ModDestType::FieldObjectY, i));
+        }
+        for (int i = 0; i < MAX_EMITTERS; ++i)
+        {
+            cb.addItem("Emitter " + juce::String(i) + " x", packTypeIdx((int)ModDestType::EmitterX, i));
+            cb.addItem("Emitter " + juce::String(i) + " y", packTypeIdx((int)ModDestType::EmitterY, i));
+        }
+        for (int i = 0; i < MAX_TIMBRAL_ANCHORS; ++i)
+        {
+            cb.addItem("Anchor " + juce::String(i) + " x", packTypeIdx((int)ModDestType::AnchorX, i));
+            cb.addItem("Anchor " + juce::String(i) + " y", packTypeIdx((int)ModDestType::AnchorY, i));
+        }
+        for (int i = 0; i < MAX_EFFECT_ZONES; ++i)
+        {
+            cb.addItem("Zone " + juce::String(i) + " x", packTypeIdx((int)ModDestType::EffectZoneX, i));
+            cb.addItem("Zone " + juce::String(i) + " y", packTypeIdx((int)ModDestType::EffectZoneY, i));
+        }
+        for (int i = 0; i < MAX_FLUX_GATES; ++i)
+        {
+            cb.addItem("Gate " + juce::String(i) + " x", packTypeIdx((int)ModDestType::FluxGateX, i));
+            cb.addItem("Gate " + juce::String(i) + " y", packTypeIdx((int)ModDestType::FluxGateY, i));
+        }
+        for (int i = 0; i < MAX_PATH_OBJECTS; ++i)
+        {
+            cb.addItem("Rail " + juce::String(i) + " x", packTypeIdx((int)ModDestType::PathObjectX, i));
+            cb.addItem("Rail " + juce::String(i) + " y", packTypeIdx((int)ModDestType::PathObjectY, i));
+        }
+        for (int i = 0; i < MAX_TRAJECTORY_PATHS; ++i)
+        {
+            cb.addItem("Traj " + juce::String(i) + " x (centre)", packTypeIdx((int)ModDestType::TrajectoryPathX, i));
+            cb.addItem("Traj " + juce::String(i) + " y (centre)", packTypeIdx((int)ModDestType::TrajectoryPathY, i));
+        }
+        for (int i = 0; i < MAX_TANGENT_PATHS; ++i)
+        {
+            cb.addItem("Flow " + juce::String(i) + " x", packTypeIdx((int)ModDestType::TangentPathX, i));
+            cb.addItem("Flow " + juce::String(i) + " y", packTypeIdx((int)ModDestType::TangentPathY, i));
+        }
+
+        cb.addSectionHeading("Object params");
+        for (int i = 0; i < MAX_FIELD_OBJECTS; ++i)
+        {
+            cb.addItem("Field " + juce::String(i) + " strength", packTypeIdx((int)ModDestType::FieldObjectStrength, i));
+            cb.addItem("Field " + juce::String(i) + " radius",   packTypeIdx((int)ModDestType::FieldObjectRadius,   i));
+        }
+        for (int i = 0; i < MAX_EFFECT_ZONES; ++i)
+        {
+            cb.addItem("Zone " + juce::String(i) + " depth",  packTypeIdx((int)ModDestType::EffectZoneDepth,  i));
+            cb.addItem("Zone " + juce::String(i) + " radius", packTypeIdx((int)ModDestType::EffectZoneRadius, i));
+        }
+        for (int i = 0; i < MAX_TRAJECTORY_PATHS; ++i)
+            cb.addItem("Traj " + juce::String(i) + " t (Manual)", packTypeIdx((int)ModDestType::TrajectoryCurrentT, i));
+        for (int i = 0; i < MAX_TIMBRAL_ANCHORS; ++i)
+        {
+            cb.addItem("Anchor " + juce::String(i) + " timbreX", packTypeIdx((int)ModDestType::AnchorTimbreX, i));
+            cb.addItem("Anchor " + juce::String(i) + " timbreY", packTypeIdx((int)ModDestType::AnchorTimbreY, i));
+        }
+
+        cb.addSectionHeading("Global");
+        cb.addItem("Global Friction", packTypeIdx((int)ModDestType::GlobalFriction, 0));
+    };
+
+    for (int slot = 0; slot < MAX_MOD_CONNECTIONS; ++slot)
+    {
+        auto& src = modSrcCombos_[slot];
+        auto& dst = modDstCombos_[slot];
+        auto& dep = modDepthSliders_[slot];
+        auto& lbl = modDepthLabels_[slot];
+        auto& rem = modRemoveBtns_[slot];
+
+        populateSourceCombo(src);
+        populateDestCombo  (dst);
+
+        lbl.setText("Depth", juce::dontSendNotification);
+        lbl.setFont(juce::FontOptions(10.0f));
+        lbl.setJustificationType(juce::Justification::centredLeft);
+        lbl.setColour(juce::Label::textColourId, juce::Colour(0xFFB3B0A6));
+
+        dep.setSliderStyle(juce::Slider::LinearHorizontal);
+        dep.setTextBoxStyle(juce::Slider::TextBoxRight, false, 50, 18);
+        dep.setRange(-1.0, 1.0, 0.0);
+        dep.setNumDecimalPlacesToDisplay(2);
+
+        rem.setButtonText(juce::String::fromUTF8("\xc3\x97"));
+        rem.setColour(juce::TextButton::textColourOffId, juce::Colour(0xFFE24B4A));
+        rem.setColour(juce::TextButton::buttonColourId,  juce::Colour(0xFF252522));
+
+        src.onChange = [this, slot] {
+            if (ignoreSliderCallbacks_) return;
+            const int id   = modSrcCombos_[slot].getSelectedId();
+            sendEdit(ManifoldEdit::Type::SetModConnectionSource, slot,
+                     (float)unpackType(id), (float)unpackIdx(id));
+        };
+        dst.onChange = [this, slot] {
+            if (ignoreSliderCallbacks_) return;
+            const int id = modDstCombos_[slot].getSelectedId();
+            sendEdit(ManifoldEdit::Type::SetModConnectionDest, slot,
+                     (float)unpackType(id), (float)unpackIdx(id));
+        };
+        dep.onValueChange = [this, slot] {
+            if (ignoreSliderCallbacks_) return;
+            sendEdit(ManifoldEdit::Type::SetModConnectionDepth, slot,
+                     (float)modDepthSliders_[slot].getValue());
+        };
+        rem.onClick = [this, slot] {
+            sendEdit(ManifoldEdit::Type::RemoveModConnection, slot, 0.0f);
+        };
+    }
+
+    // Header label + Add button
+    lblModHeader_.setText("Mod Matrix", juce::dontSendNotification);
+    lblModHeader_.setFont(juce::FontOptions(13.0f, juce::Font::bold));
+    lblModHeader_.setColour(juce::Label::textColourId, juce::Colour(0xFFEDE9DA));
+
+    btnModAdd_.setColour(juce::TextButton::buttonColourId, juce::Colour(0xFF2A2A26));
+    btnModAdd_.setColour(juce::TextButton::textColourOffId, juce::Colour(0xFFEDE9DA));
+    btnModAdd_.onClick = [this] {
+        sendEdit(ManifoldEdit::Type::AddModConnection, 0, 0.0f);
+    };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1658,6 +1900,91 @@ void MorphosEditor::updatePanel()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Mod-tab layout + refresh
+//
+// layoutModTabContent positions every row's widgets (and hides rows whose
+// connection slot isn't active). Returns the total content height so
+// layoutPanel can size panelContentMod_.
+//
+// updateModTab pulls the latest snapshot and syncs each row's combo selections
+// and depth slider to the connection's current state.
+// ─────────────────────────────────────────────────────────────────────────────
+
+int MorphosEditor::layoutModTabContent(int contentW)
+{
+    constexpr int COMBO_H    = 22;
+    constexpr int SLIDER_H   = 20;
+    constexpr int ROW_GAP    = 6;
+    constexpr int REMOVE_W   = 22;
+    constexpr int HEADER_H   = 22;
+    constexpr int BTN_ROW_H  = 22;
+
+    const auto& state = processor_.getPhysicsStateForUI();
+
+    int y = 0;
+    lblModHeader_.setBounds(0, y, contentW, HEADER_H);
+    y += HEADER_H + ROW_GAP;
+
+    for (int slot = 0; slot < MAX_MOD_CONNECTIONS; ++slot)
+    {
+        const bool active = state.modConnections[slot].active;
+
+        auto& src = modSrcCombos_[slot];
+        auto& dst = modDstCombos_[slot];
+        auto& dep = modDepthSliders_[slot];
+        auto& lbl = modDepthLabels_[slot];
+        auto& rem = modRemoveBtns_[slot];
+
+        src.setVisible(active);
+        dst.setVisible(active);
+        dep.setVisible(active);
+        lbl.setVisible(active);
+        rem.setVisible(active);
+        if (!active) continue;
+
+        // Row layout (~70 px tall):
+        //   [Src ComboBox             ] [×]
+        //   [Dst ComboBox                  ]
+        //   [Depth label] [Depth slider     ]
+        src.setBounds(0, y, contentW - REMOVE_W - 2, COMBO_H);
+        rem.setBounds(contentW - REMOVE_W, y, REMOVE_W, COMBO_H);
+        y += COMBO_H + 2;
+        dst.setBounds(0, y, contentW, COMBO_H);
+        y += COMBO_H + 2;
+        lbl.setBounds(0, y, 36, SLIDER_H);
+        dep.setBounds(36, y, contentW - 36, SLIDER_H);
+        y += SLIDER_H + ROW_GAP;
+    }
+
+    btnModAdd_.setBounds(0, y, contentW, BTN_ROW_H);
+    y += BTN_ROW_H;
+
+    return y;
+}
+
+void MorphosEditor::updateModTab()
+{
+    const auto& state = processor_.getPhysicsStateForUI();
+    ignoreSliderCallbacks_ = true;
+    for (int slot = 0; slot < MAX_MOD_CONNECTIONS; ++slot)
+    {
+        const auto& c = state.modConnections[slot];
+        // Skip setSelectedId / setValue calls when the widget already shows
+        // the snapshot's value — avoids spurious onChange firings and prevents
+        // the combo's dropdown from being yanked closed if it's currently open.
+        const int srcId = packTypeIdx((int)c.srcType, c.srcIndex);
+        const int dstId = packTypeIdx((int)c.dstType, c.dstIndex);
+        if (modSrcCombos_[slot].getSelectedId() != srcId)
+            modSrcCombos_[slot].setSelectedId(srcId, juce::dontSendNotification);
+        if (modDstCombos_[slot].getSelectedId() != dstId)
+            modDstCombos_[slot].setSelectedId(dstId, juce::dontSendNotification);
+        if (modDepthSliders_[slot].getValue() != (double)c.depth)
+            modDepthSliders_[slot].setValue(c.depth, juce::dontSendNotification);
+    }
+    ignoreSliderCallbacks_ = false;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // sendEdit — convenience wrapper; dispatches a ManifoldEdit to physics thread
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1774,6 +2101,23 @@ void MorphosEditor::timerCallback()
             trails_[i].push(m.x, m.y);
         else
             trails_[i].clear();
+    }
+
+    // Mod-tab refresh: only re-layout + re-sync when the active-connection
+    // count actually changes. Calling updateModTab every tick would race the
+    // physics → snapshot round-trip and revert the user's in-flight combo
+    // selection back to the stale snapshot value, which manifested as
+    // "selections don't stick after deleting a mod."
+    if (panelMode_ == PanelMode::Mod)
+    {
+        int active = 0;
+        for (const auto& c : state.modConnections) if (c.active) ++active;
+        if (active != lastModActiveCount_)
+        {
+            lastModActiveCount_ = active;
+            layoutPanel(getPanelBounds());
+            updateModTab();
+        }
     }
 
     repaint();

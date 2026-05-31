@@ -6,6 +6,7 @@
 #include "EffectZone.h"
 #include "FieldObject.h"
 #include "FluxGate.h"
+#include "ModMatrix.h"
 #include "PathObject.h"
 #include "TangentPath.h"
 #include "TrajectoryPath.h"
@@ -262,6 +263,10 @@ struct PhysicsStateSnapshot
     std::array<PathObjectSnapshot,     MAX_PATH_OBJECTS>     pathObjects{};
     std::array<TrajectoryPathSnapshot, MAX_TRAJECTORY_PATHS> trajectoryPaths{};
     std::array<TangentPathSnapshot,    MAX_TANGENT_PATHS>    tangentPaths{};
+    // Mod-matrix connections — the same struct is used both physics-side and
+    // in the snapshot since it's small and POD. UI reads it for the Mod-tab
+    // list; physics evaluates active rows each tick.
+    std::array<ModConnection,          MAX_MOD_CONNECTIONS>  modConnections{};
 
     int              activeMorphonCount       = 0;
     int              activeFieldObjCount      = 0;
@@ -351,6 +356,19 @@ struct ManifoldEdit
         SetFluxGateAngle,         // x = angleRad [-π, +π]
         SetFluxGateShape,         // x = (float)cast of FluxGateShape uint8_t
         SetFluxGateRadius,        // x = circle radius [0.02, 0.45]
+
+        // ── Mod matrix (Phase 6) ──────────────────────────────────────────────
+        // index = connection slot [0, MAX_MOD_CONNECTIONS-1]
+        AddModConnection,         // Activate the first inactive slot — UI ignores `index`. Source and dest default
+                                  //   to None until SetModConnectionSource / SetModConnectionDest follow.
+        RemoveModConnection,      // Deactivate connection[index]
+        SetModConnectionSource,   // x = (float)ModSourceType,  y = (float)srcIndex
+        SetModConnectionDest,     // x = (float)ModDestType,    y = (float)dstIndex
+                                  //   — also re-captures `base` from the dest's current value
+        SetModConnectionDepth,    // x = depth [-1, +1]
+        SetModConnectionBase,     // x = base — issued by sliders when their dest is under modulation,
+                                  //   so the user-facing edit updates the connection's pivot value
+                                  //   instead of being overwritten by the mod write next tick
 
         // ── Path object spawn / remove / edits ────────────────────────────────
         AddPathObject,            // Spawn a new PathObject at (x,y) with defaults

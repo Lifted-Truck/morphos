@@ -8,6 +8,7 @@
 #include "EffectZone.h"
 #include "FieldObject.h"
 #include "FluxGate.h"
+#include "ModMatrix.h"
 #include "PathObject.h"
 #include "TangentPath.h"
 #include "TrajectoryPath.h"
@@ -62,6 +63,7 @@ struct PatchState
     std::array<PathObject,     MAX_PATH_OBJECTS>    pathObjects{};
     std::array<TrajectoryPath, MAX_TRAJECTORY_PATHS> trajectoryPaths{};
     std::array<TangentPath,    MAX_TANGENT_PATHS>    tangentPaths{};
+    std::array<ModConnection,  MAX_MOD_CONNECTIONS>  modConnections{};
     int              activeAnchorCount = 0;
     BoundaryBehavior boundary          = BoundaryBehavior::Wrap;
     float            glideTimeSec      = 0.0f;
@@ -141,6 +143,7 @@ private:
     void applyPathConstraints();
     void advanceTrajectoryPaths(double dt);
     void updateAttachedEmitters();
+    void evaluateModMatrix();
     void writeSnapshot();
 
     // ── Note handling (physics thread only) ──────────────────────────────────
@@ -215,6 +218,19 @@ private:
 
     // ── Tangent-force ("Flow") paths — apply stream forces to nearby Morphons ──
     std::array<TangentPath, MAX_TANGENT_PATHS> tangentPaths_{};
+
+    // ── Mod-matrix connections — evaluated each tick before integration ──────
+    std::array<ModConnection, MAX_MOD_CONNECTIONS> modConnections_{};
+
+    // Internal helpers. writeModDest returns true if a write occurred (so the
+    // caller knows whether to invalidate the field grid for FieldObject moves).
+    // readModSource returns 0.5 (neutral) for invalid/inactive sources so a
+    // stale connection does nothing rather than swinging its dest to a rail.
+    bool  writeModDest (ModDestType type, int index, float value);
+    float readModSource(ModSourceType type, int index) const;
+    // Returns the slot of the active connection whose destination is (type, index),
+    // or -1 if no connection targets that destination.
+    int   findActiveConnectionForDest(ModDestType type, int index) const noexcept;
 
     uint64_t tickIndex_        = 0;
     double   simulationTimeMs_ = 0.0;

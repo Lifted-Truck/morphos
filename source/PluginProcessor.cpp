@@ -462,6 +462,21 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         manifoldData.appendChild(node, nullptr);
     }
 
+    // Mod-matrix connections
+    for (int i = 0; i < MAX_MOD_CONNECTIONS; ++i)
+    {
+        const auto& c = snap.modConnections[i];
+        if (!c.active) continue;
+        auto node = juce::ValueTree("Mod");
+        node.setProperty("srcType",  (int)c.srcType,  nullptr);
+        node.setProperty("srcIndex", c.srcIndex,      nullptr);
+        node.setProperty("dstType",  (int)c.dstType,  nullptr);
+        node.setProperty("dstIndex", c.dstIndex,      nullptr);
+        node.setProperty("depth",    c.depth,         nullptr);
+        node.setProperty("base",     c.base,          nullptr);
+        manifoldData.appendChild(node, nullptr);
+    }
+
     state.appendChild(manifoldData, nullptr);
 
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
@@ -513,7 +528,7 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             ed->setSize(w, h);
     }
 
-    int fieldObjSlot = 0, emitterSlot = 0, anchorSlot = 0, zoneSlot = 0, gateSlot = 0, pathSlot = 0, trajSlot = 0, flowSlot = 0;
+    int fieldObjSlot = 0, emitterSlot = 0, anchorSlot = 0, zoneSlot = 0, gateSlot = 0, pathSlot = 0, trajSlot = 0, flowSlot = 0, modSlot = 0;
 
     for (int i = 0; i < manifoldData.getNumChildren(); ++i)
     {
@@ -629,6 +644,17 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             tp.chirality = (float)child.getProperty("chirality", 1.0f);
             tp.trajectoryPathIndex = (int)child.getProperty("trajPath", -1);
             tp.active    = true;
+        }
+        else if (child.hasType("Mod") && modSlot < MAX_MOD_CONNECTIONS)
+        {
+            auto& c    = patch.modConnections[modSlot++];
+            c.srcType  = static_cast<ModSourceType>((int)child.getProperty("srcType", 0));
+            c.srcIndex = (int)child.getProperty("srcIndex", 0);
+            c.dstType  = static_cast<ModDestType>((int)child.getProperty("dstType", 0));
+            c.dstIndex = (int)child.getProperty("dstIndex", 0);
+            c.depth    = (float)child.getProperty("depth",   0.0f);
+            c.base     = (float)child.getProperty("base",    0.0f);
+            c.active   = true;
         }
     }
 

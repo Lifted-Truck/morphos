@@ -74,10 +74,24 @@ PhysicsEngine::PhysicsEngine()
     emitters_[0].active       = true;
 
     // ── Timbral Anchors for Phase 2/3 demonstration ───────────────────────────
+    // Use field-by-field assignment rather than positional brace init so a
+    // new member added between existing fields (like trajectoryPathIndex)
+    // doesn't silently shift positional values into the wrong slot.
+    //
     // Anchor 0 — upper-left: dark (low rolloff brightness) and purely harmonic
-    timbralAnchors_[0] = { 0.15f, 0.15f, 0.05f, 0.00f, true };
+    timbralAnchors_[0].x       = 0.15f;
+    timbralAnchors_[0].y       = 0.15f;
+    timbralAnchors_[0].timbreX = 0.05f;
+    timbralAnchors_[0].timbreY = 0.00f;
+    timbralAnchors_[0].trajectoryPathIndex = -1;
+    timbralAnchors_[0].active  = true;
     // Anchor 1 — lower-right: bright (flat spectrum) and heavily inharmonic
-    timbralAnchors_[1] = { 0.85f, 0.85f, 0.92f, 0.80f, true };
+    timbralAnchors_[1].x       = 0.85f;
+    timbralAnchors_[1].y       = 0.85f;
+    timbralAnchors_[1].timbreX = 0.92f;
+    timbralAnchors_[1].timbreY = 0.80f;
+    timbralAnchors_[1].trajectoryPathIndex = -1;
+    timbralAnchors_[1].active  = true;
 
     fieldGrid_.dirty = true;  // Will be rebuilt on first tick
 }
@@ -226,6 +240,9 @@ void PhysicsEngine::tick(double dtSeconds)
     drainEditCommands();          // Apply UI edits first so subsequent steps see them
     advanceTrajectoryPaths(dtSeconds);
     updateAttachedEmitters();     // Move attached Emitters to their path positions
+    evaluateModMatrix();          // Mod sources now reflect new trajectory positions;
+                                  //   any FieldObject param writes here also flag the
+                                  //   grid dirty so the rebuild below picks them up.
     drainNoteEvents();            // Note-ons now read updated Emitter positions
     rebuildFieldGridIfDirty();
     integrateMorphons(dtSeconds);
@@ -509,6 +526,7 @@ void PhysicsEngine::drainEditCommands()
                         a.y      = e.y;
                         a.timbreX = 0.5f;
                         a.timbreY = 0.0f;
+                        a.trajectoryPathIndex = -1;   // Don't inherit stale state from a previously-removed slot
                         a.active  = true;
                         ++activeAnchorCount_;
                     }
@@ -649,6 +667,125 @@ void PhysicsEngine::drainEditCommands()
                 case ManifoldEdit::Type::SetFluxGateRadius:
                     if (idx >= 0 && idx < MAX_FLUX_GATES)
                         fluxGates_[idx].radius = juce::jlimit(0.02f, 0.45f, e.x);
+                    break;
+
+                // ── Mod-matrix edits ───────────────────────────────────────────
+                case ManifoldEdit::Type::AddModConnection:
+                {
+                    int slot = -1;
+                    for (int k = 0; k < MAX_MOD_CONNECTIONS; ++k)
+                        if (!modConnections_[k].active) { slot = k; break; }
+                    if (slot < 0) break;
+                    auto& c    = modConnections_[slot];
+                    c.srcType  = ModSourceType::None;
+                    c.srcIndex = 0;
+                    c.dstType  = ModDestType::None;
+                    c.dstIndex = 0;
+                    c.depth    = 0.0f;
+                    c.base     = 0.0f;
+                    c.active   = true;
+                    break;
+                }
+
+                case ManifoldEdit::Type::RemoveModConnection:
+                    if (idx >= 0 && idx < MAX_MOD_CONNECTIONS)
+                        modConnections_[idx].active = false;
+                    break;
+
+                case ManifoldEdit::Type::SetModConnectionSource:
+                    if (idx >= 0 && idx < MAX_MOD_CONNECTIONS)
+                    {
+                        auto& c    = modConnections_[idx];
+                        c.srcType  = static_cast<ModSourceType>(
+                            static_cast<uint8_t>(static_cast<int>(e.x)));
+                        c.srcIndex = static_cast<int>(e.y);
+                    }
+                    break;
+
+                case ManifoldEdit::Type::SetModConnectionDest:
+                    if (idx >= 0 && idx < MAX_MOD_CONNECTIONS)
+                    {
+                        auto& c    = modConnections_[idx];
+                        c.dstType  = static_cast<ModDestType>(
+                            static_cast<uint8_t>(static_cast<int>(e.x)));
+                        c.dstIndex = static_cast<int>(e.y);
+                        // Capture the dest's current value as the base so the
+                        // initial modulation pivots around what the user sees
+                        // on the slider right now.
+                        c.base = 0.0f;
+                        auto readX = [&](auto& arr, int n) {
+                            if (c.dstIndex >= 0 && c.dstIndex < n)
+                                c.base = arr[c.dstIndex].x;
+                        };
+                        auto readY = [&](auto& arr, int n) {
+                            if (c.dstIndex >= 0 && c.dstIndex < n)
+                                c.base = arr[c.dstIndex].y;
+                        };
+                        switch (c.dstType)
+                        {
+                            // Object positions
+                            case ModDestType::FieldObjectX:    readX(fieldObjects_,    MAX_FIELD_OBJECTS);    break;
+                            case ModDestType::FieldObjectY:    readY(fieldObjects_,    MAX_FIELD_OBJECTS);    break;
+                            case ModDestType::EmitterX:        readX(emitters_,        MAX_EMITTERS);         break;
+                            case ModDestType::EmitterY:        readY(emitters_,        MAX_EMITTERS);         break;
+                            case ModDestType::AnchorX:         readX(timbralAnchors_,  activeAnchorCount_);   break;
+                            case ModDestType::AnchorY:         readY(timbralAnchors_,  activeAnchorCount_);   break;
+                            case ModDestType::EffectZoneX:     readX(effectZones_,     MAX_EFFECT_ZONES);     break;
+                            case ModDestType::EffectZoneY:     readY(effectZones_,     MAX_EFFECT_ZONES);     break;
+                            case ModDestType::FluxGateX:       readX(fluxGates_,       MAX_FLUX_GATES);       break;
+                            case ModDestType::FluxGateY:       readY(fluxGates_,       MAX_FLUX_GATES);       break;
+                            case ModDestType::PathObjectX:     readX(pathObjects_,     MAX_PATH_OBJECTS);     break;
+                            case ModDestType::PathObjectY:     readY(pathObjects_,     MAX_PATH_OBJECTS);     break;
+                            case ModDestType::TrajectoryPathX: readX(trajectoryPaths_, MAX_TRAJECTORY_PATHS); break;
+                            case ModDestType::TrajectoryPathY: readY(trajectoryPaths_, MAX_TRAJECTORY_PATHS); break;
+                            case ModDestType::TangentPathX:    readX(tangentPaths_,    MAX_TANGENT_PATHS);    break;
+                            case ModDestType::TangentPathY:    readY(tangentPaths_,    MAX_TANGENT_PATHS);    break;
+
+                            // Non-position destinations
+                            case ModDestType::FieldObjectStrength:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_FIELD_OBJECTS)
+                                    c.base = fieldObjects_[c.dstIndex].strength;
+                                break;
+                            case ModDestType::FieldObjectRadius:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_FIELD_OBJECTS)
+                                    c.base = fieldObjects_[c.dstIndex].radius;
+                                break;
+                            case ModDestType::EffectZoneDepth:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_EFFECT_ZONES)
+                                    c.base = effectZones_[c.dstIndex].depth;
+                                break;
+                            case ModDestType::EffectZoneRadius:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_EFFECT_ZONES)
+                                    c.base = effectZones_[c.dstIndex].radius;
+                                break;
+                            case ModDestType::TrajectoryCurrentT:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_TRAJECTORY_PATHS)
+                                    c.base = trajectoryPaths_[c.dstIndex].currentT;
+                                break;
+                            case ModDestType::AnchorTimbreX:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_TIMBRAL_ANCHORS)
+                                    c.base = timbralAnchors_[c.dstIndex].timbreX;
+                                break;
+                            case ModDestType::AnchorTimbreY:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_TIMBRAL_ANCHORS)
+                                    c.base = timbralAnchors_[c.dstIndex].timbreY;
+                                break;
+                            case ModDestType::GlobalFriction:
+                                c.base = globalFriction_;
+                                break;
+                            case ModDestType::None: default: break;
+                        }
+                    }
+                    break;
+
+                case ManifoldEdit::Type::SetModConnectionDepth:
+                    if (idx >= 0 && idx < MAX_MOD_CONNECTIONS)
+                        modConnections_[idx].depth = juce::jlimit(-1.0f, 1.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetModConnectionBase:
+                    if (idx >= 0 && idx < MAX_MOD_CONNECTIONS)
+                        modConnections_[idx].base = e.x;
                     break;
 
                 // ── Path object spawn / remove / edits ────────────────────────
@@ -1109,6 +1246,175 @@ int PhysicsEngine::findFreeSlot() const noexcept
         if (!morphons_[i].active)
             return i;
     return -1;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mod matrix
+//
+// Each tick, every active connection samples its source (normalised to [0,1])
+// and writes the dest = base + (src − 0.5) × 2 × depth. Sources that reference
+// a removed/inactive object return the neutral 0.5, so a stale connection is
+// effectively silent rather than pinning its dest at one rail. FieldObject
+// param writes flag the field grid dirty so the rebuild call later in the
+// tick picks them up.
+// ─────────────────────────────────────────────────────────────────────────────
+
+float PhysicsEngine::readModSource(ModSourceType type, int index) const
+{
+    switch (type)
+    {
+        case ModSourceType::TrajectoryT:
+            if (index >= 0 && index < MAX_TRAJECTORY_PATHS && trajectoryPaths_[index].active)
+                return juce::jlimit(0.0f, 1.0f, trajectoryPaths_[index].currentT);
+            break;
+
+        case ModSourceType::TrajectoryX:
+        case ModSourceType::TrajectoryY:
+            if (index >= 0 && index < MAX_TRAJECTORY_PATHS && trajectoryPaths_[index].active)
+            {
+                float tx, ty;
+                trajectoryPathSample(trajectoryPaths_[index], trajectoryPaths_[index].currentT, tx, ty);
+                return juce::jlimit(0.0f, 1.0f,
+                    type == ModSourceType::TrajectoryX ? tx : ty);
+            }
+            break;
+
+        case ModSourceType::None: default: break;
+    }
+    return 0.5f;   // Neutral — bipolar mid-point so an inactive source contributes nothing.
+}
+
+bool PhysicsEngine::writeModDest(ModDestType type, int index, float value)
+{
+    // Generic per-object X/Y writers. Position values are clamped to [0,1]
+    // manifold coords. For FieldObject moves the field grid must be rebuilt
+    // (forces depend on position); other object types don't cache force fields.
+    auto writeObjX = [&](auto& arr, int n, bool dirtyGrid) -> bool {
+        if (index >= 0 && index < n)
+        {
+            arr[index].x = juce::jlimit(0.0f, 1.0f, value);
+            if (dirtyGrid) fieldGrid_.dirty = true;
+            return true;
+        }
+        return false;
+    };
+    auto writeObjY = [&](auto& arr, int n, bool dirtyGrid) -> bool {
+        if (index >= 0 && index < n)
+        {
+            arr[index].y = juce::jlimit(0.0f, 1.0f, value);
+            if (dirtyGrid) fieldGrid_.dirty = true;
+            return true;
+        }
+        return false;
+    };
+
+    switch (type)
+    {
+        // ── Object positions ──────────────────────────────────────────────────
+        case ModDestType::FieldObjectX:   return writeObjX(fieldObjects_,   MAX_FIELD_OBJECTS,    true);
+        case ModDestType::FieldObjectY:   return writeObjY(fieldObjects_,   MAX_FIELD_OBJECTS,    true);
+        case ModDestType::EmitterX:       return writeObjX(emitters_,       MAX_EMITTERS,         false);
+        case ModDestType::EmitterY:       return writeObjY(emitters_,       MAX_EMITTERS,         false);
+        case ModDestType::AnchorX:        return writeObjX(timbralAnchors_, activeAnchorCount_,   false);
+        case ModDestType::AnchorY:        return writeObjY(timbralAnchors_, activeAnchorCount_,   false);
+        case ModDestType::EffectZoneX:    return writeObjX(effectZones_,    MAX_EFFECT_ZONES,     false);
+        case ModDestType::EffectZoneY:    return writeObjY(effectZones_,    MAX_EFFECT_ZONES,     false);
+        case ModDestType::FluxGateX:      return writeObjX(fluxGates_,      MAX_FLUX_GATES,       false);
+        case ModDestType::FluxGateY:      return writeObjY(fluxGates_,      MAX_FLUX_GATES,       false);
+        case ModDestType::PathObjectX:    return writeObjX(pathObjects_,    MAX_PATH_OBJECTS,     false);
+        case ModDestType::PathObjectY:    return writeObjY(pathObjects_,    MAX_PATH_OBJECTS,     false);
+        case ModDestType::TrajectoryPathX:return writeObjX(trajectoryPaths_, MAX_TRAJECTORY_PATHS, false);
+        case ModDestType::TrajectoryPathY:return writeObjY(trajectoryPaths_, MAX_TRAJECTORY_PATHS, false);
+        case ModDestType::TangentPathX:   return writeObjX(tangentPaths_,   MAX_TANGENT_PATHS,    false);
+        case ModDestType::TangentPathY:   return writeObjY(tangentPaths_,   MAX_TANGENT_PATHS,    false);
+
+        case ModDestType::FieldObjectStrength:
+            if (index >= 0 && index < MAX_FIELD_OBJECTS)
+            {
+                fieldObjects_[index].strength = juce::jlimit(-1.0f, 1.0f, value);
+                fieldGrid_.dirty = true;
+                return true;
+            }
+            break;
+        case ModDestType::FieldObjectRadius:
+            if (index >= 0 && index < MAX_FIELD_OBJECTS)
+            {
+                fieldObjects_[index].radius = juce::jlimit(0.05f, 0.95f, value);
+                fieldGrid_.dirty = true;
+                return true;
+            }
+            break;
+        case ModDestType::EffectZoneDepth:
+            if (index >= 0 && index < MAX_EFFECT_ZONES)
+            {
+                effectZones_[index].depth = juce::jlimit(-24.0f, 24.0f, value);
+                return true;
+            }
+            break;
+        case ModDestType::EffectZoneRadius:
+            if (index >= 0 && index < MAX_EFFECT_ZONES)
+            {
+                effectZones_[index].radius = juce::jlimit(0.02f, 0.45f, value);
+                return true;
+            }
+            break;
+        case ModDestType::TrajectoryCurrentT:
+            if (index >= 0 && index < MAX_TRAJECTORY_PATHS
+                && trajectoryPaths_[index].mode == TrajectoryMode::Manual)
+            {
+                // Wrap into [0, 1) so a modulator overshooting the endpoints
+                // produces a smooth loop instead of clamping at the boundary.
+                float t = std::fmod(value, 1.0f);
+                if (t < 0.0f) t += 1.0f;
+                trajectoryPaths_[index].currentT = t;
+                return true;
+            }
+            break;
+        case ModDestType::AnchorTimbreX:
+            if (index >= 0 && index < MAX_TIMBRAL_ANCHORS)
+            {
+                timbralAnchors_[index].timbreX = juce::jlimit(0.0f, 1.0f, value);
+                return true;
+            }
+            break;
+        case ModDestType::AnchorTimbreY:
+            if (index >= 0 && index < MAX_TIMBRAL_ANCHORS)
+            {
+                timbralAnchors_[index].timbreY = juce::jlimit(0.0f, 1.0f, value);
+                return true;
+            }
+            break;
+        case ModDestType::GlobalFriction:
+            globalFriction_ = juce::jlimit(0.0f, 0.1f, value);
+            return true;
+        case ModDestType::None: default: break;
+    }
+    return false;
+}
+
+int PhysicsEngine::findActiveConnectionForDest(ModDestType type, int index) const noexcept
+{
+    if (type == ModDestType::None) return -1;
+    for (int i = 0; i < MAX_MOD_CONNECTIONS; ++i)
+    {
+        const auto& c = modConnections_[i];
+        if (c.active && c.dstType == type && c.dstIndex == index)
+            return i;
+    }
+    return -1;
+}
+
+void PhysicsEngine::evaluateModMatrix()
+{
+    for (auto& c : modConnections_)
+    {
+        if (!c.active) continue;
+        if (c.srcType == ModSourceType::None || c.dstType == ModDestType::None) continue;
+
+        const float src    = readModSource(c.srcType, c.srcIndex);
+        const float offset = (src - 0.5f) * 2.0f * c.depth;   // bipolar around 0.5
+        writeModDest(c.dstType, c.dstIndex, c.base + offset);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1885,6 +2191,10 @@ void PhysicsEngine::writeSnapshot()
         dst.active  = (i < activeAnchorCount_);
     }
 
+    // Copy mod-matrix connections for the UI's Mod tab.
+    for (int i = 0; i < MAX_MOD_CONNECTIONS; ++i)
+        snap.modConnections[i] = modConnections_[i];
+
     bridge_.publish();
 }
 
@@ -1908,6 +2218,7 @@ void PhysicsEngine::applyPatch(const PatchState& patch)
     pathObjects_        = patch.pathObjects;
     trajectoryPaths_    = patch.trajectoryPaths;
     tangentPaths_       = patch.tangentPaths;
+    modConnections_     = patch.modConnections;
     activeAnchorCount_  = patch.activeAnchorCount;
     globalBoundary_     = patch.boundary;
     globalGlideTimeSec_ = patch.glideTimeSec;
