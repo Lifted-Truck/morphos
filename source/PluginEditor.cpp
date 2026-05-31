@@ -1335,12 +1335,38 @@ void MorphosEditor::setupModMatrix()
     {
         cb.clear(juce::dontSendNotification);
         cb.addItem("(none)", packTypeIdx((int)ModSourceType::None, 0));
+
+        cb.addSectionHeading("Trajectories");
         for (int i = 0; i < MAX_TRAJECTORY_PATHS; ++i)
         {
             cb.addItem("Traj " + juce::String(i) + " t", packTypeIdx((int)ModSourceType::TrajectoryT, i));
             cb.addItem("Traj " + juce::String(i) + " x", packTypeIdx((int)ModSourceType::TrajectoryX, i));
             cb.addItem("Traj " + juce::String(i) + " y", packTypeIdx((int)ModSourceType::TrajectoryY, i));
         }
+
+        cb.addSectionHeading("MIDI");
+        cb.addItem("Keytrack", packTypeIdx((int)ModSourceType::Keytrack, 0));
+        cb.addItem("Velocity", packTypeIdx((int)ModSourceType::Velocity, 0));
+        // 128 CCs. Convenience labels on a few common ones to help the user
+        // pick them out without scrolling-and-counting; the rest are bare
+        // "CC N" entries.
+        auto ccLabel = [](int n) -> juce::String {
+            juce::String label = "CC " + juce::String(n);
+            switch (n)
+            {
+                case 1:   label += " (Mod Wheel)";  break;
+                case 7:   label += " (Volume)";     break;
+                case 10:  label += " (Pan)";        break;
+                case 11:  label += " (Expression)"; break;
+                case 64:  label += " (Sustain)";    break;
+                case 71:  label += " (Resonance)";  break;
+                case 74:  label += " (Cutoff)";     break;
+                default:  break;
+            }
+            return label;
+        };
+        for (int i = 0; i < 128; ++i)
+            cb.addItem(ccLabel(i), packTypeIdx((int)ModSourceType::MidiCC, i));
     };
     auto populateDestCombo = [](juce::ComboBox& cb)
     {

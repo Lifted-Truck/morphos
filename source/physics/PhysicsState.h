@@ -450,9 +450,12 @@ private:
 // ─────────────────────────────────────────────────────────────────────────────
 struct NoteEvent
 {
-    enum class Type : uint8_t { NoteOn, NoteOff };
+    // ControlChange repurposes the `note` field as the CC number (0-127) and
+    // `velocity` as the CC value (0-127). Keeps the audio→physics FIFO single-
+    // typed without adding a parallel queue just for mod-matrix MIDI sources.
+    enum class Type : uint8_t { NoteOn, NoteOff, ControlChange };
     Type type     = Type::NoteOff;
     int  channel  = 1;
-    int  note     = 60;
-    int  velocity = 0;
+    int  note     = 60;   // For ControlChange: CC number (0-127)
+    int  velocity = 0;    // For ControlChange: CC value (0-127)
 };

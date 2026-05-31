@@ -35,6 +35,11 @@ enum class ModSourceType : uint8_t
     TrajectoryT,     // trajectoryPaths_[index].currentT     [0,1]
     TrajectoryX,     // sampled x at trajectory's currentT   [0,1]
     TrajectoryY,     // sampled y at trajectory's currentT   [0,1]
+    // MIDI sources — global (not per-voice) for v1. The last received value
+    // across all channels is what the source returns.
+    MidiCC,          // midiCC_[index] / 127.0f              [0,1]; index = CC #
+    Keytrack,        // last note number / 127.0f            [0,1]
+    Velocity,        // last note-on velocity / 127.0f       [0,1]
 };
 
 // Destinations. Object-position writes (X/Y) cover every canvas type so the

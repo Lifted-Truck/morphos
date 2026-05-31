@@ -222,6 +222,14 @@ private:
     // ── Mod-matrix connections — evaluated each tick before integration ──────
     std::array<ModConnection, MAX_MOD_CONNECTIONS> modConnections_{};
 
+    // ── MIDI-derived mod-source state ────────────────────────────────────────
+    // Latest value of each CC (0-127), the most recent note number, and the
+    // most recent note-on velocity. Updated by drainNoteEvents and read by
+    // readModSource. Channel-agnostic for v1.
+    std::array<uint8_t, 128> midiCC_{};
+    uint8_t                  lastNote_     = 60;
+    uint8_t                  lastVelocity_ = 0;
+
     // Internal helpers. writeModDest returns true if a write occurred (so the
     // caller knows whether to invalidate the field grid for FieldObject moves).
     // readModSource returns 0.5 (neutral) for invalid/inactive sources so a

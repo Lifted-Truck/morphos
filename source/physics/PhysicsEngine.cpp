@@ -240,10 +240,11 @@ void PhysicsEngine::tick(double dtSeconds)
     drainEditCommands();          // Apply UI edits first so subsequent steps see them
     advanceTrajectoryPaths(dtSeconds);
     updateAttachedEmitters();     // Move attached Emitters to their path positions
-    evaluateModMatrix();          // Mod sources now reflect new trajectory positions;
-                                  //   any FieldObject param writes here also flag the
-                                  //   grid dirty so the rebuild below picks them up.
-    drainNoteEvents();            // Note-ons now read updated Emitter positions
+    drainNoteEvents();            // Note-ons read updated Emitter positions and also
+                                  //   refresh MIDI mod-source state (CC, keytrack, velocity).
+    evaluateModMatrix();          // Now sees this tick's MIDI events as well as the
+                                  //   fresh trajectory positions; FieldObject writes
+                                  //   here flag the grid dirty before the rebuild.
     rebuildFieldGridIfDirty();
     integrateMorphons(dtSeconds);
     applyPathConstraints();   // Snap pinned Morphons before gates so crossings
@@ -272,10 +273,24 @@ void PhysicsEngine::drainNoteEvents()
         for (int i = start; i < start + count; ++i)
         {
             const auto& e = eventBuffer_[i];
-            if (e.type == NoteEvent::Type::NoteOn)
-                handleNoteOn(e.channel, e.note, e.velocity);
-            else
-                handleNoteOff(e.channel, e.note);
+            switch (e.type)
+            {
+                case NoteEvent::Type::NoteOn:
+                    // Mod-matrix Keytrack / Velocity sources track the last
+                    // note-on across all channels — set before handleNoteOn
+                    // so a mod write within the same tick sees the new note.
+                    lastNote_     = (uint8_t) juce::jlimit(0, 127, e.note);
+                    lastVelocity_ = (uint8_t) juce::jlimit(0, 127, e.velocity);
+                    handleNoteOn(e.channel, e.note, e.velocity);
+                    break;
+                case NoteEvent::Type::NoteOff:
+                    handleNoteOff(e.channel, e.note);
+                    break;
+                case NoteEvent::Type::ControlChange:
+                    if (e.note >= 0 && e.note < 128)
+                        midiCC_[e.note] = (uint8_t) juce::jlimit(0, 127, e.velocity);
+                    break;
+            }
         }
     };
 
@@ -1278,6 +1293,17 @@ float PhysicsEngine::readModSource(ModSourceType type, int index) const
                     type == ModSourceType::TrajectoryX ? tx : ty);
             }
             break;
+
+        case ModSourceType::MidiCC:
+            if (index >= 0 && index < 128)
+                return midiCC_[index] / 127.0f;
+            break;
+
+        case ModSourceType::Keytrack:
+            return lastNote_ / 127.0f;
+
+        case ModSourceType::Velocity:
+            return lastVelocity_ / 127.0f;
 
         case ModSourceType::None: default: break;
     }

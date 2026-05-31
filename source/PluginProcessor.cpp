@@ -116,6 +116,17 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                 0
             });
         }
+        else if (msg.isController())
+        {
+            // CC values feed the mod-matrix MidiCC source. The NoteEvent
+            // struct reuses `note` as CC number and `velocity` as CC value.
+            physicsEngine_.pushNoteEvent({
+                NoteEvent::Type::ControlChange,
+                msg.getChannel(),
+                msg.getControllerNumber(),
+                msg.getControllerValue()
+            });
+        }
     }
 
     // ── 3. Forward global time scale to physics ───────────────────────────────
