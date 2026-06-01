@@ -680,8 +680,9 @@ void MorphosEditor::setupSliders()
     };
     sldTransposeCents_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetEmitterTransposeCents,
-                     selection_.index, (float)sldTransposeCents_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetEmitterTransposeCents,
+                               selection_.index, (float)sldTransposeCents_.getValue(),
+                               ModDestType::EmitterTransposeCents);
     };
 
     // Pan slider
@@ -691,8 +692,9 @@ void MorphosEditor::setupSliders()
     addAndMakeVisible(lblEmitPan_); addAndMakeVisible(sldEmitPan_);
     sldEmitPan_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetEmitterPan,
-                     selection_.index, (float)sldEmitPan_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetEmitterPan,
+                               selection_.index, (float)sldEmitPan_.getValue(),
+                               ModDestType::EmitterPan);
     };
 
     // ── Terminus ───────────────────────────────────────────────────────────────
@@ -722,13 +724,15 @@ void MorphosEditor::setupSliders()
 
     sldTerminusStrength_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetEmitterTerminusStrength,
-                     selection_.index, (float)sldTerminusStrength_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetEmitterTerminusStrength,
+                               selection_.index, (float)sldTerminusStrength_.getValue(),
+                               ModDestType::EmitterTerminusStrength);
     };
     sldTerminusRadius_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetEmitterTerminusRadius,
-                     selection_.index, (float)sldTerminusRadius_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetEmitterTerminusRadius,
+                               selection_.index, (float)sldTerminusRadius_.getValue(),
+                               ModDestType::EmitterTerminusRadius);
     };
 
     // Launch angle: simple [-π, π] range displayed in degrees.
@@ -759,33 +763,39 @@ void MorphosEditor::setupSliders()
     sldEmitAngle_.onValueChange = [this]
     {
         if (ignoreSliderCallbacks_) return;
-        sendEdit(ManifoldEdit::Type::SetEmitterLaunchAngle,
-                 selection_.index, (float)sldEmitAngle_.getValue());
+        sendParamOrModBase(ManifoldEdit::Type::SetEmitterLaunchAngle,
+                           selection_.index, (float)sldEmitAngle_.getValue(),
+                           ModDestType::EmitterLaunchAngle);
     };
     sldEmitSpeed_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetEmitterLaunchSpeed,
-                     selection_.index, (float)sldEmitSpeed_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetEmitterLaunchSpeed,
+                               selection_.index, (float)sldEmitSpeed_.getValue(),
+                               ModDestType::EmitterLaunchSpeed);
     };
     sldEmitAttack_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetEmitterAttack,
-                     selection_.index, (float)sldEmitAttack_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetEmitterAttack,
+                               selection_.index, (float)sldEmitAttack_.getValue(),
+                               ModDestType::EmitterAttack);
     };
     sldEmitDecay_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetEmitterDecay,
-                     selection_.index, (float)sldEmitDecay_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetEmitterDecay,
+                               selection_.index, (float)sldEmitDecay_.getValue(),
+                               ModDestType::EmitterDecay);
     };
     sldEmitSustain_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetEmitterSustain,
-                     selection_.index, (float)sldEmitSustain_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetEmitterSustain,
+                               selection_.index, (float)sldEmitSustain_.getValue(),
+                               ModDestType::EmitterSustain);
     };
     sldEmitRelease_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetEmitterRelease,
-                     selection_.index, (float)sldEmitRelease_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetEmitterRelease,
+                               selection_.index, (float)sldEmitRelease_.getValue(),
+                               ModDestType::EmitterRelease);
     };
 
     // ── Effect zone controls ───────────────────────────────────────────────────
@@ -1146,8 +1156,9 @@ void MorphosEditor::setupSliders()
     addAndMakeVisible(lblEmitMass_); addAndMakeVisible(sldEmitMass_);
     sldEmitMass_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetEmitterSpawnMass,
-                     selection_.index, (float)sldEmitMass_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetEmitterSpawnMass,
+                               selection_.index, (float)sldEmitMass_.getValue(),
+                               ModDestType::EmitterSpawnMass);
     };
 
     // ── Glide time — portamento rate; always visible ───────────────────────────
@@ -1418,6 +1429,21 @@ void MorphosEditor::setupModMatrix()
         }
 
         cb.addSectionHeading("Object params");
+        for (int i = 0; i < MAX_EMITTERS; ++i)
+        {
+            const juce::String pre = "Emitter " + juce::String(i) + " ";
+            cb.addItem(pre + "launch angle",  packTypeIdx((int)ModDestType::EmitterLaunchAngle,      i));
+            cb.addItem(pre + "launch speed",  packTypeIdx((int)ModDestType::EmitterLaunchSpeed,      i));
+            cb.addItem(pre + "spawn mass",    packTypeIdx((int)ModDestType::EmitterSpawnMass,        i));
+            cb.addItem(pre + "attack",        packTypeIdx((int)ModDestType::EmitterAttack,           i));
+            cb.addItem(pre + "decay",         packTypeIdx((int)ModDestType::EmitterDecay,            i));
+            cb.addItem(pre + "sustain",       packTypeIdx((int)ModDestType::EmitterSustain,          i));
+            cb.addItem(pre + "release",       packTypeIdx((int)ModDestType::EmitterRelease,          i));
+            cb.addItem(pre + "trans cents",   packTypeIdx((int)ModDestType::EmitterTransposeCents,   i));
+            cb.addItem(pre + "pan",           packTypeIdx((int)ModDestType::EmitterPan,              i));
+            cb.addItem(pre + "term strength", packTypeIdx((int)ModDestType::EmitterTerminusStrength, i));
+            cb.addItem(pre + "term radius",   packTypeIdx((int)ModDestType::EmitterTerminusRadius,   i));
+        }
         for (int i = 0; i < MAX_FIELD_OBJECTS; ++i)
         {
             cb.addItem("Field " + juce::String(i) + " strength", packTypeIdx((int)ModDestType::FieldObjectStrength, i));
@@ -2023,6 +2049,26 @@ void MorphosEditor::sendEdit(ManifoldEdit::Type type, int index, float x, float 
     e.x     = x;
     e.y     = y;
     processor_.pushManifoldEdit(e);
+}
+
+void MorphosEditor::sendParamOrModBase(ManifoldEdit::Type plainSet, int dstIndex,
+                                        float value, ModDestType destType)
+{
+    if (dstIndex < 0) return;
+    const auto& state = processor_.getPhysicsStateForUI();
+    for (int s = 0; s < MAX_MOD_CONNECTIONS; ++s)
+    {
+        const auto& c = state.modConnections[s];
+        if (c.active && c.dstType == destType && c.dstIndex == dstIndex)
+        {
+            // A mod targets this dest — route the slider into the connection's
+            // base (the modulation centre) so the user's edit doesn't get
+            // overwritten by the next tick's mod write.
+            sendEdit(ManifoldEdit::Type::SetModConnectionBase, s, value);
+            return;
+        }
+    }
+    sendEdit(plainSet, dstIndex, value);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

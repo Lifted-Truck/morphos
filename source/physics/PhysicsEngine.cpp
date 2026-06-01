@@ -240,11 +240,15 @@ void PhysicsEngine::tick(double dtSeconds)
     drainEditCommands();          // Apply UI edits first so subsequent steps see them
     advanceTrajectoryPaths(dtSeconds);
     updateAttachedEmitters();     // Move attached Emitters to their path positions
-    drainNoteEvents();            // Note-ons read updated Emitter positions and also
-                                  //   refresh MIDI mod-source state (CC, keytrack, velocity).
+    drainNoteEvents();            // Pass 1: refreshes MIDI mod-source state (CC,
+                                  //   keytrack, velocity); buffers note-on/off into
+                                  //   pendingNoteEvents_ for later dispatch.
     evaluateModMatrix();          // Now sees this tick's MIDI events as well as the
                                   //   fresh trajectory positions; FieldObject writes
                                   //   here flag the grid dirty before the rebuild.
+    applyPendingNoteEvents();     // Pass 2: dispatch note-on/off so Morphons spawn
+                                  //   using mod-modulated emitter state (launch
+                                  //   angle, position, etc.).
     rebuildFieldGridIfDirty();
     integrateMorphons(dtSeconds);
     applyPathConstraints();   // Snap pinned Morphons before gates so crossings
@@ -268,6 +272,13 @@ void PhysicsEngine::drainNoteEvents()
     int s1, n1, s2, n2;
     eventFifo_.prepareToRead(eventFifo_.getNumReady(), s1, n1, s2, n2);
 
+    // Pass 1: capture CC events for MIDI mod-source state, but defer all
+    // note-on/off dispatch into pendingNoteEvents_ so the mod matrix can
+    // write to emitter params (e.g. launchAngle) before any Morphon is
+    // actually spawned this tick. lastNote_ / lastVelocity_ are NOT updated
+    // here — they're advanced per note-on inside applyPendingNoteEvents so
+    // simultaneous keys each trigger their own mod re-eval.
+    pendingNoteEventCount_ = 0;
     auto process = [this](int start, int count)
     {
         for (int i = start; i < start + count; ++i)
@@ -276,15 +287,9 @@ void PhysicsEngine::drainNoteEvents()
             switch (e.type)
             {
                 case NoteEvent::Type::NoteOn:
-                    // Mod-matrix Keytrack / Velocity sources track the last
-                    // note-on across all channels — set before handleNoteOn
-                    // so a mod write within the same tick sees the new note.
-                    lastNote_     = (uint8_t) juce::jlimit(0, 127, e.note);
-                    lastVelocity_ = (uint8_t) juce::jlimit(0, 127, e.velocity);
-                    handleNoteOn(e.channel, e.note, e.velocity);
-                    break;
                 case NoteEvent::Type::NoteOff:
-                    handleNoteOff(e.channel, e.note);
+                    if (pendingNoteEventCount_ < (int) pendingNoteEvents_.size())
+                        pendingNoteEvents_[pendingNoteEventCount_++] = e;
                     break;
                 case NoteEvent::Type::ControlChange:
                     if (e.note >= 0 && e.note < 128)
@@ -297,6 +302,32 @@ void PhysicsEngine::drainNoteEvents()
     process(s1, n1);
     process(s2, n2);
     eventFifo_.finishedRead(n1 + n2);
+}
+
+void PhysicsEngine::applyPendingNoteEvents()
+{
+    // Pass 2: events buffered by drainNoteEvents are dispatched now. For each
+    // NoteOn we update Keytrack / Velocity state and re-run the mod matrix
+    // BEFORE the spawn — so simultaneous note-ons in the same tick each see
+    // an emitter that has been freshly modulated for their own note/velocity.
+    // Without this re-eval, all N simultaneous notes share whichever note's
+    // value happened to land last in the FIFO drain.
+    for (int i = 0; i < pendingNoteEventCount_; ++i)
+    {
+        const auto& e = pendingNoteEvents_[i];
+        if (e.type == NoteEvent::Type::NoteOn)
+        {
+            lastNote_     = (uint8_t) juce::jlimit(0, 127, e.note);
+            lastVelocity_ = (uint8_t) juce::jlimit(0, 127, e.velocity);
+            evaluateModMatrix();   // Per-note re-eval; cheap (16 connections)
+            handleNoteOn(e.channel, e.note, e.velocity);
+        }
+        else if (e.type == NoteEvent::Type::NoteOff)
+        {
+            handleNoteOff(e.channel, e.note);
+        }
+    }
+    pendingNoteEventCount_ = 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -743,6 +774,50 @@ void PhysicsEngine::drainEditCommands()
                             case ModDestType::FieldObjectY:    readY(fieldObjects_,    MAX_FIELD_OBJECTS);    break;
                             case ModDestType::EmitterX:        readX(emitters_,        MAX_EMITTERS);         break;
                             case ModDestType::EmitterY:        readY(emitters_,        MAX_EMITTERS);         break;
+                            case ModDestType::EmitterLaunchAngle:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_EMITTERS)
+                                    c.base = emitters_[c.dstIndex].launchAngle;
+                                break;
+                            case ModDestType::EmitterLaunchSpeed:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_EMITTERS)
+                                    c.base = emitters_[c.dstIndex].launchSpeed;
+                                break;
+                            case ModDestType::EmitterSpawnMass:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_EMITTERS)
+                                    c.base = emitters_[c.dstIndex].spawnMass;
+                                break;
+                            case ModDestType::EmitterAttack:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_EMITTERS)
+                                    c.base = emitters_[c.dstIndex].attackTime;
+                                break;
+                            case ModDestType::EmitterDecay:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_EMITTERS)
+                                    c.base = emitters_[c.dstIndex].decayTime;
+                                break;
+                            case ModDestType::EmitterSustain:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_EMITTERS)
+                                    c.base = emitters_[c.dstIndex].sustainLevel;
+                                break;
+                            case ModDestType::EmitterRelease:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_EMITTERS)
+                                    c.base = emitters_[c.dstIndex].releaseTime;
+                                break;
+                            case ModDestType::EmitterTransposeCents:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_EMITTERS)
+                                    c.base = emitters_[c.dstIndex].transposeCents;
+                                break;
+                            case ModDestType::EmitterPan:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_EMITTERS)
+                                    c.base = emitters_[c.dstIndex].pan;
+                                break;
+                            case ModDestType::EmitterTerminusStrength:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_EMITTERS)
+                                    c.base = emitters_[c.dstIndex].terminusStrength;
+                                break;
+                            case ModDestType::EmitterTerminusRadius:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_EMITTERS)
+                                    c.base = emitters_[c.dstIndex].terminusArrivalRadius;
+                                break;
                             case ModDestType::AnchorX:         readX(timbralAnchors_,  activeAnchorCount_);   break;
                             case ModDestType::AnchorY:         readY(timbralAnchors_,  activeAnchorCount_);   break;
                             case ModDestType::EffectZoneX:     readX(effectZones_,     MAX_EFFECT_ZONES);     break;
@@ -1341,6 +1416,58 @@ bool PhysicsEngine::writeModDest(ModDestType type, int index, float value)
         case ModDestType::FieldObjectY:   return writeObjY(fieldObjects_,   MAX_FIELD_OBJECTS,    true);
         case ModDestType::EmitterX:       return writeObjX(emitters_,       MAX_EMITTERS,         false);
         case ModDestType::EmitterY:       return writeObjY(emitters_,       MAX_EMITTERS,         false);
+        case ModDestType::EmitterLaunchAngle:
+            if (index >= 0 && index < MAX_EMITTERS)
+            {
+                // Wrap to (-π, +π] so a modulator overshooting the endpoints
+                // produces a smooth full rotation instead of clamping.
+                const float pi = juce::MathConstants<float>::pi;
+                float a = std::fmod(value + pi, 2.0f * pi);
+                if (a < 0.0f) a += 2.0f * pi;
+                emitters_[index].launchAngle = a - pi;
+                return true;
+            }
+            break;
+        case ModDestType::EmitterLaunchSpeed:
+            if (index >= 0 && index < MAX_EMITTERS)
+            { emitters_[index].launchSpeed = juce::jlimit(0.0f, 2.0f, value); return true; }
+            break;
+        case ModDestType::EmitterSpawnMass:
+            if (index >= 0 && index < MAX_EMITTERS)
+            { emitters_[index].spawnMass = juce::jlimit(0.1f, 4.0f, value); return true; }
+            break;
+        case ModDestType::EmitterAttack:
+            if (index >= 0 && index < MAX_EMITTERS)
+            { emitters_[index].attackTime = juce::jlimit(0.001f, 5.0f, value); return true; }
+            break;
+        case ModDestType::EmitterDecay:
+            if (index >= 0 && index < MAX_EMITTERS)
+            { emitters_[index].decayTime = juce::jlimit(0.001f, 5.0f, value); return true; }
+            break;
+        case ModDestType::EmitterSustain:
+            if (index >= 0 && index < MAX_EMITTERS)
+            { emitters_[index].sustainLevel = juce::jlimit(0.0f, 1.0f, value); return true; }
+            break;
+        case ModDestType::EmitterRelease:
+            if (index >= 0 && index < MAX_EMITTERS)
+            { emitters_[index].releaseTime = juce::jlimit(0.001f, 5.0f, value); return true; }
+            break;
+        case ModDestType::EmitterTransposeCents:
+            if (index >= 0 && index < MAX_EMITTERS)
+            { emitters_[index].transposeCents = juce::jlimit(-100.0f, 100.0f, value); return true; }
+            break;
+        case ModDestType::EmitterPan:
+            if (index >= 0 && index < MAX_EMITTERS)
+            { emitters_[index].pan = juce::jlimit(-1.0f, 1.0f, value); return true; }
+            break;
+        case ModDestType::EmitterTerminusStrength:
+            if (index >= 0 && index < MAX_EMITTERS)
+            { emitters_[index].terminusStrength = juce::jlimit(0.0f, 2.0f, value); return true; }
+            break;
+        case ModDestType::EmitterTerminusRadius:
+            if (index >= 0 && index < MAX_EMITTERS)
+            { emitters_[index].terminusArrivalRadius = juce::jlimit(0.005f, 0.45f, value); return true; }
+            break;
         case ModDestType::AnchorX:        return writeObjX(timbralAnchors_, activeAnchorCount_,   false);
         case ModDestType::AnchorY:        return writeObjY(timbralAnchors_, activeAnchorCount_,   false);
         case ModDestType::EffectZoneX:    return writeObjX(effectZones_,    MAX_EFFECT_ZONES,     false);
@@ -1438,7 +1565,9 @@ void PhysicsEngine::evaluateModMatrix()
         if (c.srcType == ModSourceType::None || c.dstType == ModDestType::None) continue;
 
         const float src    = readModSource(c.srcType, c.srcIndex);
-        const float offset = (src - 0.5f) * 2.0f * c.depth;   // bipolar around 0.5
+        // Bipolar around 0.5, scaled to the destination's musically meaningful
+        // full-swing range so depth = ±1 = full sweep regardless of dest units.
+        const float offset = (src - 0.5f) * 2.0f * c.depth * perDestSwing(c.dstType);
         writeModDest(c.dstType, c.dstIndex, c.base + offset);
     }
 }

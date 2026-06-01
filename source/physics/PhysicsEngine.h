@@ -132,7 +132,8 @@ private:
 
     // ── Tick sub-steps ────────────────────────────────────────────────────────
     void tick(double dtSeconds);
-    void drainNoteEvents();
+    void drainNoteEvents();          // Pulls events from FIFO; updates MIDI mod state; buffers note-on/off for applyPendingNoteEvents
+    void applyPendingNoteEvents();   // Spawns/releases Morphons; runs after evaluateModMatrix
     void drainEditCommands();        // Apply UI → physics edits before integration
     void rebuildFieldGridIfDirty();
     void integrateMorphons(double dt);
@@ -229,6 +230,14 @@ private:
     std::array<uint8_t, 128> midiCC_{};
     uint8_t                  lastNote_     = 60;
     uint8_t                  lastVelocity_ = 0;
+
+    // Note events are drained from the FIFO into this buffer at the start of
+    // a tick (Pass 1) and applied (Pass 2: handleNoteOn / handleNoteOff)
+    // only AFTER evaluateModMatrix has run. Without this split, an emitter
+    // param targeted by the mod matrix (e.g. launchAngle) wouldn't be
+    // updated in time for the note-on that arrived this same tick.
+    std::array<NoteEvent, EVENT_QUEUE_CAPACITY> pendingNoteEvents_;
+    int                                          pendingNoteEventCount_ = 0;
 
     // Internal helpers. writeModDest returns true if a write occurred (so the
     // caller knows whether to invalidate the field grid for FieldObject moves).

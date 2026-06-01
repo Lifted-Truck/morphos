@@ -56,6 +56,17 @@ enum class ModDestType : uint8_t
     FieldObjectY,            // fieldObjects_[index].y         (invalidates grid)
     EmitterX,                // emitters_[index].x
     EmitterY,                // emitters_[index].y
+    EmitterLaunchAngle,      // emitters_[index].launchAngle (radians; sampled at note-on)
+    EmitterLaunchSpeed,      // emitters_[index].launchSpeed (units/sec)
+    EmitterSpawnMass,        // emitters_[index].spawnMass
+    EmitterAttack,           // emitters_[index].attackTime (seconds)
+    EmitterDecay,            // emitters_[index].decayTime
+    EmitterSustain,          // emitters_[index].sustainLevel [0,1]
+    EmitterRelease,          // emitters_[index].releaseTime
+    EmitterTransposeCents,   // emitters_[index].transposeCents (-100..+100)
+    EmitterPan,              // emitters_[index].pan (-1..+1)
+    EmitterTerminusStrength, // emitters_[index].terminusStrength
+    EmitterTerminusRadius,   // emitters_[index].terminusArrivalRadius
     AnchorX,                 // timbralAnchors_[index].x
     AnchorY,                 // timbralAnchors_[index].y
     EffectZoneX,             // effectZones_[index].x
@@ -85,7 +96,36 @@ struct ModConnection
     int           srcIndex = 0;
     ModDestType   dstType  = ModDestType::None;
     int           dstIndex = 0;
-    float         depth    = 0.0f;   // [-1, +1]
+    float         depth    = 0.0f;   // [-1, +1] — see perDestSwing for per-dest amplitude
     float         base     = 0.0f;   // Captured at creation; user-edits update this
     bool          active   = false;
 };
+
+// Per-destination "natural full swing" used in evaluateModMatrix:
+//     offset = (src - 0.5) × 2 × depth × perDestSwing(dst)
+// so depth = ±1 means a full musically-meaningful sweep for that dest. Anchors
+// the depth slider's [-1, +1] range to something sensible per param: ±π
+// radians for angle, ±5 sec for envelopes, ±100 cents for fine tuning, etc.
+// All writes still clamp to the dest's hard range so over-driven mods just rail.
+inline float perDestSwing(ModDestType type) noexcept
+{
+    constexpr float PI = 3.14159265358979323846f;
+    switch (type)
+    {
+        case ModDestType::EmitterLaunchAngle:      return PI;
+        case ModDestType::EmitterLaunchSpeed:      return 2.0f;
+        case ModDestType::EmitterSpawnMass:        return 4.0f;
+        case ModDestType::EmitterAttack:
+        case ModDestType::EmitterDecay:
+        case ModDestType::EmitterRelease:          return 5.0f;
+        case ModDestType::EmitterTransposeCents:   return 100.0f;
+        case ModDestType::EmitterTerminusStrength: return 2.0f;
+        case ModDestType::EmitterTerminusRadius:   return 0.45f;
+        case ModDestType::FieldObjectStrength:     return 2.0f;
+        case ModDestType::FieldObjectRadius:       return 0.95f;
+        case ModDestType::EffectZoneDepth:         return 24.0f;   // covers pitch zones' ±24 semis
+        case ModDestType::EffectZoneRadius:        return 0.45f;
+        case ModDestType::GlobalFriction:          return 0.1f;
+        default:                                    return 1.0f;    // X/Y, timbre, t, pan, sustain
+    }
+}

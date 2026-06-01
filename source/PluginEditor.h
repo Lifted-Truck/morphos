@@ -207,6 +207,12 @@ private:
 
     // Helper: send a single edit command to the physics thread
     void sendEdit(ManifoldEdit::Type type, int index, float x, float y = 0.0f);
+    // If any active mod connection targets (destType, dstIndex), forward the
+    // edit to that connection's `base` instead of writing the param directly —
+    // so a slider for a modulated parameter still does something useful
+    // (moves the modulation centre) rather than being overwritten next tick.
+    void sendParamOrModBase(ManifoldEdit::Type plainSet, int dstIndex,
+                             float value, ModDestType destType);
 
     // Guard: prevents slider callbacks from firing while we programmatically
     // set slider values during updatePanel().
