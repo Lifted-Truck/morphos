@@ -1014,6 +1014,30 @@ void PhysicsEngine::drainEditCommands()
                     }
                     break;
 
+                case ManifoldEdit::Type::SetTrajectoryPathShape:
+                    if (idx >= 0 && idx < MAX_TRAJECTORY_PATHS)
+                        trajectoryPaths_[idx].shape = static_cast<PathShape>(
+                            static_cast<uint8_t>(static_cast<int>(e.x)));
+                    break;
+
+                case ManifoldEdit::Type::SetTrajectoryPathLength:
+                    if (idx >= 0 && idx < MAX_TRAJECTORY_PATHS)
+                        trajectoryPaths_[idx].length = juce::jlimit(0.02f, 0.9f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetTrajectoryPathAngle:
+                    if (idx >= 0 && idx < MAX_TRAJECTORY_PATHS)
+                        trajectoryPaths_[idx].angleRad = juce::jlimit(
+                            -juce::MathConstants<float>::pi,
+                             juce::MathConstants<float>::pi, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetTrajectoryPathCurve:
+                    if (idx >= 0 && idx < MAX_TRAJECTORY_PATHS)
+                        trajectoryPaths_[idx].curve = static_cast<TrajectoryLineCurve>(
+                            static_cast<uint8_t>(static_cast<int>(e.x)));
+                    break;
+
                 case ManifoldEdit::Type::SetEmitterTrajectoryPath:
                     if (idx >= 0 && idx < MAX_EMITTERS)
                     {
@@ -2322,6 +2346,9 @@ void PhysicsEngine::writeSnapshot()
         dst.x        = src.x;
         dst.y        = src.y;
         dst.radius   = src.radius;
+        dst.length   = src.length;
+        dst.angleRad = src.angleRad;
+        dst.curve    = src.curve;
         dst.mode     = src.mode;
         dst.speed    = src.speed;
         dst.currentT = src.currentT;

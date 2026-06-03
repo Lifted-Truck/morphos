@@ -305,9 +305,15 @@ private:
 
     // Trajectory path section (visible when a TrajectoryPath is selected)
     juce::Label      lblTrajRadius_, lblTrajSpeed_, lblTrajPos_, lblTrajMode_;
+    juce::Label      lblTrajShape_, lblTrajLength_, lblTrajAngle_, lblTrajCurve_;
     juce::Slider     sldTrajRadius_, sldTrajSpeed_, sldTrajPos_;
+    juce::Slider     sldTrajLength_, sldTrajAngle_;
     juce::TextButton btnTrajModeAuto_   { "Auto"   };
     juce::TextButton btnTrajModeManual_ { "Manual" };
+    juce::TextButton btnTrajShapeCircle_   { "Circle"     };
+    juce::TextButton btnTrajShapeLine_     { "Line"       };
+    juce::TextButton btnTrajCurveTriangle_ { "Triangular" };
+    juce::TextButton btnTrajCurveSine_     { "Sinusoidal" };
 
     // Tangent-force ("Flow") path section (visible when a TangentPath is selected)
     juce::Label  lblFlowRadius_, lblFlowWidth_, lblFlowStrength_, lblFlowChirality_;

@@ -386,7 +386,33 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
 
     // ── Trajectory path section ───────────────────────────────────────────────
     y = sectionTopY;
+    // Shape toggle: Circle | Line
+    lblTrajShape_.setBounds(x, y, w, LABEL_H);
+    y += LABEL_H;
+    {
+        const int bw = w / 2;
+        btnTrajShapeCircle_.setBounds(x + bw * 0, y, bw,         BTN_ROW_H);
+        btnTrajShapeLine_  .setBounds(x + bw * 1, y, w - bw * 1, BTN_ROW_H);
+    }
+    y += BTN_ROW_H + 2;
+    // Shape-specific params overlap at the same y — only the active set is visible.
+    const int trajShapeParamsY = y;
     layoutRow(lblTrajRadius_, sldTrajRadius_);
+    const int trajCircleParamsEndY = y;
+    y = trajShapeParamsY;
+    layoutRow(lblTrajLength_, sldTrajLength_);
+    layoutRow(lblTrajAngle_,  sldTrajAngle_);
+    // Curve toggle (Line only)
+    lblTrajCurve_.setBounds(x, y, w, LABEL_H);
+    y += LABEL_H;
+    {
+        const int bw = w / 2;
+        btnTrajCurveTriangle_.setBounds(x + bw * 0, y, bw,         BTN_ROW_H);
+        btnTrajCurveSine_    .setBounds(x + bw * 1, y, w - bw * 1, BTN_ROW_H);
+    }
+    y += BTN_ROW_H + 2;
+    y = juce::jmax(y, trajCircleParamsEndY);
+
     // Mode toggle: Auto | Manual
     lblTrajMode_.setBounds(x, y, w, LABEL_H);
     y += LABEL_H;
@@ -1024,6 +1050,71 @@ void MorphosEditor::setupSliders()
     btnTrajModeAuto_  .onClick = [trajModeClick]{ trajModeClick(TrajectoryMode::AutoPlay); };
     btnTrajModeManual_.onClick = [trajModeClick]{ trajModeClick(TrajectoryMode::Manual);   };
 
+    // Shape toggle (Circle | Line). Line shape exposes length + angle + a
+    // velocity-curve toggle (Triangular | Sinusoidal); Circle shows radius.
+    styleLabel(lblTrajShape_,  "Shape");
+    styleLabel(lblTrajLength_, "Length");
+    styleLabel(lblTrajAngle_,  "Angle");
+    styleLabel(lblTrajCurve_,  "Curve");
+    styleSlider(sldTrajLength_, 0.02, 0.9);
+    {
+        const double pi = juce::MathConstants<double>::pi;
+        styleSlider(sldTrajAngle_, -pi, pi);
+        sldTrajAngle_.textFromValueFunction = [](double v) -> juce::String
+        {
+            return juce::String(v * 180.0 / juce::MathConstants<double>::pi, 1)
+                 + juce::String::fromUTF8("\xc2\xb0");
+        };
+    }
+    sldTrajLength_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblTrajShape_);
+    styleBoundBtn(btnTrajShapeCircle_);   addAndMakeVisible(btnTrajShapeCircle_);
+    styleBoundBtn(btnTrajShapeLine_);     addAndMakeVisible(btnTrajShapeLine_);
+    addAndMakeVisible(lblTrajLength_); addAndMakeVisible(sldTrajLength_);
+    addAndMakeVisible(lblTrajAngle_);  addAndMakeVisible(sldTrajAngle_);
+    addAndMakeVisible(lblTrajCurve_);
+    styleBoundBtn(btnTrajCurveTriangle_); addAndMakeVisible(btnTrajCurveTriangle_);
+    styleBoundBtn(btnTrajCurveSine_);     addAndMakeVisible(btnTrajCurveSine_);
+
+    sldTrajLength_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTrajectoryPathLength,
+                     selection_.index, (float)sldTrajLength_.getValue());
+    };
+    sldTrajAngle_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTrajectoryPathAngle,
+                     selection_.index, (float)sldTrajAngle_.getValue());
+    };
+
+    auto trajShapeClick = [this](PathShape s) {
+        sendEdit(ManifoldEdit::Type::SetTrajectoryPathShape, selection_.index,
+                 static_cast<float>(static_cast<uint8_t>(s)));
+        const bool isCircle = (s == PathShape::Circle);
+        const bool isLine   = (s == PathShape::Line);
+        btnTrajShapeCircle_.setToggleState(isCircle, juce::dontSendNotification);
+        btnTrajShapeLine_  .setToggleState(isLine,   juce::dontSendNotification);
+        // Swap which fields are visible immediately (radius for Circle;
+        // length + angle + curve for Line). Same trick as the mode toggle.
+        lblTrajRadius_.setVisible(isCircle);  sldTrajRadius_.setVisible(isCircle);
+        lblTrajLength_.setVisible(isLine);    sldTrajLength_.setVisible(isLine);
+        lblTrajAngle_ .setVisible(isLine);    sldTrajAngle_ .setVisible(isLine);
+        lblTrajCurve_ .setVisible(isLine);
+        btnTrajCurveTriangle_.setVisible(isLine);
+        btnTrajCurveSine_    .setVisible(isLine);
+    };
+    btnTrajShapeCircle_.onClick = [trajShapeClick]{ trajShapeClick(PathShape::Circle); };
+    btnTrajShapeLine_  .onClick = [trajShapeClick]{ trajShapeClick(PathShape::Line);   };
+
+    auto trajCurveClick = [this](TrajectoryLineCurve c) {
+        sendEdit(ManifoldEdit::Type::SetTrajectoryPathCurve, selection_.index,
+                 static_cast<float>(static_cast<uint8_t>(c)));
+        btnTrajCurveTriangle_.setToggleState(c == TrajectoryLineCurve::Triangular, juce::dontSendNotification);
+        btnTrajCurveSine_    .setToggleState(c == TrajectoryLineCurve::Sinusoidal, juce::dontSendNotification);
+    };
+    btnTrajCurveTriangle_.onClick = [trajCurveClick]{ trajCurveClick(TrajectoryLineCurve::Triangular); };
+    btnTrajCurveSine_    .onClick = [trajCurveClick]{ trajCurveClick(TrajectoryLineCurve::Sinusoidal); };
+
     // ── Tangent-force ("Flow") path sliders ────────────────────────────────────
     styleLabel(lblFlowRadius_,    "Radius");
     styleLabel(lblFlowWidth_,     "Width");
@@ -1267,7 +1358,13 @@ void MorphosEditor::installPanelViewport()
         &lblPathSnap_,         &sldPathSnap_,
         &lblPathEscape_,       &sldPathEscape_,
         // Trajectory
+        &lblTrajShape_,
+        &btnTrajShapeCircle_,  &btnTrajShapeLine_,
         &lblTrajRadius_,       &sldTrajRadius_,
+        &lblTrajLength_,       &sldTrajLength_,
+        &lblTrajAngle_,        &sldTrajAngle_,
+        &lblTrajCurve_,
+        &btnTrajCurveTriangle_,&btnTrajCurveSine_,
         &lblTrajMode_,
         &btnTrajModeAuto_,     &btnTrajModeManual_,
         &lblTrajSpeed_,        &sldTrajSpeed_,
@@ -1620,7 +1717,13 @@ void MorphosEditor::updatePanel()
     lblPathSnap_.setVisible(false);         sldPathSnap_.setVisible(false);
     lblPathEscape_.setVisible(false);       sldPathEscape_.setVisible(false);
 
+    lblTrajShape_.setVisible(false);
+    btnTrajShapeCircle_.setVisible(false);  btnTrajShapeLine_.setVisible(false);
     lblTrajRadius_.setVisible(false);       sldTrajRadius_.setVisible(false);
+    lblTrajLength_.setVisible(false);       sldTrajLength_.setVisible(false);
+    lblTrajAngle_.setVisible(false);        sldTrajAngle_.setVisible(false);
+    lblTrajCurve_.setVisible(false);
+    btnTrajCurveTriangle_.setVisible(false); btnTrajCurveSine_.setVisible(false);
     lblTrajSpeed_.setVisible(false);        sldTrajSpeed_.setVisible(false);
     lblTrajPos_.setVisible(false);          sldTrajPos_.setVisible(false);
     lblTrajMode_.setVisible(false);
@@ -1858,15 +1961,32 @@ void MorphosEditor::updatePanel()
         lblPanelHeader_.setText("Traj " + juce::String(i), juce::dontSendNotification);
 
         sldTrajRadius_.setValue(tp.radius,   juce::dontSendNotification);
+        sldTrajLength_.setValue(tp.length,   juce::dontSendNotification);
+        sldTrajAngle_ .setValue(tp.angleRad, juce::dontSendNotification);
         sldTrajSpeed_ .setValue(tp.speed,    juce::dontSendNotification);
         sldTrajPos_   .setValue(tp.currentT, juce::dontSendNotification);
+
+        const bool isCircle   = (tp.shape == PathShape::Circle);
+        const bool isLine     = (tp.shape == PathShape::Line);
+        btnTrajShapeCircle_.setToggleState(isCircle, juce::dontSendNotification);
+        btnTrajShapeLine_  .setToggleState(isLine,   juce::dontSendNotification);
+        btnTrajCurveTriangle_.setToggleState(tp.curve == TrajectoryLineCurve::Triangular, juce::dontSendNotification);
+        btnTrajCurveSine_    .setToggleState(tp.curve == TrajectoryLineCurve::Sinusoidal, juce::dontSendNotification);
 
         const bool autoMode   = (tp.mode == TrajectoryMode::AutoPlay);
         const bool manualMode = (tp.mode == TrajectoryMode::Manual);
         btnTrajModeAuto_  .setToggleState(autoMode,   juce::dontSendNotification);
         btnTrajModeManual_.setToggleState(manualMode, juce::dontSendNotification);
 
-        lblTrajRadius_.setVisible(true); sldTrajRadius_.setVisible(true);
+        // Shape toggle row always visible; shape-specific params swap.
+        lblTrajShape_.setVisible(true);
+        btnTrajShapeCircle_.setVisible(true); btnTrajShapeLine_.setVisible(true);
+        lblTrajRadius_.setVisible(isCircle);  sldTrajRadius_.setVisible(isCircle);
+        lblTrajLength_.setVisible(isLine);    sldTrajLength_.setVisible(isLine);
+        lblTrajAngle_ .setVisible(isLine);    sldTrajAngle_ .setVisible(isLine);
+        lblTrajCurve_ .setVisible(isLine);
+        btnTrajCurveTriangle_.setVisible(isLine); btnTrajCurveSine_.setVisible(isLine);
+
         lblTrajMode_  .setVisible(true);
         btnTrajModeAuto_  .setVisible(true);
         btnTrajModeManual_.setVisible(true);
@@ -2282,6 +2402,30 @@ MorphosEditor::Selection MorphosEditor::hitTest(juce::Point<float> canvasPt,
     {
         const auto& tp = state.trajectoryPaths[i];
         if (!tp.active) continue;
+
+        if (tp.shape == PathShape::Line)
+        {
+            // Point-to-segment distance, computed in manifold space so the
+            // hit zone matches the rendered segment regardless of canvas aspect.
+            const float half = tp.length * 0.5f;
+            const float ax = tp.x - std::cos(tp.angleRad) * half;
+            const float ay = tp.y - std::sin(tp.angleRad) * half;
+            const float bx = tp.x + std::cos(tp.angleRad) * half;
+            const float by = tp.y + std::sin(tp.angleRad) * half;
+            const float vx = bx - ax, vy = by - ay;
+            const float len2 = vx * vx + vy * vy;
+            const float t = (len2 > 1e-6f)
+                ? juce::jlimit(0.0f, 1.0f,
+                    ((cursorMfd.x - ax) * vx + (cursorMfd.y - ay) * vy) / len2)
+                : 0.0f;
+            const float qx = ax + vx * t;
+            const float qy = ay + vy * t;
+            const float dx = cursorMfd.x - qx;
+            const float dy = cursorMfd.y - qy;
+            if (std::sqrt(dx * dx + dy * dy) <= hitMfd)
+                return { ObjectKind::TrajectoryPath, i };
+            continue;
+        }
 
         const float dx   = cursorMfd.x - tp.x;
         const float dy   = cursorMfd.y - tp.y;
@@ -2981,46 +3125,98 @@ void MorphosEditor::drawTrajectoryPaths(juce::Graphics& g,
         float cx = tp.x, cy = tp.y;
         isObjectDragging(ObjectKind::TrajectoryPath, i, cx, cy);
 
-        const auto  centre = manifoldToCanvas(cx, cy, canvas);
-        // Manifold-space circle → canvas ellipse (see drawFieldObjects note).
-        // The moving t-dot below samples in manifold space and is mapped via
-        // manifoldToCanvas, so it already lies exactly on this ellipse.
-        const float rxPx = tp.radius * canvas.getWidth();
-        const float ryPx = tp.radius * canvas.getHeight();
+        const auto  centre   = manifoldToCanvas(cx, cy, canvas);
+        const bool  selected = isObjectSelected(ObjectKind::TrajectoryPath, i);
 
-        // Dashed ring — distinguishes Trajectory (moves objects) from Rail
-        // (constrains Morphons; solid in drawPathObjects).
+        if (tp.shape == PathShape::Line)
         {
-            juce::Path ring;
-            ring.addEllipse(centre.x - rxPx, centre.y - ryPx,
-                            rxPx * 2.0f, ryPx * 2.0f);
+            // Two endpoints derived from centre + length + angle.
+            const float half = tp.length * 0.5f;
+            const float ax_m = cx - std::cos(tp.angleRad) * half;
+            const float ay_m = cy - std::sin(tp.angleRad) * half;
+            const float bx_m = cx + std::cos(tp.angleRad) * half;
+            const float by_m = cy + std::sin(tp.angleRad) * half;
+            const auto  aPx = manifoldToCanvas(ax_m, ay_m, canvas);
+            const auto  bPx = manifoldToCanvas(bx_m, by_m, canvas);
+
+            if (selected)
+            {
+                g.setColour(Colour::SelectRing.withAlpha(0.55f));
+                g.drawLine(aPx.x, aPx.y, bPx.x, bPx.y, 5.0f);
+            }
+
+            // Dashed segment — same visual language as the dashed circle ring.
+            juce::Path segment;
+            segment.startNewSubPath(aPx.x, aPx.y);
+            segment.lineTo(bPx.x, bPx.y);
             float dashes[] = { 7.0f, 5.0f };
             juce::Path dashed;
-            juce::PathStrokeType(1.6f).createDashedStroke(dashed, ring, dashes, 2);
+            juce::PathStrokeType(1.6f).createDashedStroke(dashed, segment, dashes, 2);
             g.setColour(c.withAlpha(0.85f));
             g.fillPath(dashed);
-        }
 
-        // Current-T dot — shows where attached objects are currently positioned.
-        // Renders the moving head on AutoPlay so the user can read the speed at
-        // a glance.
-        {
-            constexpr float TWO_PI = 6.28318530717958647692f;
-            const float angle = tp.currentT * TWO_PI;
-            const float hx = cx + std::cos(angle) * tp.radius;
-            const float hy = cy + std::sin(angle) * tp.radius;
-            const auto headPx = manifoldToCanvas(hx, hy, canvas);
+            // Endpoint dots so the extent reads at a glance.
+            constexpr float ER = 3.0f;
+            g.setColour(c);
+            g.fillEllipse(aPx.x - ER, aPx.y - ER, ER * 2.0f, ER * 2.0f);
+            g.fillEllipse(bPx.x - ER, bPx.y - ER, ER * 2.0f, ER * 2.0f);
+
+            // Current-T dot at the sampled line position.
+            float s;
+            if (tp.curve == TrajectoryLineCurve::Sinusoidal)
+            {
+                constexpr float TWO_PI = 6.28318530717958647692f;
+                s = 0.5f + 0.5f * std::sin(tp.currentT * TWO_PI - 1.57079632679489661923f);
+            }
+            else
+            {
+                s = (tp.currentT < 0.5f) ? (tp.currentT * 2.0f) : (2.0f - tp.currentT * 2.0f);
+            }
+            const float hx_m = ax_m + (bx_m - ax_m) * s;
+            const float hy_m = ay_m + (by_m - ay_m) * s;
+            const auto  headPx = manifoldToCanvas(hx_m, hy_m, canvas);
             constexpr float HR = 4.5f;
             g.setColour(c);
             g.fillEllipse(headPx.x - HR, headPx.y - HR, HR * 2.0f, HR * 2.0f);
         }
-
-        // Selection ring
-        if (isObjectSelected(ObjectKind::TrajectoryPath, i))
+        else   // Circle
         {
-            g.setColour(Colour::SelectRing.withAlpha(0.70f));
-            g.drawEllipse(centre.x - rxPx, centre.y - ryPx,
-                          rxPx * 2.0f, ryPx * 2.0f, 1.0f);
+            // Manifold-space circle → canvas ellipse (see drawFieldObjects note).
+            const float rxPx = tp.radius * canvas.getWidth();
+            const float ryPx = tp.radius * canvas.getHeight();
+
+            // Dashed ring — distinguishes Trajectory (moves objects) from Rail
+            // (constrains Morphons; solid in drawPathObjects).
+            {
+                juce::Path ring;
+                ring.addEllipse(centre.x - rxPx, centre.y - ryPx,
+                                rxPx * 2.0f, ryPx * 2.0f);
+                float dashes[] = { 7.0f, 5.0f };
+                juce::Path dashed;
+                juce::PathStrokeType(1.6f).createDashedStroke(dashed, ring, dashes, 2);
+                g.setColour(c.withAlpha(0.85f));
+                g.fillPath(dashed);
+            }
+
+            // Current-T dot — shows where attached objects are currently positioned.
+            {
+                constexpr float TWO_PI = 6.28318530717958647692f;
+                const float angle = tp.currentT * TWO_PI;
+                const float hx = cx + std::cos(angle) * tp.radius;
+                const float hy = cy + std::sin(angle) * tp.radius;
+                const auto headPx = manifoldToCanvas(hx, hy, canvas);
+                constexpr float HR = 4.5f;
+                g.setColour(c);
+                g.fillEllipse(headPx.x - HR, headPx.y - HR, HR * 2.0f, HR * 2.0f);
+            }
+
+            // Selection ring
+            if (selected)
+            {
+                g.setColour(Colour::SelectRing.withAlpha(0.70f));
+                g.drawEllipse(centre.x - rxPx, centre.y - ryPx,
+                              rxPx * 2.0f, ryPx * 2.0f, 1.0f);
+            }
         }
     }
 }

@@ -470,6 +470,9 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         node.setProperty("x",        tp.x,          nullptr);
         node.setProperty("y",        tp.y,          nullptr);
         node.setProperty("radius",   tp.radius,     nullptr);
+        node.setProperty("length",   tp.length,     nullptr);
+        node.setProperty("angle",    tp.angleRad,   nullptr);
+        node.setProperty("curve",    (int)tp.curve, nullptr);
         node.setProperty("mode",     (int)tp.mode,  nullptr);
         node.setProperty("speed",    tp.speed,      nullptr);
         node.setProperty("currentT", tp.currentT,   nullptr);
@@ -657,6 +660,9 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             tp.x        = (float)child.getProperty("x",        0.5f);
             tp.y        = (float)child.getProperty("y",        0.5f);
             tp.radius   = (float)child.getProperty("radius",   0.15f);
+            tp.length   = (float)child.getProperty("length",   0.30f);
+            tp.angleRad = (float)child.getProperty("angle",    0.0f);
+            tp.curve    = static_cast<TrajectoryLineCurve>((int)child.getProperty("curve", 0));
             tp.mode     = static_cast<TrajectoryMode>((int)child.getProperty("mode", 0));
             tp.speed    = (float)child.getProperty("speed",    0.5f);
             tp.currentT = (float)child.getProperty("currentT", 0.0f);

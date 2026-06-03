@@ -35,24 +35,65 @@ enum class TrajectoryMode : uint8_t
     Manual,     // currentT driven externally (Phase 6 mod matrix destination)
 };
 
-struct TrajectoryPath
+// Velocity-vs-t profile for PathShape::Line — controls how the position
+// oscillates between the two endpoints as t advances 0 → 1.
+//   Triangular: position is a linear ping-pong (constant velocity, hard
+//               turnaround at endpoints).
+//   Sinusoidal: position follows 0.5 + 0.5 sin(2πt − π/2) — smooth
+//               back-and-forth, slower at endpoints.
+// Both produce a full out-and-back cycle per t = 0 → 1.
+enum class TrajectoryLineCurve : uint8_t
 {
-    PathShape      shape    = PathShape::Circle;
-    float          x        = 0.5f;          // Centre on Manifold [0,1]
-    float          y        = 0.5f;
-    float          radius   = 0.15f;         // Shape size (circle radius for v1)
-    TrajectoryMode mode     = TrajectoryMode::AutoPlay;
-    float          speed    = 0.5f;          // For AutoPlay: t per second
-    float          currentT = 0.0f;          // Current parameter [0, 1)
-    bool           active   = false;
+    Triangular,
+    Sinusoidal,
 };
 
-// Sample (outX, outY) at parameter t along the path. t is treated modulo 1
-// for closed shapes.
+struct TrajectoryPath
+{
+    PathShape           shape    = PathShape::Circle;
+    float               x        = 0.5f;          // Centre on Manifold [0,1]
+    float               y        = 0.5f;
+    float               radius   = 0.15f;         // Circle: ring radius
+    float               length   = 0.30f;         // Line: full segment length
+    float               angleRad = 0.0f;          // Line: orientation (0 = horizontal)
+    TrajectoryLineCurve curve    = TrajectoryLineCurve::Triangular;  // Line only
+    TrajectoryMode      mode     = TrajectoryMode::AutoPlay;
+    float               speed    = 0.5f;          // For AutoPlay: t per second
+    float               currentT = 0.0f;          // Current parameter [0, 1)
+    bool                active   = false;
+};
+
+// Sample (outX, outY) at parameter t along the path. t is wrapped to [0, 1).
 inline void trajectoryPathSample(const TrajectoryPath& tp, float t,
                                  float& outX, float& outY) noexcept
 {
-    // Circle (v1) — closed; t maps directly to angle.
+    if (tp.shape == PathShape::Line)
+    {
+        // Map t to a [0, 1] position along the line via the chosen velocity
+        // profile, then lerp between the two endpoints. Both profiles complete
+        // one full out-and-back per t-cycle.
+        float s;
+        if (tp.curve == TrajectoryLineCurve::Sinusoidal)
+        {
+            constexpr float TWO_PI = 6.28318530717958647692f;
+            // sin(2πt − π/2) sweeps −1 → +1 → −1 across t ∈ [0,1].
+            s = 0.5f + 0.5f * std::sin(t * TWO_PI - 1.57079632679489661923f);
+        }
+        else   // Triangular
+        {
+            s = (t < 0.5f) ? (t * 2.0f) : (2.0f - t * 2.0f);
+        }
+        const float half = tp.length * 0.5f;
+        const float ax = tp.x - std::cos(tp.angleRad) * half;
+        const float ay = tp.y - std::sin(tp.angleRad) * half;
+        const float bx = tp.x + std::cos(tp.angleRad) * half;
+        const float by = tp.y + std::sin(tp.angleRad) * half;
+        outX = ax + (bx - ax) * s;
+        outY = ay + (by - ay) * s;
+        return;
+    }
+
+    // Circle — closed; t maps directly to angle.
     constexpr float TWO_PI = 6.28318530717958647692f;
     const float angle = t * TWO_PI;
     outX = tp.x + std::cos(angle) * tp.radius;

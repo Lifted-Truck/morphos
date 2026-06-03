@@ -33,7 +33,9 @@ static constexpr int MAX_PATH_OBJECTS = 8;
 enum class PathShape : uint8_t
 {
     Circle,    // Closed loop; radius drives both geometry and traversal length
-    // Future: Line, Arc, Polyline, Bezier
+    Line,      // Open segment defined by centre + length + angleRad (currently
+               // honoured by TrajectoryPath; rails/flow still treat as Circle).
+    // Future: Arc, Polyline, Bezier
 };
 
 struct PathObject

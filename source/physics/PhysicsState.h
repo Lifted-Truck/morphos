@@ -207,14 +207,17 @@ struct PathObjectSnapshot
 // ─────────────────────────────────────────────────────────────────────────────
 struct TrajectoryPathSnapshot
 {
-    PathShape      shape    = PathShape::Circle;
-    float          x        = 0.5f;
-    float          y        = 0.5f;
-    float          radius   = 0.15f;
-    TrajectoryMode mode     = TrajectoryMode::AutoPlay;
-    float          speed    = 0.5f;
-    float          currentT = 0.0f;
-    bool           active   = false;
+    PathShape           shape    = PathShape::Circle;
+    float               x        = 0.5f;
+    float               y        = 0.5f;
+    float               radius   = 0.15f;
+    float               length   = 0.30f;
+    float               angleRad = 0.0f;
+    TrajectoryLineCurve curve    = TrajectoryLineCurve::Triangular;
+    TrajectoryMode      mode     = TrajectoryMode::AutoPlay;
+    float               speed    = 0.5f;
+    float               currentT = 0.0f;
+    bool                active   = false;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -386,6 +389,10 @@ struct ManifoldEdit
         SetTrajectoryPathSpeed,      // x = t-per-second [-4.0, 4.0]; negative reverses
         SetTrajectoryPathMode,       // x = (float)cast of TrajectoryMode uint8_t
         SetTrajectoryPathCurrentT,   // x = current t parameter [0, 1) — used in Manual mode
+        SetTrajectoryPathShape,      // x = (float)cast of PathShape uint8_t (Circle | Line)
+        SetTrajectoryPathLength,     // x = line length [0.02, 0.9]
+        SetTrajectoryPathAngle,      // x = line orientation [-π, +π]
+        SetTrajectoryPathCurve,      // x = (float)cast of TrajectoryLineCurve uint8_t
         SetEmitterTrajectoryPath,    // x = trajectory index [-1, MAX_TRAJECTORY_PATHS-1]
         // Attach any other object type to a trajectory path's position output.
         // Index parameter selects the object; x = trajectory index (-1 = detach).
