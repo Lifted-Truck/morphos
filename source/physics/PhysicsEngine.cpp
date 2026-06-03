@@ -504,7 +504,7 @@ void PhysicsEngine::drainEditCommands()
                     break;
 
                 case ManifoldEdit::Type::SetGlobalFriction:
-                    globalFriction_ = juce::jlimit(0.0f, 0.1f, e.x);
+                    globalFriction_ = juce::jlimit(0.0f, 10.0f, e.x);
                     break;
 
                 case ManifoldEdit::Type::SetGlideTime:
@@ -1538,7 +1538,7 @@ bool PhysicsEngine::writeModDest(ModDestType type, int index, float value)
             }
             break;
         case ModDestType::GlobalFriction:
-            globalFriction_ = juce::jlimit(0.0f, 0.1f, value);
+            globalFriction_ = juce::jlimit(0.0f, 10.0f, value);
             return true;
         case ModDestType::None: default: break;
     }
@@ -1662,12 +1662,17 @@ void PhysicsEngine::integrateMorphons(double dt)
         // Semi-implicit Euler with drag:
         //   v' = v*(1 - drag) + a*dt
         //   x' = x + v'*dt
-        // Global friction is added on top of the Morphon's per-tick drag, so a
-        // single top-level slider can make the whole Manifold feel sticky
-        // without retuning every Emitter.
-        const float effDrag = juce::jlimit(0.0f, 1.0f, m.drag + globalFriction_);
-        m.vx = m.vx * (1.0f - effDrag) + ax * dtF;
-        m.vy = m.vy * (1.0f - effDrag) + ay * dtF;
+        // globalFriction_ is the only damping authority and now reads as a
+        // decay rate per SECOND (1/s) rather than per-tick. The per-tick
+        // factor below is the exponential conversion: damping = 1 - exp(−r·dt).
+        // At r = 0 → damping = 0 (free coasting); r = 1 → ~37% velocity
+        // retained after 1 s; r = 10 → essentially fully damped after 1 s.
+        // (m.drag is kept on the struct for patch-format compatibility but is
+        // ignored — the single Friction slider is the only damping knob.)
+        const float rate    = juce::jmax(0.0f, globalFriction_);
+        const float damping = (rate > 0.0f) ? (1.0f - std::exp(-rate * dtF)) : 0.0f;
+        m.vx = m.vx * (1.0f - damping) + ax * dtF;
+        m.vy = m.vy * (1.0f - damping) + ay * dtF;
 
         m.x += m.vx * dtF;
         m.y += m.vy * dtF;

@@ -125,7 +125,7 @@ inline float perDestSwing(ModDestType type) noexcept
         case ModDestType::FieldObjectRadius:       return 0.95f;
         case ModDestType::EffectZoneDepth:         return 24.0f;   // covers pitch zones' ±24 semis
         case ModDestType::EffectZoneRadius:        return 0.45f;
-        case ModDestType::GlobalFriction:          return 0.1f;
+        case ModDestType::GlobalFriction:          return 10.0f;
         default:                                    return 1.0f;    // X/Y, timbre, t, pan, sustain
     }
 }

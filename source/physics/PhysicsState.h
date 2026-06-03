@@ -327,7 +327,7 @@ struct ManifoldEdit
         SetTimbralAnchorTimbreX,
         SetTimbralAnchorTimbreY,
         SetGlideTime,          // x = portamento time in seconds [0, 5]; index unused
-        SetGlobalFriction,     // x = per-tick velocity damping fraction [0, 0.1]; index unused
+        SetGlobalFriction,     // x = decay rate per second (1/s) [0, 10]; index unused
 
         // ── Spawn / remove — x,y = initial position for Add types ────────────
         AddAttractor,          // Spawn a new Attractor at (x,y) with defaults

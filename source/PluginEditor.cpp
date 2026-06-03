@@ -573,13 +573,15 @@ void MorphosEditor::setupSliders()
 
     sldBrightness_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetTimbralAnchorTimbreX,
-                     selection_.index, (float)sldBrightness_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetTimbralAnchorTimbreX,
+                               selection_.index, (float)sldBrightness_.getValue(),
+                               ModDestType::AnchorTimbreX);
     };
     sldInharmonicity_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetTimbralAnchorTimbreY,
-                     selection_.index, (float)sldInharmonicity_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetTimbralAnchorTimbreY,
+                               selection_.index, (float)sldInharmonicity_.getValue(),
+                               ModDestType::AnchorTimbreY);
     };
 
     // ── Field object sliders ───────────────────────────────────────────────────
@@ -595,13 +597,15 @@ void MorphosEditor::setupSliders()
 
     sldFOStrength_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetFieldObjectStrength,
-                     selection_.index, (float)sldFOStrength_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetFieldObjectStrength,
+                               selection_.index, (float)sldFOStrength_.getValue(),
+                               ModDestType::FieldObjectStrength);
     };
     sldFORadius_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetFieldObjectRadius,
-                     selection_.index, (float)sldFORadius_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetFieldObjectRadius,
+                               selection_.index, (float)sldFORadius_.getValue(),
+                               ModDestType::FieldObjectRadius);
     };
     sldFOChirality_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
@@ -811,14 +815,16 @@ void MorphosEditor::setupSliders()
     sldZoneRadius_.onValueChange = [this]
     {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetEffectZoneRadius,
-                     selection_.index, (float)sldZoneRadius_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetEffectZoneRadius,
+                               selection_.index, (float)sldZoneRadius_.getValue(),
+                               ModDestType::EffectZoneRadius);
     };
     sldZoneDepth_.onValueChange = [this]
     {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetEffectZoneDepth,
-                     selection_.index, (float)sldZoneDepth_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetEffectZoneDepth,
+                               selection_.index, (float)sldZoneDepth_.getValue(),
+                               ModDestType::EffectZoneDepth);
     };
 
     styleLabel(lblZoneTarget_,  "Target");
@@ -997,8 +1003,9 @@ void MorphosEditor::setupSliders()
     };
     sldTrajPos_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetTrajectoryPathCurrentT,
-                     selection_.index, (float)sldTrajPos_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetTrajectoryPathCurrentT,
+                               selection_.index, (float)sldTrajPos_.getValue(),
+                               ModDestType::TrajectoryCurrentT);
     };
 
     auto trajModeClick = [this](TrajectoryMode m) {
@@ -1177,17 +1184,21 @@ void MorphosEditor::setupSliders()
             sendEdit(ManifoldEdit::Type::SetGlideTime, 0, (float)sldGlideTime_.getValue());
     };
 
-    // Global friction — extra per-tick velocity damping on top of each
-    // Morphon's own drag. Range is small because it compounds at TICK_RATE_HZ.
-    styleLabel(lblFriction_, "Friction");
-    styleSlider(sldFriction_, 0.0, 0.1);
-    sldFriction_.setNumDecimalPlacesToDisplay(3);
+    // Global friction — the sole damping authority for every Morphon. Read by
+    // the integrator as a decay rate per second (1/s) and converted to a
+    // per-tick factor via 1 − exp(−rate·dt). Slider 0 = frictionless coast;
+    // 10 = near-instant damping over a second.
+    styleLabel(lblFriction_, "Friction (1/s)");
+    styleSlider(sldFriction_, 0.0, 10.0);
+    sldFriction_.setNumDecimalPlacesToDisplay(2);
     addAndMakeVisible(lblFriction_);
     addAndMakeVisible(sldFriction_);
     sldFriction_.onValueChange = [this]
     {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetGlobalFriction, 0, (float)sldFriction_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetGlobalFriction, 0,
+                               (float)sldFriction_.getValue(),
+                               ModDestType::GlobalFriction);
     };
 }
 
