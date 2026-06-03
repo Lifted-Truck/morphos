@@ -111,6 +111,9 @@ public:
 
     // ── Any thread (atomic writes) ───────────────────────────────────────────
     void setGlobalTimeScale(float scale) noexcept;
+    // Forward a host-automatable macro knob's value to the physics thread.
+    // Read each tick by the mod matrix; idx must be [0, NUM_MACROS).
+    void setMacroValue(int idx, float value) noexcept;
 
     // ── Offline-rendering hooks ──────────────────────────────────────────────
     // DAW bounce-out / freeze runs processBlock faster than wall clock, but
@@ -167,6 +170,9 @@ private:
 
     // ── Parameters (atomic) ───────────────────────────────────────────────────
     std::atomic<float> globalTimeScale_{ 1.0f };
+    // Host macros — written from processBlock, read by readModSource. Stored
+    // here so the physics thread can sample them lock-free each tick.
+    std::array<std::atomic<float>, NUM_MACROS> macroValues_{};
 
     // ── Offline-rendering state ───────────────────────────────────────────────
     // offlineMode_ signals the run() loop to park in wait() rather than tick.

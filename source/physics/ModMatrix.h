@@ -40,7 +40,12 @@ enum class ModSourceType : uint8_t
     MidiCC,          // midiCC_[index] / 127.0f              [0,1]; index = CC #
     Keytrack,        // last note number / 127.0f            [0,1]
     Velocity,        // last note-on velocity / 127.0f       [0,1]
+    // Host-automatable macros — 8 normalised parameters exposed via APVTS so
+    // the DAW can map them to its own macros / hardware. index = 0..7.
+    Macro,
 };
+
+static constexpr int NUM_MACROS = 8;
 
 // Destinations. Object-position writes (X/Y) cover every canvas type so the
 // user can drive any object's location from any source. NOTE: an object that

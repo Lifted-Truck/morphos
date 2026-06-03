@@ -1366,6 +1366,11 @@ void MorphosEditor::setupModMatrix()
             cb.addItem("Traj " + juce::String(i) + " y", packTypeIdx((int)ModSourceType::TrajectoryY, i));
         }
 
+        cb.addSectionHeading("Macros");
+        for (int i = 0; i < NUM_MACROS; ++i)
+            cb.addItem("Macro " + juce::String(i + 1),
+                       packTypeIdx((int)ModSourceType::Macro, i));
+
         cb.addSectionHeading("MIDI");
         cb.addItem("Keytrack", packTypeIdx((int)ModSourceType::Keytrack, 0));
         cb.addItem("Velocity", packTypeIdx((int)ModSourceType::Velocity, 0));

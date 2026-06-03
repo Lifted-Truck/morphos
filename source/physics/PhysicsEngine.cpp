@@ -155,6 +155,12 @@ void PhysicsEngine::setGlobalTimeScale(float scale) noexcept
     globalTimeScale_.store(scale, std::memory_order_relaxed);
 }
 
+void PhysicsEngine::setMacroValue(int idx, float value) noexcept
+{
+    if (idx >= 0 && idx < NUM_MACROS)
+        macroValues_[idx].store(value, std::memory_order_relaxed);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Offline rendering
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1379,6 +1385,12 @@ float PhysicsEngine::readModSource(ModSourceType type, int index) const
 
         case ModSourceType::Velocity:
             return lastVelocity_ / 127.0f;
+
+        case ModSourceType::Macro:
+            if (index >= 0 && index < NUM_MACROS)
+                return juce::jlimit(0.0f, 1.0f,
+                    macroValues_[index].load(std::memory_order_relaxed));
+            break;
 
         case ModSourceType::None: default: break;
     }

@@ -24,7 +24,16 @@ MorphosProcessor::createParameterLayout()
         juce::NormalisableRange<float>(0.05f, 8.0f, 0.0f, 0.5f), // skewed: finer control near 1.0
         1.0f));
 
-    // Phase 4+: per-Emitter params, field object params, etc.
+    // ── Phase-6 macro knobs ──────────────────────────────────────────────────
+    // Eight normalised [0, 1] params exposed to the host as standard
+    // automation. Display names ("Macro 1" … "Macro 8") are what the DAW shows
+    // in its parameter list / macro mapper.
+    for (int i = 0; i < 8; ++i)
+        layout.add(std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID{ ParamID::MACRO[i], 1 },
+            "Macro " + juce::String(i + 1),
+            juce::NormalisableRange<float>(0.0f, 1.0f),
+            0.0f));
 
     return layout;
 }
@@ -42,6 +51,11 @@ MorphosProcessor::MorphosProcessor()
     // without going through APVTS (which acquires a lock).
     pGain_            = apvts_.getRawParameterValue(ParamID::MASTER_GAIN);
     pGlobalTimeScale_ = apvts_.getRawParameterValue(ParamID::GLOBAL_TIME_SCALE);
+    for (int i = 0; i < 8; ++i)
+    {
+        pMacros_[i] = apvts_.getRawParameterValue(ParamID::MACRO[i]);
+        jassert(pMacros_[i] != nullptr);
+    }
 
     jassert(pGain_            != nullptr);
     jassert(pGlobalTimeScale_ != nullptr);
@@ -132,6 +146,11 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // ── 3. Forward global time scale to physics ───────────────────────────────
     physicsEngine_.setGlobalTimeScale(
         pGlobalTimeScale_->load(std::memory_order_relaxed));
+
+    // Forward host-automated macro knobs so the mod matrix can read them.
+    for (int i = 0; i < 8; ++i)
+        physicsEngine_.setMacroValue(i,
+            pMacros_[i]->load(std::memory_order_relaxed));
 
     // ── 3a. Offline rendering: drive physics synchronously ───────────────────
     // During DAW bounce/freeze, processBlock runs faster than wall clock. The

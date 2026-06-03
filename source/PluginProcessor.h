@@ -1,4 +1,6 @@
 #pragma once
+#include <array>
+
 #include <juce_audio_processors/juce_audio_processors.h>
 
 #include "physics/PhysicsEngine.h"
@@ -89,6 +91,7 @@ private:
     // Cached parameter pointers — accessed on the audio thread without locking.
     std::atomic<float>* pGain_           = nullptr;
     std::atomic<float>* pGlobalTimeScale_= nullptr;
+    std::array<std::atomic<float>*, 8> pMacros_{};
 
     // Snapshot copied from physics for UI thread consumption (approximate/stale OK).
     // Updated in processBlock() by a relaxed copy — not lock-free-perfect, but
