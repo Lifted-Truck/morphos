@@ -257,6 +257,10 @@ private:
 
     uint64_t tickIndex_        = 0;
     double   simulationTimeMs_ = 0.0;
+    // Bumped by any object Add/Remove path so the UI can detect placement
+    // changes via a single int comparison instead of fingerprinting every
+    // slot's active flag.
+    uint64_t configVersion_    = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PhysicsEngine)
 };

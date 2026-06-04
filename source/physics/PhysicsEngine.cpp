@@ -352,6 +352,34 @@ void PhysicsEngine::drainEditCommands()
             const auto& e   = editBuffer_[i];
             const int   idx = e.index;
 
+            // Bump the config-version counter for any object-lifecycle edit so
+            // the UI can detect placement changes via a single int comparison
+            // (no per-slot fingerprinting needed editor-side).
+            switch (e.type)
+            {
+                case ManifoldEdit::Type::AddAttractor:
+                case ManifoldEdit::Type::AddRepeller:
+                case ManifoldEdit::Type::AddVortex:
+                case ManifoldEdit::Type::RemoveFieldObject:
+                case ManifoldEdit::Type::AddEmitter:
+                case ManifoldEdit::Type::RemoveEmitter:
+                case ManifoldEdit::Type::AddTimbralAnchor:
+                case ManifoldEdit::Type::RemoveTimbralAnchor:
+                case ManifoldEdit::Type::AddEffectZone:
+                case ManifoldEdit::Type::RemoveEffectZone:
+                case ManifoldEdit::Type::AddFluxGate:
+                case ManifoldEdit::Type::RemoveFluxGate:
+                case ManifoldEdit::Type::AddPathObject:
+                case ManifoldEdit::Type::RemovePathObject:
+                case ManifoldEdit::Type::AddTrajectoryPath:
+                case ManifoldEdit::Type::RemoveTrajectoryPath:
+                case ManifoldEdit::Type::AddTangentPath:
+                case ManifoldEdit::Type::RemoveTangentPath:
+                    ++configVersion_;
+                    break;
+                default: break;
+            }
+
             switch (e.type)
             {
                 // ── Position edits ────────────────────────────────────────────
@@ -812,6 +840,14 @@ void PhysicsEngine::drainEditCommands()
                                 if (c.dstIndex >= 0 && c.dstIndex < MAX_EMITTERS)
                                     c.base = emitters_[c.dstIndex].transposeCents;
                                 break;
+                            case ModDestType::EmitterTransposeOct:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_EMITTERS)
+                                    c.base = (float)emitters_[c.dstIndex].transposeOct;
+                                break;
+                            case ModDestType::EmitterTransposeSemi:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_EMITTERS)
+                                    c.base = (float)emitters_[c.dstIndex].transposeSemi;
+                                break;
                             case ModDestType::EmitterPan:
                                 if (c.dstIndex >= 0 && c.dstIndex < MAX_EMITTERS)
                                     c.base = emitters_[c.dstIndex].pan;
@@ -868,6 +904,66 @@ void PhysicsEngine::drainEditCommands()
                                 break;
                             case ModDestType::GlobalFriction:
                                 c.base = globalFriction_;
+                                break;
+                            case ModDestType::FieldObjectChirality:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_FIELD_OBJECTS)
+                                    c.base = fieldObjects_[c.dstIndex].chirality;
+                                break;
+                            case ModDestType::TrajectoryRadius:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_TRAJECTORY_PATHS)
+                                    c.base = trajectoryPaths_[c.dstIndex].radius;
+                                break;
+                            case ModDestType::TrajectorySpeed:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_TRAJECTORY_PATHS)
+                                    c.base = trajectoryPaths_[c.dstIndex].speed;
+                                break;
+                            case ModDestType::TrajectoryLength:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_TRAJECTORY_PATHS)
+                                    c.base = trajectoryPaths_[c.dstIndex].length;
+                                break;
+                            case ModDestType::TrajectoryAngle:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_TRAJECTORY_PATHS)
+                                    c.base = trajectoryPaths_[c.dstIndex].angleRad;
+                                break;
+                            case ModDestType::TangentPathRadius:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_TANGENT_PATHS)
+                                    c.base = tangentPaths_[c.dstIndex].radius;
+                                break;
+                            case ModDestType::TangentPathWidth:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_TANGENT_PATHS)
+                                    c.base = tangentPaths_[c.dstIndex].width;
+                                break;
+                            case ModDestType::TangentPathStrength:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_TANGENT_PATHS)
+                                    c.base = tangentPaths_[c.dstIndex].strength;
+                                break;
+                            case ModDestType::TangentPathChirality:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_TANGENT_PATHS)
+                                    c.base = tangentPaths_[c.dstIndex].chirality;
+                                break;
+                            case ModDestType::PathObjectRadius:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_PATH_OBJECTS)
+                                    c.base = pathObjects_[c.dstIndex].radius;
+                                break;
+                            case ModDestType::PathObjectSnapRadius:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_PATH_OBJECTS)
+                                    c.base = pathObjects_[c.dstIndex].snapRadius;
+                                break;
+                            case ModDestType::PathObjectEscapeForce:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_PATH_OBJECTS)
+                                    c.base = pathObjects_[c.dstIndex].escapeForce;
+                                break;
+                            case ModDestType::FluxGateLength:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_FLUX_GATES)
+                                    c.base = fluxGates_[c.dstIndex].length;
+                                break;
+                            case ModDestType::FluxGateAngle:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_FLUX_GATES)
+                                    c.base = fluxGates_[c.dstIndex].angleRad;
+                                break;
+                            case ModDestType::FluxGateRadius:
+                                if (c.dstIndex >= 0 && c.dstIndex < MAX_FLUX_GATES)
+                                    c.base = fluxGates_[c.dstIndex].radius;
                                 break;
                             case ModDestType::None: default: break;
                         }
@@ -1492,6 +1588,24 @@ bool PhysicsEngine::writeModDest(ModDestType type, int index, float value)
             if (index >= 0 && index < MAX_EMITTERS)
             { emitters_[index].transposeCents = juce::jlimit(-100.0f, 100.0f, value); return true; }
             break;
+        case ModDestType::EmitterTransposeOct:
+            if (index >= 0 && index < MAX_EMITTERS)
+            {
+                // Round to nearest integer — the field is int-typed; a modulator
+                // sweeping through this dest produces discrete octave jumps.
+                emitters_[index].transposeOct =
+                    juce::jlimit(-4, 4, (int)std::lround(value));
+                return true;
+            }
+            break;
+        case ModDestType::EmitterTransposeSemi:
+            if (index >= 0 && index < MAX_EMITTERS)
+            {
+                emitters_[index].transposeSemi =
+                    juce::jlimit(-12, 12, (int)std::lround(value));
+                return true;
+            }
+            break;
         case ModDestType::EmitterPan:
             if (index >= 0 && index < MAX_EMITTERS)
             { emitters_[index].pan = juce::jlimit(-1.0f, 1.0f, value); return true; }
@@ -1576,6 +1690,83 @@ bool PhysicsEngine::writeModDest(ModDestType type, int index, float value)
         case ModDestType::GlobalFriction:
             globalFriction_ = juce::jlimit(0.0f, 10.0f, value);
             return true;
+        case ModDestType::FieldObjectChirality:
+            if (index >= 0 && index < MAX_FIELD_OBJECTS)
+            {
+                fieldObjects_[index].chirality = juce::jlimit(-1.0f, 1.0f, value);
+                fieldGrid_.dirty = true;
+                return true;
+            }
+            break;
+        case ModDestType::TrajectoryRadius:
+            if (index >= 0 && index < MAX_TRAJECTORY_PATHS)
+            { trajectoryPaths_[index].radius = juce::jlimit(0.02f, 0.45f, value); return true; }
+            break;
+        case ModDestType::TrajectorySpeed:
+            if (index >= 0 && index < MAX_TRAJECTORY_PATHS)
+            { trajectoryPaths_[index].speed = juce::jlimit(-4.0f, 4.0f, value); return true; }
+            break;
+        case ModDestType::TrajectoryLength:
+            if (index >= 0 && index < MAX_TRAJECTORY_PATHS)
+            { trajectoryPaths_[index].length = juce::jlimit(0.02f, 0.9f, value); return true; }
+            break;
+        case ModDestType::TrajectoryAngle:
+            if (index >= 0 && index < MAX_TRAJECTORY_PATHS)
+            {
+                // Wrap to (-π, +π] so a modulator can produce smooth rotation.
+                const float pi = juce::MathConstants<float>::pi;
+                float a = std::fmod(value + pi, 2.0f * pi);
+                if (a < 0.0f) a += 2.0f * pi;
+                trajectoryPaths_[index].angleRad = a - pi;
+                return true;
+            }
+            break;
+        case ModDestType::TangentPathRadius:
+            if (index >= 0 && index < MAX_TANGENT_PATHS)
+            { tangentPaths_[index].radius = juce::jlimit(0.02f, 0.45f, value); return true; }
+            break;
+        case ModDestType::TangentPathWidth:
+            if (index >= 0 && index < MAX_TANGENT_PATHS)
+            { tangentPaths_[index].width = juce::jlimit(0.01f, 0.30f, value); return true; }
+            break;
+        case ModDestType::TangentPathStrength:
+            if (index >= 0 && index < MAX_TANGENT_PATHS)
+            { tangentPaths_[index].strength = juce::jlimit(0.0f, 2.0f, value); return true; }
+            break;
+        case ModDestType::TangentPathChirality:
+            if (index >= 0 && index < MAX_TANGENT_PATHS)
+            { tangentPaths_[index].chirality = juce::jlimit(-1.0f, 1.0f, value); return true; }
+            break;
+        case ModDestType::PathObjectRadius:
+            if (index >= 0 && index < MAX_PATH_OBJECTS)
+            { pathObjects_[index].radius = juce::jlimit(0.02f, 0.45f, value); return true; }
+            break;
+        case ModDestType::PathObjectSnapRadius:
+            if (index >= 0 && index < MAX_PATH_OBJECTS)
+            { pathObjects_[index].snapRadius = juce::jlimit(0.005f, 0.15f, value); return true; }
+            break;
+        case ModDestType::PathObjectEscapeForce:
+            if (index >= 0 && index < MAX_PATH_OBJECTS)
+            { pathObjects_[index].escapeForce = juce::jlimit(0.0f, 5.0f, value); return true; }
+            break;
+        case ModDestType::FluxGateLength:
+            if (index >= 0 && index < MAX_FLUX_GATES)
+            { fluxGates_[index].length = juce::jlimit(0.02f, 0.9f, value); return true; }
+            break;
+        case ModDestType::FluxGateAngle:
+            if (index >= 0 && index < MAX_FLUX_GATES)
+            {
+                const float pi = juce::MathConstants<float>::pi;
+                float a = std::fmod(value + pi, 2.0f * pi);
+                if (a < 0.0f) a += 2.0f * pi;
+                fluxGates_[index].angleRad = a - pi;
+                return true;
+            }
+            break;
+        case ModDestType::FluxGateRadius:
+            if (index >= 0 && index < MAX_FLUX_GATES)
+            { fluxGates_[index].radius = juce::jlimit(0.02f, 0.45f, value); return true; }
+            break;
         case ModDestType::None: default: break;
     }
     return false;
@@ -2281,6 +2472,7 @@ void PhysicsEngine::writeSnapshot()
     snap.globalBoundary  = globalBoundary_;
     snap.globalGlideTime = globalGlideTimeSec_;
     snap.globalFriction  = globalFriction_;
+    snap.configVersion   = configVersion_;
 
     // Copy effect zones for UI rendering
     int activeZones = 0;
@@ -2422,6 +2614,9 @@ void PhysicsEngine::applyPatch(const PatchState& patch)
     globalBoundary_     = patch.boundary;
     globalGlideTimeSec_ = patch.glideTimeSec;
     globalFriction_     = patch.globalFriction;
+    // Loading a patch is a wholesale config change — bump so the UI's mod tab
+    // rebuilds its dropdowns to reflect the new object set.
+    ++configVersion_;
 
     morphons_        = {};    // Kill all active voices from the previous patch
     emitterHeldCount_.fill(0); // Drop any tracked held notes — old patch is gone

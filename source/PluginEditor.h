@@ -1,4 +1,5 @@
 #pragma once
+#include <limits>
 #include <vector>
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -169,6 +170,15 @@ private:
     int  layoutModTabContent(int contentW);               // Helper returning total height
     void updatePanel  ();                                 // Refresh values + visibility
     void updateModTab ();                                 // Refresh mod row values + visibility
+    void populateModSourceCombo(juce::ComboBox& cb, const PhysicsStateSnapshot& state) const;
+    void populateModDestCombo  (juce::ComboBox& cb, const PhysicsStateSnapshot& state) const;
+    void refreshModDropdownsIfNeeded(const PhysicsStateSnapshot& state);
+
+    // The physics engine bumps state.configVersion any time an object is
+    // added or removed; the editor compares it against this saved value to
+    // decide whether to rebuild the mod-matrix dropdowns. Sentinel of
+    // UINT64_MAX forces a build on the first refresh after construction.
+    uint64_t lastSeenConfigVersion_ = std::numeric_limits<uint64_t>::max();
 
     // ── Panel tab mode ──────────────────────────────────────────────────────────
     // Inspector = per-selection sliders (the default panel content).

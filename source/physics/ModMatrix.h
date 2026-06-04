@@ -69,6 +69,8 @@ enum class ModDestType : uint8_t
     EmitterSustain,          // emitters_[index].sustainLevel [0,1]
     EmitterRelease,          // emitters_[index].releaseTime
     EmitterTransposeCents,   // emitters_[index].transposeCents (-100..+100)
+    EmitterTransposeOct,     // emitters_[index].transposeOct (-4..+4; integer, rounded on write)
+    EmitterTransposeSemi,    // emitters_[index].transposeSemi (-12..+12; integer, rounded on write)
     EmitterPan,              // emitters_[index].pan (-1..+1)
     EmitterTerminusStrength, // emitters_[index].terminusStrength
     EmitterTerminusRadius,   // emitters_[index].terminusArrivalRadius
@@ -87,12 +89,30 @@ enum class ModDestType : uint8_t
     // Non-position destinations
     FieldObjectStrength,     // fieldObjects_[index].strength
     FieldObjectRadius,       // fieldObjects_[index].radius     (invalidates grid)
+    FieldObjectChirality,    // fieldObjects_[index].chirality  (invalidates grid; Vortex only effect)
     EffectZoneDepth,         // effectZones_[index].depth
     EffectZoneRadius,        // effectZones_[index].radius
     TrajectoryCurrentT,      // trajectoryPaths_[index].currentT (Manual mode)
+    TrajectoryRadius,        // trajectoryPaths_[index].radius   (Circle shape)
+    TrajectorySpeed,         // trajectoryPaths_[index].speed
+    TrajectoryLength,        // trajectoryPaths_[index].length   (Line shape)
+    TrajectoryAngle,         // trajectoryPaths_[index].angleRad (Line shape)
     AnchorTimbreX,           // timbralAnchors_[index].timbreX
     AnchorTimbreY,           // timbralAnchors_[index].timbreY
     GlobalFriction,          // globalFriction_   (index ignored)
+    // Flow (TangentPath) params
+    TangentPathRadius,       // tangentPaths_[index].radius
+    TangentPathWidth,        // tangentPaths_[index].width
+    TangentPathStrength,     // tangentPaths_[index].strength
+    TangentPathChirality,    // tangentPaths_[index].chirality
+    // Rail (PathObject) params
+    PathObjectRadius,        // pathObjects_[index].radius
+    PathObjectSnapRadius,    // pathObjects_[index].snapRadius
+    PathObjectEscapeForce,   // pathObjects_[index].escapeForce
+    // Flux Gate params
+    FluxGateLength,          // fluxGates_[index].length   (Line shape)
+    FluxGateAngle,           // fluxGates_[index].angleRad (Line shape)
+    FluxGateRadius,          // fluxGates_[index].radius   (Circle shape)
 };
 
 struct ModConnection
@@ -124,6 +144,8 @@ inline float perDestSwing(ModDestType type) noexcept
         case ModDestType::EmitterDecay:
         case ModDestType::EmitterRelease:          return 5.0f;
         case ModDestType::EmitterTransposeCents:   return 100.0f;
+        case ModDestType::EmitterTransposeOct:     return 4.0f;
+        case ModDestType::EmitterTransposeSemi:    return 12.0f;
         case ModDestType::EmitterTerminusStrength: return 2.0f;
         case ModDestType::EmitterTerminusRadius:   return 0.45f;
         case ModDestType::FieldObjectStrength:     return 2.0f;
@@ -131,6 +153,19 @@ inline float perDestSwing(ModDestType type) noexcept
         case ModDestType::EffectZoneDepth:         return 24.0f;   // covers pitch zones' ±24 semis
         case ModDestType::EffectZoneRadius:        return 0.45f;
         case ModDestType::GlobalFriction:          return 10.0f;
-        default:                                    return 1.0f;    // X/Y, timbre, t, pan, sustain
+        case ModDestType::TrajectoryRadius:        return 0.45f;
+        case ModDestType::TrajectorySpeed:         return 4.0f;
+        case ModDestType::TrajectoryLength:        return 0.9f;
+        case ModDestType::TrajectoryAngle:         return PI;
+        case ModDestType::TangentPathRadius:       return 0.45f;
+        case ModDestType::TangentPathWidth:        return 0.30f;
+        case ModDestType::TangentPathStrength:     return 2.0f;
+        case ModDestType::PathObjectRadius:        return 0.45f;
+        case ModDestType::PathObjectSnapRadius:    return 0.15f;
+        case ModDestType::PathObjectEscapeForce:   return 5.0f;
+        case ModDestType::FluxGateLength:          return 0.9f;
+        case ModDestType::FluxGateAngle:           return PI;
+        case ModDestType::FluxGateRadius:          return 0.45f;
+        default:                                    return 1.0f;    // X/Y, timbre, t, pan, sustain, chirality
     }
 }

@@ -282,6 +282,10 @@ struct PhysicsStateSnapshot
     BoundaryBehavior globalBoundary           = BoundaryBehavior::Wrap;
     float            globalGlideTime          = 0.0f;   // Portamento seconds [0, 5]
     float            globalFriction           = 0.0f;   // Per-tick velocity damping [0, 0.1]
+    // Bumped every time an object is added or removed (or a FieldObject's
+    // type changes). UI watches this to know when to rebuild the mod-matrix
+    // dropdowns without polling every per-slot active flag itself.
+    uint64_t         configVersion            = 0;
     uint64_t         tickIndex                = 0;
     double           simulationTimeMs         = 0.0;
 };

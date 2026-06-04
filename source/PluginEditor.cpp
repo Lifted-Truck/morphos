@@ -635,8 +635,9 @@ void MorphosEditor::setupSliders()
     };
     sldFOChirality_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetFieldObjectChirality,
-                     selection_.index, (float)sldFOChirality_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetFieldObjectChirality,
+                               selection_.index, (float)sldFOChirality_.getValue(),
+                               ModDestType::FieldObjectChirality);
     };
 
     // ── Emitter sliders ────────────────────────────────────────────────────────
@@ -700,13 +701,15 @@ void MorphosEditor::setupSliders()
 
     sldTransposeOct_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetEmitterTransposeOct,
-                     selection_.index, (float)sldTransposeOct_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetEmitterTransposeOct,
+                               selection_.index, (float)sldTransposeOct_.getValue(),
+                               ModDestType::EmitterTransposeOct);
     };
     sldTransposeSemi_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetEmitterTransposeSemi,
-                     selection_.index, (float)sldTransposeSemi_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetEmitterTransposeSemi,
+                               selection_.index, (float)sldTransposeSemi_.getValue(),
+                               ModDestType::EmitterTransposeSemi);
     };
     sldTransposeCents_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
@@ -927,13 +930,15 @@ void MorphosEditor::setupSliders()
 
     sldGateLength_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetFluxGateLength,
-                     selection_.index, (float)sldGateLength_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetFluxGateLength,
+                               selection_.index, (float)sldGateLength_.getValue(),
+                               ModDestType::FluxGateLength);
     };
     sldGateAngle_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetFluxGateAngle,
-                     selection_.index, (float)sldGateAngle_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetFluxGateAngle,
+                               selection_.index, (float)sldGateAngle_.getValue(),
+                               ModDestType::FluxGateAngle);
     };
 
     // Shape toggle + circle radius
@@ -948,8 +953,9 @@ void MorphosEditor::setupSliders()
 
     sldGateRadius_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetFluxGateRadius,
-                     selection_.index, (float)sldGateRadius_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetFluxGateRadius,
+                               selection_.index, (float)sldGateRadius_.getValue(),
+                               ModDestType::FluxGateRadius);
     };
 
     auto gateShapeClick = [this](FluxGateShape s) {
@@ -985,18 +991,21 @@ void MorphosEditor::setupSliders()
 
     sldPathRadius_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetPathObjectRadius,
-                     selection_.index, (float)sldPathRadius_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetPathObjectRadius,
+                               selection_.index, (float)sldPathRadius_.getValue(),
+                               ModDestType::PathObjectRadius);
     };
     sldPathSnap_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetPathObjectSnapRadius,
-                     selection_.index, (float)sldPathSnap_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetPathObjectSnapRadius,
+                               selection_.index, (float)sldPathSnap_.getValue(),
+                               ModDestType::PathObjectSnapRadius);
     };
     sldPathEscape_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetPathObjectEscapeForce,
-                     selection_.index, (float)sldPathEscape_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetPathObjectEscapeForce,
+                               selection_.index, (float)sldPathEscape_.getValue(),
+                               ModDestType::PathObjectEscapeForce);
     };
 
     // ── Trajectory path sliders ────────────────────────────────────────────────
@@ -1019,13 +1028,15 @@ void MorphosEditor::setupSliders()
 
     sldTrajRadius_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetTrajectoryPathRadius,
-                     selection_.index, (float)sldTrajRadius_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetTrajectoryPathRadius,
+                               selection_.index, (float)sldTrajRadius_.getValue(),
+                               ModDestType::TrajectoryRadius);
     };
     sldTrajSpeed_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetTrajectoryPathSpeed,
-                     selection_.index, (float)sldTrajSpeed_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetTrajectoryPathSpeed,
+                               selection_.index, (float)sldTrajSpeed_.getValue(),
+                               ModDestType::TrajectorySpeed);
     };
     sldTrajPos_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
@@ -1078,13 +1089,15 @@ void MorphosEditor::setupSliders()
 
     sldTrajLength_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetTrajectoryPathLength,
-                     selection_.index, (float)sldTrajLength_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetTrajectoryPathLength,
+                               selection_.index, (float)sldTrajLength_.getValue(),
+                               ModDestType::TrajectoryLength);
     };
     sldTrajAngle_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetTrajectoryPathAngle,
-                     selection_.index, (float)sldTrajAngle_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetTrajectoryPathAngle,
+                               selection_.index, (float)sldTrajAngle_.getValue(),
+                               ModDestType::TrajectoryAngle);
     };
 
     auto trajShapeClick = [this](PathShape s) {
@@ -1135,23 +1148,27 @@ void MorphosEditor::setupSliders()
 
     sldFlowRadius_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetTangentPathRadius,
-                     selection_.index, (float)sldFlowRadius_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetTangentPathRadius,
+                               selection_.index, (float)sldFlowRadius_.getValue(),
+                               ModDestType::TangentPathRadius);
     };
     sldFlowWidth_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetTangentPathWidth,
-                     selection_.index, (float)sldFlowWidth_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetTangentPathWidth,
+                               selection_.index, (float)sldFlowWidth_.getValue(),
+                               ModDestType::TangentPathWidth);
     };
     sldFlowStrength_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetTangentPathStrength,
-                     selection_.index, (float)sldFlowStrength_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetTangentPathStrength,
+                               selection_.index, (float)sldFlowStrength_.getValue(),
+                               ModDestType::TangentPathStrength);
     };
     sldFlowChirality_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
-            sendEdit(ManifoldEdit::Type::SetTangentPathChirality,
-                     selection_.index, (float)sldFlowChirality_.getValue());
+            sendParamOrModBase(ManifoldEdit::Type::SetTangentPathChirality,
+                               selection_.index, (float)sldFlowChirality_.getValue(),
+                               ModDestType::TangentPathChirality);
     };
 
     // ── Emitter ↔ Trajectory attachment slider ─────────────────────────────────
@@ -1294,6 +1311,230 @@ void MorphosEditor::setupSliders()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Mod-tab dropdown population
+//
+// Both source and dest dropdowns hide inactive slots so the lists shrink to
+// what's actually placeable. FieldObjects are labelled by their current type
+// (Attractor / Repeller / Vortex) so the user can tell them apart at a glance
+// instead of staring at a column of identical "Field N" entries.
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace
+{
+    // Pack/unpack (type, index) into a single 32-bit id for ComboBox itemIds.
+    // We add 1 because JUCE's ComboBox treats id 0 as "no selection".
+    constexpr int packTypeIdx(int type, int index) noexcept { return ((type & 0xff) << 8 | (index & 0xff)) + 1; }
+    constexpr int unpackType(int id) noexcept { return ((id - 1) >> 8) & 0xff; }
+    constexpr int unpackIdx (int id) noexcept { return  (id - 1)       & 0xff; }
+
+    juce::String fieldTypeName(FieldObjectType t)
+    {
+        switch (t)
+        {
+            case FieldObjectType::Attractor: return "Attractor";
+            case FieldObjectType::Repeller:  return "Repeller";
+            case FieldObjectType::Vortex:    return "Vortex";
+        }
+        return "Field";
+    }
+}
+
+void MorphosEditor::populateModSourceCombo(juce::ComboBox& cb,
+                                            const PhysicsStateSnapshot& state) const
+{
+    cb.clear(juce::dontSendNotification);
+    cb.addItem("(none)", packTypeIdx((int)ModSourceType::None, 0));
+
+    cb.addSectionHeading("Trajectories");
+    for (int i = 0; i < MAX_TRAJECTORY_PATHS; ++i)
+    {
+        if (!state.trajectoryPaths[i].active) continue;
+        cb.addItem("Traj " + juce::String(i) + " t", packTypeIdx((int)ModSourceType::TrajectoryT, i));
+        cb.addItem("Traj " + juce::String(i) + " x", packTypeIdx((int)ModSourceType::TrajectoryX, i));
+        cb.addItem("Traj " + juce::String(i) + " y", packTypeIdx((int)ModSourceType::TrajectoryY, i));
+    }
+
+    cb.addSectionHeading("Macros");
+    for (int i = 0; i < NUM_MACROS; ++i)
+        cb.addItem("Macro " + juce::String(i + 1),
+                   packTypeIdx((int)ModSourceType::Macro, i));
+
+    cb.addSectionHeading("MIDI");
+    cb.addItem("Keytrack", packTypeIdx((int)ModSourceType::Keytrack, 0));
+    cb.addItem("Velocity", packTypeIdx((int)ModSourceType::Velocity, 0));
+    auto ccLabel = [](int n) -> juce::String {
+        juce::String label = "CC " + juce::String(n);
+        switch (n)
+        {
+            case 1:   label += " (Mod Wheel)";  break;
+            case 7:   label += " (Volume)";     break;
+            case 10:  label += " (Pan)";        break;
+            case 11:  label += " (Expression)"; break;
+            case 64:  label += " (Sustain)";    break;
+            case 71:  label += " (Resonance)";  break;
+            case 74:  label += " (Cutoff)";     break;
+            default:  break;
+        }
+        return label;
+    };
+    for (int i = 0; i < 128; ++i)
+        cb.addItem(ccLabel(i), packTypeIdx((int)ModSourceType::MidiCC, i));
+}
+
+void MorphosEditor::populateModDestCombo(juce::ComboBox& cb,
+                                          const PhysicsStateSnapshot& state) const
+{
+    cb.clear(juce::dontSendNotification);
+    cb.addItem("(none)", packTypeIdx((int)ModDestType::None, 0));
+
+    // Per-FieldObject name uses the current type so the user sees "Attractor 0",
+    // "Vortex 1", etc. instead of generic "Field N".
+    auto fieldName = [&](int i) -> juce::String {
+        return fieldTypeName(state.fieldObjects[i].type) + " " + juce::String(i);
+    };
+
+    cb.addSectionHeading("Positions");
+    for (int i = 0; i < MAX_FIELD_OBJECTS; ++i)
+    {
+        if (!state.fieldObjects[i].active) continue;
+        const juce::String name = fieldName(i);
+        cb.addItem(name + " x", packTypeIdx((int)ModDestType::FieldObjectX, i));
+        cb.addItem(name + " y", packTypeIdx((int)ModDestType::FieldObjectY, i));
+    }
+    for (int i = 0; i < MAX_EMITTERS; ++i)
+    {
+        if (!state.emitters[i].active) continue;
+        cb.addItem("Emitter " + juce::String(i) + " x", packTypeIdx((int)ModDestType::EmitterX, i));
+        cb.addItem("Emitter " + juce::String(i) + " y", packTypeIdx((int)ModDestType::EmitterY, i));
+    }
+    for (int i = 0; i < state.activeTimbralAnchorCount; ++i)
+    {
+        cb.addItem("Anchor " + juce::String(i) + " x", packTypeIdx((int)ModDestType::AnchorX, i));
+        cb.addItem("Anchor " + juce::String(i) + " y", packTypeIdx((int)ModDestType::AnchorY, i));
+    }
+    for (int i = 0; i < MAX_EFFECT_ZONES; ++i)
+    {
+        if (!state.effectZones[i].active) continue;
+        cb.addItem("Zone " + juce::String(i) + " x", packTypeIdx((int)ModDestType::EffectZoneX, i));
+        cb.addItem("Zone " + juce::String(i) + " y", packTypeIdx((int)ModDestType::EffectZoneY, i));
+    }
+    for (int i = 0; i < MAX_FLUX_GATES; ++i)
+    {
+        if (!state.fluxGates[i].active) continue;
+        cb.addItem("Gate " + juce::String(i) + " x", packTypeIdx((int)ModDestType::FluxGateX, i));
+        cb.addItem("Gate " + juce::String(i) + " y", packTypeIdx((int)ModDestType::FluxGateY, i));
+    }
+    for (int i = 0; i < MAX_PATH_OBJECTS; ++i)
+    {
+        if (!state.pathObjects[i].active) continue;
+        cb.addItem("Rail " + juce::String(i) + " x", packTypeIdx((int)ModDestType::PathObjectX, i));
+        cb.addItem("Rail " + juce::String(i) + " y", packTypeIdx((int)ModDestType::PathObjectY, i));
+    }
+    for (int i = 0; i < MAX_TRAJECTORY_PATHS; ++i)
+    {
+        if (!state.trajectoryPaths[i].active) continue;
+        cb.addItem("Traj " + juce::String(i) + " x (centre)", packTypeIdx((int)ModDestType::TrajectoryPathX, i));
+        cb.addItem("Traj " + juce::String(i) + " y (centre)", packTypeIdx((int)ModDestType::TrajectoryPathY, i));
+    }
+    for (int i = 0; i < MAX_TANGENT_PATHS; ++i)
+    {
+        if (!state.tangentPaths[i].active) continue;
+        cb.addItem("Flow " + juce::String(i) + " x", packTypeIdx((int)ModDestType::TangentPathX, i));
+        cb.addItem("Flow " + juce::String(i) + " y", packTypeIdx((int)ModDestType::TangentPathY, i));
+    }
+
+    cb.addSectionHeading("Object params");
+    for (int i = 0; i < MAX_EMITTERS; ++i)
+    {
+        if (!state.emitters[i].active) continue;
+        const juce::String pre = "Emitter " + juce::String(i) + " ";
+        cb.addItem(pre + "launch angle",  packTypeIdx((int)ModDestType::EmitterLaunchAngle,      i));
+        cb.addItem(pre + "launch speed",  packTypeIdx((int)ModDestType::EmitterLaunchSpeed,      i));
+        cb.addItem(pre + "spawn mass",    packTypeIdx((int)ModDestType::EmitterSpawnMass,        i));
+        cb.addItem(pre + "attack",        packTypeIdx((int)ModDestType::EmitterAttack,           i));
+        cb.addItem(pre + "decay",         packTypeIdx((int)ModDestType::EmitterDecay,            i));
+        cb.addItem(pre + "sustain",       packTypeIdx((int)ModDestType::EmitterSustain,          i));
+        cb.addItem(pre + "release",       packTypeIdx((int)ModDestType::EmitterRelease,          i));
+        cb.addItem(pre + "trans oct",     packTypeIdx((int)ModDestType::EmitterTransposeOct,     i));
+        cb.addItem(pre + "trans semi",    packTypeIdx((int)ModDestType::EmitterTransposeSemi,    i));
+        cb.addItem(pre + "trans cents",   packTypeIdx((int)ModDestType::EmitterTransposeCents,   i));
+        cb.addItem(pre + "pan",           packTypeIdx((int)ModDestType::EmitterPan,              i));
+        cb.addItem(pre + "term strength", packTypeIdx((int)ModDestType::EmitterTerminusStrength, i));
+        cb.addItem(pre + "term radius",   packTypeIdx((int)ModDestType::EmitterTerminusRadius,   i));
+    }
+    for (int i = 0; i < MAX_FIELD_OBJECTS; ++i)
+    {
+        if (!state.fieldObjects[i].active) continue;
+        const juce::String name = fieldName(i);
+        cb.addItem(name + " strength",  packTypeIdx((int)ModDestType::FieldObjectStrength,  i));
+        cb.addItem(name + " radius",    packTypeIdx((int)ModDestType::FieldObjectRadius,    i));
+        if (state.fieldObjects[i].type == FieldObjectType::Vortex)
+            cb.addItem(name + " chirality", packTypeIdx((int)ModDestType::FieldObjectChirality, i));
+    }
+    for (int i = 0; i < MAX_EFFECT_ZONES; ++i)
+    {
+        if (!state.effectZones[i].active) continue;
+        cb.addItem("Zone " + juce::String(i) + " depth",  packTypeIdx((int)ModDestType::EffectZoneDepth,  i));
+        cb.addItem("Zone " + juce::String(i) + " radius", packTypeIdx((int)ModDestType::EffectZoneRadius, i));
+    }
+    for (int i = 0; i < MAX_TRAJECTORY_PATHS; ++i)
+    {
+        if (!state.trajectoryPaths[i].active) continue;
+        cb.addItem("Traj " + juce::String(i) + " t (Manual)", packTypeIdx((int)ModDestType::TrajectoryCurrentT, i));
+        cb.addItem("Traj " + juce::String(i) + " radius",     packTypeIdx((int)ModDestType::TrajectoryRadius,    i));
+        cb.addItem("Traj " + juce::String(i) + " speed",      packTypeIdx((int)ModDestType::TrajectorySpeed,     i));
+        cb.addItem("Traj " + juce::String(i) + " length",     packTypeIdx((int)ModDestType::TrajectoryLength,    i));
+        cb.addItem("Traj " + juce::String(i) + " angle",      packTypeIdx((int)ModDestType::TrajectoryAngle,     i));
+    }
+    for (int i = 0; i < MAX_TANGENT_PATHS; ++i)
+    {
+        if (!state.tangentPaths[i].active) continue;
+        cb.addItem("Flow " + juce::String(i) + " radius",    packTypeIdx((int)ModDestType::TangentPathRadius,    i));
+        cb.addItem("Flow " + juce::String(i) + " width",     packTypeIdx((int)ModDestType::TangentPathWidth,     i));
+        cb.addItem("Flow " + juce::String(i) + " strength",  packTypeIdx((int)ModDestType::TangentPathStrength,  i));
+        cb.addItem("Flow " + juce::String(i) + " chirality", packTypeIdx((int)ModDestType::TangentPathChirality, i));
+    }
+    for (int i = 0; i < MAX_PATH_OBJECTS; ++i)
+    {
+        if (!state.pathObjects[i].active) continue;
+        cb.addItem("Rail " + juce::String(i) + " radius",       packTypeIdx((int)ModDestType::PathObjectRadius,      i));
+        cb.addItem("Rail " + juce::String(i) + " snap radius",  packTypeIdx((int)ModDestType::PathObjectSnapRadius,  i));
+        cb.addItem("Rail " + juce::String(i) + " escape force", packTypeIdx((int)ModDestType::PathObjectEscapeForce, i));
+    }
+    for (int i = 0; i < MAX_FLUX_GATES; ++i)
+    {
+        if (!state.fluxGates[i].active) continue;
+        cb.addItem("Gate " + juce::String(i) + " length", packTypeIdx((int)ModDestType::FluxGateLength, i));
+        cb.addItem("Gate " + juce::String(i) + " angle",  packTypeIdx((int)ModDestType::FluxGateAngle,  i));
+        cb.addItem("Gate " + juce::String(i) + " radius", packTypeIdx((int)ModDestType::FluxGateRadius, i));
+    }
+    for (int i = 0; i < state.activeTimbralAnchorCount; ++i)
+    {
+        cb.addItem("Anchor " + juce::String(i) + " timbreX", packTypeIdx((int)ModDestType::AnchorTimbreX, i));
+        cb.addItem("Anchor " + juce::String(i) + " timbreY", packTypeIdx((int)ModDestType::AnchorTimbreY, i));
+    }
+
+    cb.addSectionHeading("Global");
+    cb.addItem("Global Friction", packTypeIdx((int)ModDestType::GlobalFriction, 0));
+}
+
+void MorphosEditor::refreshModDropdownsIfNeeded(const PhysicsStateSnapshot& state)
+{
+    // Cheap single-int comparison: physics increments configVersion any time
+    // it adds or removes a canvas object (or loads a patch). If it hasn't
+    // moved since our last rebuild, nothing on the source/dest side can have
+    // changed and we skip the work entirely.
+    if (state.configVersion == lastSeenConfigVersion_) return;
+    lastSeenConfigVersion_ = state.configVersion;
+
+    for (auto& cb : modSrcCombos_) populateModSourceCombo(cb, state);
+    for (auto& cb : modDstCombos_) populateModDestCombo  (cb, state);
+    // The rebuild cleared each combo's selection by ID — resync from the
+    // connection state so the user's choices come back into view.
+    updateModTab();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // installPanelViewport — wrap per-selection sections in a scrollable Viewport
 //
 // Called once from the constructor, after setupSliders() has parented every
@@ -1403,15 +1644,6 @@ void MorphosEditor::installPanelViewport()
 // round-trips both fields in one onChange.
 // ─────────────────────────────────────────────────────────────────────────────
 
-namespace
-{
-    // Pack/unpack (type, index) into a single 32-bit id for ComboBox itemIds.
-    // We add 1 because JUCE's ComboBox treats id 0 as "no selection".
-    constexpr int packTypeIdx(int type, int index) noexcept { return ((type & 0xff) << 8 | (index & 0xff)) + 1; }
-    constexpr int unpackType(int id) noexcept { return ((id - 1) >> 8) & 0xff; }
-    constexpr int unpackIdx (int id) noexcept { return  (id - 1)       & 0xff; }
-}
-
 void MorphosEditor::setupModMatrix()
 {
     // ── Tab buttons ──────────────────────────────────────────────────────────
@@ -1449,135 +1681,11 @@ void MorphosEditor::setupModMatrix()
     addAndMakeVisible(btnTabMod_);
 
     // ── Mod-row widgets ──────────────────────────────────────────────────────
-    // Source dropdown menu: assemble once and clone into each row.
-    auto populateSourceCombo = [](juce::ComboBox& cb)
-    {
-        cb.clear(juce::dontSendNotification);
-        cb.addItem("(none)", packTypeIdx((int)ModSourceType::None, 0));
-
-        cb.addSectionHeading("Trajectories");
-        for (int i = 0; i < MAX_TRAJECTORY_PATHS; ++i)
-        {
-            cb.addItem("Traj " + juce::String(i) + " t", packTypeIdx((int)ModSourceType::TrajectoryT, i));
-            cb.addItem("Traj " + juce::String(i) + " x", packTypeIdx((int)ModSourceType::TrajectoryX, i));
-            cb.addItem("Traj " + juce::String(i) + " y", packTypeIdx((int)ModSourceType::TrajectoryY, i));
-        }
-
-        cb.addSectionHeading("Macros");
-        for (int i = 0; i < NUM_MACROS; ++i)
-            cb.addItem("Macro " + juce::String(i + 1),
-                       packTypeIdx((int)ModSourceType::Macro, i));
-
-        cb.addSectionHeading("MIDI");
-        cb.addItem("Keytrack", packTypeIdx((int)ModSourceType::Keytrack, 0));
-        cb.addItem("Velocity", packTypeIdx((int)ModSourceType::Velocity, 0));
-        // 128 CCs. Convenience labels on a few common ones to help the user
-        // pick them out without scrolling-and-counting; the rest are bare
-        // "CC N" entries.
-        auto ccLabel = [](int n) -> juce::String {
-            juce::String label = "CC " + juce::String(n);
-            switch (n)
-            {
-                case 1:   label += " (Mod Wheel)";  break;
-                case 7:   label += " (Volume)";     break;
-                case 10:  label += " (Pan)";        break;
-                case 11:  label += " (Expression)"; break;
-                case 64:  label += " (Sustain)";    break;
-                case 71:  label += " (Resonance)";  break;
-                case 74:  label += " (Cutoff)";     break;
-                default:  break;
-            }
-            return label;
-        };
-        for (int i = 0; i < 128; ++i)
-            cb.addItem(ccLabel(i), packTypeIdx((int)ModSourceType::MidiCC, i));
-    };
-    auto populateDestCombo = [](juce::ComboBox& cb)
-    {
-        cb.clear(juce::dontSendNotification);
-        cb.addItem("(none)", packTypeIdx((int)ModDestType::None, 0));
-
-        // Object positions — grouped by object type so the user can scan a
-        // contiguous block. Using ComboBox section headers to delimit groups.
-        cb.addSectionHeading("Positions");
-        for (int i = 0; i < MAX_FIELD_OBJECTS; ++i)
-        {
-            cb.addItem("Field " + juce::String(i) + " x", packTypeIdx((int)ModDestType::FieldObjectX, i));
-            cb.addItem("Field " + juce::String(i) + " y", packTypeIdx((int)ModDestType::FieldObjectY, i));
-        }
-        for (int i = 0; i < MAX_EMITTERS; ++i)
-        {
-            cb.addItem("Emitter " + juce::String(i) + " x", packTypeIdx((int)ModDestType::EmitterX, i));
-            cb.addItem("Emitter " + juce::String(i) + " y", packTypeIdx((int)ModDestType::EmitterY, i));
-        }
-        for (int i = 0; i < MAX_TIMBRAL_ANCHORS; ++i)
-        {
-            cb.addItem("Anchor " + juce::String(i) + " x", packTypeIdx((int)ModDestType::AnchorX, i));
-            cb.addItem("Anchor " + juce::String(i) + " y", packTypeIdx((int)ModDestType::AnchorY, i));
-        }
-        for (int i = 0; i < MAX_EFFECT_ZONES; ++i)
-        {
-            cb.addItem("Zone " + juce::String(i) + " x", packTypeIdx((int)ModDestType::EffectZoneX, i));
-            cb.addItem("Zone " + juce::String(i) + " y", packTypeIdx((int)ModDestType::EffectZoneY, i));
-        }
-        for (int i = 0; i < MAX_FLUX_GATES; ++i)
-        {
-            cb.addItem("Gate " + juce::String(i) + " x", packTypeIdx((int)ModDestType::FluxGateX, i));
-            cb.addItem("Gate " + juce::String(i) + " y", packTypeIdx((int)ModDestType::FluxGateY, i));
-        }
-        for (int i = 0; i < MAX_PATH_OBJECTS; ++i)
-        {
-            cb.addItem("Rail " + juce::String(i) + " x", packTypeIdx((int)ModDestType::PathObjectX, i));
-            cb.addItem("Rail " + juce::String(i) + " y", packTypeIdx((int)ModDestType::PathObjectY, i));
-        }
-        for (int i = 0; i < MAX_TRAJECTORY_PATHS; ++i)
-        {
-            cb.addItem("Traj " + juce::String(i) + " x (centre)", packTypeIdx((int)ModDestType::TrajectoryPathX, i));
-            cb.addItem("Traj " + juce::String(i) + " y (centre)", packTypeIdx((int)ModDestType::TrajectoryPathY, i));
-        }
-        for (int i = 0; i < MAX_TANGENT_PATHS; ++i)
-        {
-            cb.addItem("Flow " + juce::String(i) + " x", packTypeIdx((int)ModDestType::TangentPathX, i));
-            cb.addItem("Flow " + juce::String(i) + " y", packTypeIdx((int)ModDestType::TangentPathY, i));
-        }
-
-        cb.addSectionHeading("Object params");
-        for (int i = 0; i < MAX_EMITTERS; ++i)
-        {
-            const juce::String pre = "Emitter " + juce::String(i) + " ";
-            cb.addItem(pre + "launch angle",  packTypeIdx((int)ModDestType::EmitterLaunchAngle,      i));
-            cb.addItem(pre + "launch speed",  packTypeIdx((int)ModDestType::EmitterLaunchSpeed,      i));
-            cb.addItem(pre + "spawn mass",    packTypeIdx((int)ModDestType::EmitterSpawnMass,        i));
-            cb.addItem(pre + "attack",        packTypeIdx((int)ModDestType::EmitterAttack,           i));
-            cb.addItem(pre + "decay",         packTypeIdx((int)ModDestType::EmitterDecay,            i));
-            cb.addItem(pre + "sustain",       packTypeIdx((int)ModDestType::EmitterSustain,          i));
-            cb.addItem(pre + "release",       packTypeIdx((int)ModDestType::EmitterRelease,          i));
-            cb.addItem(pre + "trans cents",   packTypeIdx((int)ModDestType::EmitterTransposeCents,   i));
-            cb.addItem(pre + "pan",           packTypeIdx((int)ModDestType::EmitterPan,              i));
-            cb.addItem(pre + "term strength", packTypeIdx((int)ModDestType::EmitterTerminusStrength, i));
-            cb.addItem(pre + "term radius",   packTypeIdx((int)ModDestType::EmitterTerminusRadius,   i));
-        }
-        for (int i = 0; i < MAX_FIELD_OBJECTS; ++i)
-        {
-            cb.addItem("Field " + juce::String(i) + " strength", packTypeIdx((int)ModDestType::FieldObjectStrength, i));
-            cb.addItem("Field " + juce::String(i) + " radius",   packTypeIdx((int)ModDestType::FieldObjectRadius,   i));
-        }
-        for (int i = 0; i < MAX_EFFECT_ZONES; ++i)
-        {
-            cb.addItem("Zone " + juce::String(i) + " depth",  packTypeIdx((int)ModDestType::EffectZoneDepth,  i));
-            cb.addItem("Zone " + juce::String(i) + " radius", packTypeIdx((int)ModDestType::EffectZoneRadius, i));
-        }
-        for (int i = 0; i < MAX_TRAJECTORY_PATHS; ++i)
-            cb.addItem("Traj " + juce::String(i) + " t (Manual)", packTypeIdx((int)ModDestType::TrajectoryCurrentT, i));
-        for (int i = 0; i < MAX_TIMBRAL_ANCHORS; ++i)
-        {
-            cb.addItem("Anchor " + juce::String(i) + " timbreX", packTypeIdx((int)ModDestType::AnchorTimbreX, i));
-            cb.addItem("Anchor " + juce::String(i) + " timbreY", packTypeIdx((int)ModDestType::AnchorTimbreY, i));
-        }
-
-        cb.addSectionHeading("Global");
-        cb.addItem("Global Friction", packTypeIdx((int)ModDestType::GlobalFriction, 0));
-    };
+    // Initial populate runs against the current snapshot. After that, the
+    // timer fingerprints the relevant object-config state and calls
+    // refreshModDropdownsIfNeeded so the dropdowns stay in sync as objects
+    // are added/removed/typed.
+    const auto& initialSnapshot = processor_.getPhysicsStateForUI();
 
     for (int slot = 0; slot < MAX_MOD_CONNECTIONS; ++slot)
     {
@@ -1587,8 +1695,8 @@ void MorphosEditor::setupModMatrix()
         auto& lbl = modDepthLabels_[slot];
         auto& rem = modRemoveBtns_[slot];
 
-        populateSourceCombo(src);
-        populateDestCombo  (dst);
+        populateModSourceCombo(src, initialSnapshot);
+        populateModDestCombo  (dst, initialSnapshot);
 
         lbl.setText("Depth", juce::dontSendNotification);
         lbl.setFont(juce::FontOptions(10.0f));
@@ -2318,6 +2426,11 @@ void MorphosEditor::timerCallback()
     // "selections don't stick after deleting a mod."
     if (panelMode_ == PanelMode::Mod)
     {
+        // Rebuild source/dest dropdowns when the object set changes (new
+        // FieldObject type, slot activated, etc.) so labels stay accurate
+        // ("Attractor 0" / "Vortex 1" instead of generic "Field N").
+        refreshModDropdownsIfNeeded(state);
+
         int active = 0;
         for (const auto& c : state.modConnections) if (c.active) ++active;
         if (active != lastModActiveCount_)
