@@ -229,6 +229,40 @@ private:
     // ── Mod-matrix connections — evaluated each tick before integration ──────
     std::array<ModConnection, MAX_MOD_CONNECTIONS> modConnections_{};
 
+    // ── Copy/paste clipboard (physics thread only) ───────────────────────────
+    // Captured by ClipboardCopyObject at copy time and replayed by
+    // ClipboardPaste. Per-type fixed arrays + counts (mirrors PatchState) keep
+    // the copy/paste path allocation-free on the physics thread. Storing the
+    // object data — not a slot reference — makes paste robust to the source
+    // being deleted or re-indexed between copy and paste.
+    struct ObjectClipboard
+    {
+        std::array<FieldObject,    MAX_FIELD_OBJECTS>    fieldObjects{};
+        std::array<Emitter,        MAX_EMITTERS>         emitters{};
+        std::array<TimbralAnchor,  MAX_TIMBRAL_ANCHORS>  timbralAnchors{};
+        std::array<EffectZone,     MAX_EFFECT_ZONES>     effectZones{};
+        std::array<FluxGate,       MAX_FLUX_GATES>       fluxGates{};
+        std::array<PathObject,     MAX_PATH_OBJECTS>     pathObjects{};
+        std::array<TrajectoryPath, MAX_TRAJECTORY_PATHS> trajectoryPaths{};
+        std::array<TangentPath,    MAX_TANGENT_PATHS>    tangentPaths{};
+
+        int fieldObjectCount    = 0;
+        int emitterCount        = 0;
+        int timbralAnchorCount  = 0;
+        int effectZoneCount     = 0;
+        int fluxGateCount       = 0;
+        int pathObjectCount     = 0;
+        int trajectoryPathCount = 0;
+        int tangentPathCount    = 0;
+
+        void clear() noexcept
+        {
+            fieldObjectCount = emitterCount = timbralAnchorCount = effectZoneCount =
+                fluxGateCount = pathObjectCount = trajectoryPathCount = tangentPathCount = 0;
+        }
+    };
+    ObjectClipboard clipboard_;
+
     // ── MIDI-derived mod-source state ────────────────────────────────────────
     // Latest value of each CC (0-127), the most recent note number, and the
     // most recent note-on velocity. Updated by drainNoteEvents and read by

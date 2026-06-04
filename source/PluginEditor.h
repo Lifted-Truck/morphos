@@ -126,6 +126,13 @@ private:
     // selected object translates the entire group.
     std::vector<Selection> multiSelection_;
 
+    // ── Copy/paste ──────────────────────────────────────────────────────────────
+    // UI-side mirror of what's in the physics clipboard (the set last copied),
+    // so paste can predict the new objects' slots and select them. pasteCount_
+    // grows the paste offset on each successive paste; reset by a fresh copy.
+    std::vector<Selection> clipboardContents_;
+    int                    pasteCount_ = 0;
+
     struct GroupDragEntry
     {
         ObjectKind kind;
@@ -154,6 +161,12 @@ private:
                               float& outX, float& outY) noexcept;
     static ManifoldEdit::Type moveEditTypeFor  (ObjectKind kind) noexcept;
     static ManifoldEdit::Type removeEditTypeFor(ObjectKind kind) noexcept;
+
+    // Copy the current selection (single or multi) into the physics-side
+    // clipboard, then paste it back offset by a small fixed delta. In-instance
+    // only; the clipboard lives on the physics thread.
+    void copySelectionToClipboard();
+    void pasteClipboard();
 
     // Returns the top-priority object under canvasPt, or None if nothing hit.
     // Priority: TimbralAnchors > Emitters > FieldObjects.

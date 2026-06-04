@@ -2379,6 +2379,22 @@ bool MorphosEditor::keyPressed(const juce::KeyPress& key)
         return true;
     }
 
+    // Ctrl/Cmd+C — copy the current selection; Ctrl/Cmd+V — paste it back.
+    if (key.getModifiers().isCommandDown())
+    {
+        const int kc = key.getKeyCode();
+        if (kc == 'C' || kc == 'c')
+        {
+            copySelectionToClipboard();
+            return true;
+        }
+        if (kc == 'V' || kc == 'v')
+        {
+            pasteClipboard();
+            return true;
+        }
+    }
+
     // Delete / Backspace: remove either the multi-selected set or the single object.
     if ((key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
         && (selection_.valid() || multiSelection_.size() > 1))
@@ -2717,6 +2733,118 @@ ManifoldEdit::Type MorphosEditor::removeEditTypeFor(ObjectKind kind) noexcept
         case K::TangentPath:     return ManifoldEdit::Type::RemoveTangentPath;
         default:                 return ManifoldEdit::Type::RemoveFieldObject;
     }
+}
+
+void MorphosEditor::copySelectionToClipboard()
+{
+    // Map the editor's ObjectKind to the cross-thread CanvasObjectKind code
+    // carried in ManifoldEdit::x. Returns -1 for None / unmapped.
+    auto kindCodeFor = [](ObjectKind kind) -> float
+    {
+        using K  = ObjectKind;
+        using CK = CanvasObjectKind;
+        switch (kind)
+        {
+            case K::FieldObject:    return static_cast<float>(CK::FieldObject);
+            case K::Emitter:        return static_cast<float>(CK::Emitter);
+            case K::TimbralAnchor:  return static_cast<float>(CK::TimbralAnchor);
+            case K::EffectZone:     return static_cast<float>(CK::EffectZone);
+            case K::FluxGate:       return static_cast<float>(CK::FluxGate);
+            case K::PathObject:     return static_cast<float>(CK::PathObject);
+            case K::TrajectoryPath: return static_cast<float>(CK::TrajectoryPath);
+            case K::TangentPath:    return static_cast<float>(CK::TangentPath);
+            default:                return -1.0f;
+        }
+    };
+
+    // Build the source list: the multi-selection if present, else the single
+    // selection. Nothing selected → nothing to copy.
+    std::vector<Selection> items;
+    if (multiSelection_.size() > 1)
+        items = multiSelection_;
+    else if (selection_.valid())
+        items.push_back(selection_);
+
+    if (items.empty())
+        return;
+
+    // Remember what we copied (for paste-time slot prediction) and reset the
+    // paste offset so the first paste lands one step from the source.
+    clipboardContents_ = items;
+    pasteCount_        = 0;
+
+    // Replace the clipboard with this batch, then append each object's data.
+    sendEdit(ManifoldEdit::Type::ClipboardClear, 0, 0.0f, 0.0f);
+    for (const auto& s : items)
+    {
+        const float kindCode = kindCodeFor(s.kind);
+        if (kindCode < 0.0f)
+            continue;
+        sendEdit(ManifoldEdit::Type::ClipboardCopyObject, s.index, kindCode, 0.0f);
+    }
+}
+
+void MorphosEditor::pasteClipboard()
+{
+    if (clipboardContents_.empty())
+        return;
+
+    // Each successive paste steps further from the source so repeated Ctrl+V
+    // cascades instead of stacking on one spot. Relative geometry within a
+    // multi-object copy is preserved (every object shifts by the same delta).
+    constexpr float kPasteStep = 0.03f;
+    const float off = kPasteStep * static_cast<float>(++pasteCount_);
+
+    // Predict where each pasted object lands. Physics fills the first inactive
+    // slot of each type, in copy order — mirror that against the current
+    // snapshot so we can select the new copies (not the originals), which makes
+    // immediately dragging them into place much smoother.
+    const auto& state = processor_.getPhysicsStateForUI();
+
+    auto nextFreeSlot = [&state](ObjectKind kind, int startFrom) -> int
+    {
+        auto scan = [startFrom](const auto& arr) -> int
+        {
+            for (int k = startFrom; k < static_cast<int>(arr.size()); ++k)
+                if (!arr[k].active) return k;
+            return -1;
+        };
+        switch (kind)
+        {
+            case ObjectKind::FieldObject:    return scan(state.fieldObjects);
+            case ObjectKind::Emitter:        return scan(state.emitters);
+            case ObjectKind::TimbralAnchor:  return scan(state.timbralAnchors);
+            case ObjectKind::EffectZone:     return scan(state.effectZones);
+            case ObjectKind::FluxGate:       return scan(state.fluxGates);
+            case ObjectKind::PathObject:     return scan(state.pathObjects);
+            case ObjectKind::TrajectoryPath: return scan(state.trajectoryPaths);
+            case ObjectKind::TangentPath:    return scan(state.tangentPaths);
+            default:                         return -1;
+        }
+    };
+
+    // Per-kind cursor so multiple copies of the same type claim successive slots.
+    std::array<int, 9> searchStart{};   // indexed by ObjectKind ordinal (None..TangentPath)
+    std::vector<Selection> pasted;
+    for (const auto& s : clipboardContents_)
+    {
+        const int ord  = static_cast<int>(s.kind);
+        const int slot = nextFreeSlot(s.kind, searchStart[ord]);
+        if (slot < 0) continue;                 // that type's slots are full
+        searchStart[ord] = slot + 1;
+        pasted.push_back({ s.kind, slot });
+    }
+
+    sendEdit(ManifoldEdit::Type::ClipboardPaste, 0, off, off);
+
+    // Select the predicted copies. They become active on the next snapshot
+    // (~1 frame); the selection indices are correct as soon as they do.
+    multiSelection_ = pasted;
+    if (multiSelection_.size() == 1) selection_ = multiSelection_[0];
+    else                             selection_ = {};
+    drag_.active = false;
+    updatePanel();
+    repaint();
 }
 
 void MorphosEditor::buildMultiSelectionFromMarquee(const PhysicsStateSnapshot& state,

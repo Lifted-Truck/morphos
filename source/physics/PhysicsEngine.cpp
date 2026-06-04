@@ -375,6 +375,7 @@ void PhysicsEngine::drainEditCommands()
                 case ManifoldEdit::Type::RemoveTrajectoryPath:
                 case ManifoldEdit::Type::AddTangentPath:
                 case ManifoldEdit::Type::RemoveTangentPath:
+                case ManifoldEdit::Type::ClipboardPaste:
                     ++configVersion_;
                     break;
                 default: break;
@@ -639,6 +640,101 @@ void PhysicsEngine::drainEditCommands()
                         timbralAnchors_[activeAnchorCount_].active = false;
                     }
                     break;
+
+                // ── Clipboard / copy-paste ─────────────────────────────────────
+                case ManifoldEdit::Type::ClipboardClear:
+                    clipboard_.clear();
+                    break;
+
+                case ManifoldEdit::Type::ClipboardCopyObject:
+                {
+                    // Append a deep copy of the selected object's data to the
+                    // clipboard. We snapshot the data now so paste survives the
+                    // source being deleted or re-indexed afterwards.
+                    const auto kind = static_cast<CanvasObjectKind>(
+                                          static_cast<int>(e.x));
+
+                    auto append = [idx](const auto& srcArr, auto& dstArr, int& count)
+                    {
+                        if (idx >= 0 && static_cast<size_t>(idx) < srcArr.size()
+                            && count < static_cast<int>(dstArr.size()))
+                            dstArr[count++] = srcArr[idx];
+                    };
+
+                    switch (kind)
+                    {
+                        case CanvasObjectKind::FieldObject:
+                            append(fieldObjects_,    clipboard_.fieldObjects,    clipboard_.fieldObjectCount);    break;
+                        case CanvasObjectKind::Emitter:
+                            append(emitters_,        clipboard_.emitters,        clipboard_.emitterCount);        break;
+                        case CanvasObjectKind::TimbralAnchor:
+                            append(timbralAnchors_,  clipboard_.timbralAnchors,  clipboard_.timbralAnchorCount);  break;
+                        case CanvasObjectKind::EffectZone:
+                            append(effectZones_,     clipboard_.effectZones,     clipboard_.effectZoneCount);     break;
+                        case CanvasObjectKind::FluxGate:
+                            append(fluxGates_,       clipboard_.fluxGates,       clipboard_.fluxGateCount);       break;
+                        case CanvasObjectKind::PathObject:
+                            append(pathObjects_,     clipboard_.pathObjects,     clipboard_.pathObjectCount);     break;
+                        case CanvasObjectKind::TrajectoryPath:
+                            append(trajectoryPaths_, clipboard_.trajectoryPaths, clipboard_.trajectoryPathCount); break;
+                        case CanvasObjectKind::TangentPath:
+                            append(tangentPaths_,    clipboard_.tangentPaths,    clipboard_.tangentPathCount);    break;
+                    }
+                    break;
+                }
+
+                case ManifoldEdit::Type::ClipboardPaste:
+                {
+                    const float dx = e.x;
+                    const float dy = e.y;
+
+                    // Generic paste for any first-inactive-slot type: copy the
+                    // stored object into a free slot, nudge its position by the
+                    // paste offset (clamped to the Manifold), and activate it.
+                    // Anchors are excluded — they require slot compaction.
+                    auto pasteType = [dx, dy](auto& destArr, const auto& srcArr, int count)
+                    {
+                        for (int c = 0; c < count; ++c)
+                        {
+                            int slot = -1;
+                            for (size_t k = 0; k < destArr.size(); ++k)
+                                if (!destArr[k].active) { slot = static_cast<int>(k); break; }
+                            if (slot < 0) break;   // destination full — stop pasting this type
+
+                            auto obj   = srcArr[c];
+                            obj.x      = juce::jlimit(0.0f, 1.0f, obj.x + dx);
+                            obj.y      = juce::jlimit(0.0f, 1.0f, obj.y + dy);
+                            obj.active = true;
+                            destArr[slot] = obj;
+                        }
+                    };
+
+                    pasteType(fieldObjects_,    clipboard_.fieldObjects,    clipboard_.fieldObjectCount);
+                    pasteType(emitters_,        clipboard_.emitters,        clipboard_.emitterCount);
+                    pasteType(effectZones_,     clipboard_.effectZones,     clipboard_.effectZoneCount);
+                    pasteType(fluxGates_,       clipboard_.fluxGates,       clipboard_.fluxGateCount);
+                    pasteType(pathObjects_,     clipboard_.pathObjects,     clipboard_.pathObjectCount);
+                    pasteType(trajectoryPaths_, clipboard_.trajectoryPaths, clipboard_.trajectoryPathCount);
+                    pasteType(tangentPaths_,    clipboard_.tangentPaths,    clipboard_.tangentPathCount);
+
+                    // Anchors: append at activeAnchorCount_ to preserve the
+                    // compaction invariant (active anchors occupy the first
+                    // activeAnchorCount_ slots).
+                    for (int c = 0; c < clipboard_.timbralAnchorCount; ++c)
+                    {
+                        if (activeAnchorCount_ >= MAX_TIMBRAL_ANCHORS) break;
+                        auto a   = clipboard_.timbralAnchors[c];
+                        a.x      = juce::jlimit(0.0f, 1.0f, a.x + dx);
+                        a.y      = juce::jlimit(0.0f, 1.0f, a.y + dy);
+                        a.active = true;
+                        timbralAnchors_[activeAnchorCount_++] = a;
+                    }
+
+                    // Any pasted field object changes the force field.
+                    if (clipboard_.fieldObjectCount > 0)
+                        fieldGrid_.dirty = true;
+                    break;
+                }
 
                 // ── Effect zone position edits ─────────────────────────────────
                 case ManifoldEdit::Type::MoveEffectZone:

@@ -291,6 +291,24 @@ struct PhysicsStateSnapshot
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CanvasObjectKind — stable kind tag passed across the UI→physics boundary for
+// copy/paste. One entry per canvas object array (FieldObject covers Attractor /
+// Repeller / Vortex — the variant is preserved by the struct's own `type` field
+// when cloned). Encoded as a float in ManifoldEdit::x; decode via int cast.
+// ─────────────────────────────────────────────────────────────────────────────
+enum class CanvasObjectKind : uint8_t
+{
+    FieldObject,
+    Emitter,
+    TimbralAnchor,
+    EffectZone,
+    FluxGate,
+    PathObject,
+    TrajectoryPath,
+    TangentPath,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // ManifoldEdit — UI thread → physics thread edit command
 //
 // Sent via a lock-free SPSC queue; applied at the start of the next physics
@@ -415,6 +433,16 @@ struct ManifoldEdit
         SetTangentPathWidth,         // x = influence band half-width [0.01, 0.30]
         SetTangentPathStrength,      // x = force magnitude [0.0, 2.0]
         SetTangentPathChirality,     // x = flow direction [-1, +1]
+
+        // ── Clipboard / copy-paste ────────────────────────────────────────────
+        // In-instance copy/paste. Copy captures full object *data* into a
+        // physics-side clipboard at Ctrl+C time, so paste is robust even if the
+        // source is later deleted or its slot index shifts (anchor compaction).
+        ClipboardClear,           // Empty the clipboard. Sent once before a copy batch.
+        ClipboardCopyObject,      // Append a deep copy of object[index] to the clipboard.
+                                  //   index = source slot; x = (float)CanvasObjectKind.
+        ClipboardPaste,           // Materialise every clipboard entry into a free slot,
+                                  //   offset by (x,y) in Manifold units and clamped to [0,1].
     };
 
     Type  type  = Type::MoveFieldObject;
