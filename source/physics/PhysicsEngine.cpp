@@ -538,6 +538,53 @@ void PhysicsEngine::drainEditCommands()
                         timbralAnchors_[idx].timbreY = e.x;
                     break;
 
+                case ManifoldEdit::Type::SetTimbralAnchorSource:
+                    if (idx >= 0 && idx < activeAnchorCount_)
+                    {
+                        timbralAnchors_[idx].sourceId = static_cast<int>(e.x);
+                        ++configVersion_;   // anchor display (additive vs granular) changed
+                    }
+                    break;
+
+                case ManifoldEdit::Type::SetTimbralAnchorReadPosition:
+                    if (idx >= 0 && idx < activeAnchorCount_)
+                        timbralAnchors_[idx].readPosition = juce::jlimit(0.0f, 1.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetTimbralAnchorDensity:
+                    if (idx >= 0 && idx < activeAnchorCount_)
+                        timbralAnchors_[idx].density = juce::jlimit(0.0f, 1.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetTimbralAnchorJitter:
+                    if (idx >= 0 && idx < activeAnchorCount_)
+                        timbralAnchors_[idx].jitter = juce::jlimit(0.0f, 1.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetTimbralAnchorSpray:
+                    if (idx >= 0 && idx < activeAnchorCount_)
+                        timbralAnchors_[idx].spray = juce::jlimit(0.0f, 1.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetTimbralAnchorGrainSize:
+                    if (idx >= 0 && idx < activeAnchorCount_)
+                        timbralAnchors_[idx].grainSize = juce::jlimit(0.005f, 0.5f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetTimbralAnchorPitch:
+                    if (idx >= 0 && idx < activeAnchorCount_)
+                        timbralAnchors_[idx].pitchSemis = juce::jlimit(-24.0f, 24.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetTimbralAnchorPositionEnabled:
+                    if (idx >= 0 && idx < activeAnchorCount_)
+                        timbralAnchors_[idx].positionEnabled = (e.x > 0.5f);
+                    break;
+
+                case ManifoldEdit::Type::SetGlobalGrainLevel:
+                    globalGrainLevel_ = juce::jlimit(0.0f, 2.0f, e.x);
+                    break;
+
                 case ManifoldEdit::Type::SetGlobalFriction:
                     globalFriction_ = juce::jlimit(0.0f, 10.0f, e.x);
                     break;
@@ -608,6 +655,14 @@ void PhysicsEngine::drainEditCommands()
                         a.timbreX = 0.5f;
                         a.timbreY = 0.0f;
                         a.trajectoryPathIndex = -1;   // Don't inherit stale state from a previously-removed slot
+                        a.sourceId     = -1;          // New anchors are additive until a source is attached
+                        a.readPosition = 0.5f;
+                        a.density         = 0.3f;
+                        a.jitter          = 0.0f;
+                        a.spray           = 0.0f;
+                        a.grainSize       = 0.06f;
+                        a.pitchSemis      = 0.0f;
+                        a.positionEnabled = true;
                         a.active  = true;
                         ++activeAnchorCount_;
                     }
@@ -2004,10 +2059,21 @@ void PhysicsEngine::integrateMorphons(double dt)
 
         // Blend Timbral Anchors at current Manifold position.
         // timbreX → spectral rolloff [0,1]; timbreY → inharmonicity [0,1].
-        // Active anchors are compacted at the front; pass activeAnchorCount_.
-        blendAnchors(m.x, m.y,
-                     timbralAnchors_.data(), activeAnchorCount_,
-                     m.timbreX, m.timbreY);
+        // Also resolves the dominant granular source (scrub position + crossfade
+        // weight) for the audio engine. Active anchors are compacted at the
+        // front; pass activeAnchorCount_.
+        GranularBlend gb;
+        blendAnchorsGranular(m.x, m.y,
+                             timbralAnchors_.data(), activeAnchorCount_,
+                             m.timbreX, m.timbreY, m.additiveWeight, gb);
+        m.granularSourceId  = gb.sourceId;
+        m.granularReadPos   = gb.readPos;
+        m.granularWeight    = gb.weight;
+        m.granularDensity   = gb.density;
+        m.granularJitter    = gb.jitter;
+        m.granularSpray     = gb.spray;
+        m.granularGrainSize = gb.grainSize;
+        m.granularPitch     = gb.pitch;
 
         // ── Pitch glide ───────────────────────────────────────────────────────
         // Exponential approach in log-frequency space so the slide rate is
@@ -2568,6 +2634,7 @@ void PhysicsEngine::writeSnapshot()
     snap.globalBoundary  = globalBoundary_;
     snap.globalGlideTime = globalGlideTimeSec_;
     snap.globalFriction  = globalFriction_;
+    snap.globalGrainLevel = globalGrainLevel_;
     snap.configVersion   = configVersion_;
 
     // Copy effect zones for UI rendering
@@ -2675,6 +2742,14 @@ void PhysicsEngine::writeSnapshot()
         dst.timbreX = src.timbreX;
         dst.timbreY = src.timbreY;
         dst.trajectoryPathIndex = src.trajectoryPathIndex;
+        dst.sourceId        = src.sourceId;
+        dst.readPosition    = src.readPosition;
+        dst.density         = src.density;
+        dst.jitter          = src.jitter;
+        dst.spray           = src.spray;
+        dst.grainSize       = src.grainSize;
+        dst.pitchSemis      = src.pitchSemis;
+        dst.positionEnabled = src.positionEnabled;
         dst.active  = (i < activeAnchorCount_);
     }
 
@@ -2710,6 +2785,7 @@ void PhysicsEngine::applyPatch(const PatchState& patch)
     globalBoundary_     = patch.boundary;
     globalGlideTimeSec_ = patch.glideTimeSec;
     globalFriction_     = patch.globalFriction;
+    globalGrainLevel_   = patch.globalGrainLevel;
     // Loading a patch is a wholesale config change — bump so the UI's mod tab
     // rebuilds its dropdowns to reflect the new object set.
     ++configVersion_;

@@ -262,6 +262,20 @@ private:
     // Anchor section (visible when a TimbralAnchor is selected)
     juce::Label  lblBrightness_,    lblInharmonicity_;
     juce::Slider sldBrightness_,    sldInharmonicity_;
+    // Granular controls: attach a sample, then per-anchor grain fields. The grain
+    // rows are shown only when the selected anchor has a source bound.
+    juce::TextButton btnLoadSample_ { "Load Sample" };
+    juce::Label      lblSampleName_;          // shows the bound source, or "Additive"
+    juce::Label      lblReadPos_,   lblDensity_,   lblSpray_;
+    juce::Slider     sldReadPos_,   sldDensity_,   sldSpray_;
+    juce::Label      lblJitter_,    lblGrainSize_, lblGrainPitch_;
+    juce::Slider     sldJitter_,    sldGrainSize_, sldGrainPitch_;
+    juce::TextButton btnPosEnabled_ { "Scrub: On" };   // toggles read-position contribution
+    std::unique_ptr<juce::FileChooser> fileChooser_;   // kept alive across async launch
+
+    // Global granular output trim (lives with the other always-visible globals).
+    juce::Label  lblGrainLevel_;
+    juce::Slider sldGrainLevel_;
 
     // Field object section (visible when a FieldObject is selected)
     juce::Label  lblFOStrength_,    lblFORadius_,    lblFOChirality_;

@@ -212,6 +212,11 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     // ── Global friction — extra damping applied to every Morphon; always visible
     lblFriction_.setBounds(x, y,           w, LABEL_H);
     sldFriction_.setBounds(x, y + LABEL_H, w, SLIDER_H);
+    y += ROW_H;
+
+    // ── Global grain level — granular output trim; always visible ──────────────
+    lblGrainLevel_.setBounds(x, y,           w, LABEL_H);
+    sldGrainLevel_.setBounds(x, y + LABEL_H, w, SLIDER_H);
     y += ROW_H + 4;
 
     // ── Tab buttons (Inspector | Mod) ────────────────────────────────────────
@@ -275,10 +280,32 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     const int sectionTopY = 0;
 
     // ── Anchor section ────────────────────────────────────────────────────────
+    // Common header (source attach + name), then the additive and granular param
+    // sets overlap at the same y — updatePanel shows exactly one based on whether
+    // the anchor has a source bound.
     y = sectionTopY;
+    btnLoadSample_.setBounds(x, y, w, BTN_ROW_H);
+    y += BTN_ROW_H + 2;
+    lblSampleName_.setBounds(x, y, w, LABEL_H);
+    y += LABEL_H;
+    const int anchorCommonEndY = y;
+
     layoutRow(lblBrightness_,    sldBrightness_);
     layoutRow(lblInharmonicity_, sldInharmonicity_);
-    const int anchorEndY = y;
+    const int anchorAdditiveEndY = y;
+
+    y = anchorCommonEndY;
+    layoutRow(lblReadPos_,    sldReadPos_);
+    layoutRow(lblDensity_,    sldDensity_);
+    layoutRow(lblJitter_,     sldJitter_);
+    layoutRow(lblSpray_,      sldSpray_);
+    layoutRow(lblGrainSize_,  sldGrainSize_);
+    layoutRow(lblGrainPitch_, sldGrainPitch_);
+    btnPosEnabled_.setBounds(x, y, w, BTN_ROW_H);
+    y += BTN_ROW_H + 2;
+    const int anchorGranularEndY = y;
+
+    const int anchorEndY = juce::jmax(anchorAdditiveEndY, anchorGranularEndY);
 
     // ── Field object section ──────────────────────────────────────────────────
     y = sectionTopY;
@@ -608,6 +635,85 @@ void MorphosEditor::setupSliders()
             sendParamOrModBase(ManifoldEdit::Type::SetTimbralAnchorTimbreY,
                                selection_.index, (float)sldInharmonicity_.getValue(),
                                ModDestType::AnchorTimbreY);
+    };
+
+    // ── Anchor granular controls (slice 1) ──────────────────────────────────────
+    styleLabel (lblReadPos_,     "Scrub Pos");
+    styleSlider(sldReadPos_, 0.0, 1.0);
+    styleLabel (lblSampleName_,  "Additive");
+    addAndMakeVisible(lblReadPos_);     addAndMakeVisible(sldReadPos_);
+    addAndMakeVisible(btnLoadSample_);  addAndMakeVisible(lblSampleName_);
+
+    sldReadPos_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTimbralAnchorReadPosition,
+                     selection_.index, (float)sldReadPos_.getValue());
+    };
+
+    btnLoadSample_.onClick = [this] {
+        if (!selection_.valid() || selection_.kind != ObjectKind::TimbralAnchor)
+            return;
+        const int anchorIdx = selection_.index;
+        fileChooser_ = std::make_unique<juce::FileChooser>(
+            "Load a sample for this anchor", juce::File{}, "*.wav;*.aif;*.aiff;*.flac");
+        fileChooser_->launchAsync(
+            juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+            [this, anchorIdx](const juce::FileChooser& fc)
+            {
+                const auto file = fc.getResult();
+                if (!file.existsAsFile())
+                    return;
+                const int sourceId = processor_.loadSampleSource(file);
+                if (sourceId < 0)
+                    return;
+                sendEdit(ManifoldEdit::Type::SetTimbralAnchorSource, anchorIdx, (float)sourceId);
+                lblSampleName_.setText(processor_.getSourceName(sourceId),
+                                       juce::dontSendNotification);
+            });
+    };
+
+    // Per-anchor grain fields (shown only when a source is bound).
+    styleLabel (lblDensity_,    "Density");     styleSlider(sldDensity_,    0.0, 1.0);
+    styleLabel (lblJitter_,     "Jitter");      styleSlider(sldJitter_,     0.0, 1.0);
+    styleLabel (lblSpray_,      "Spray");       styleSlider(sldSpray_,      0.0, 1.0);
+    styleLabel (lblGrainSize_,  "Grain Size");  styleSlider(sldGrainSize_,  0.005, 0.2);
+    sldGrainSize_.setNumDecimalPlacesToDisplay(3);
+    styleLabel (lblGrainPitch_, "Pitch");       styleSlider(sldGrainPitch_, -24.0, 24.0);
+    sldGrainPitch_.setNumDecimalPlacesToDisplay(1);
+    addAndMakeVisible(lblDensity_);    addAndMakeVisible(sldDensity_);
+    addAndMakeVisible(lblJitter_);     addAndMakeVisible(sldJitter_);
+    addAndMakeVisible(lblSpray_);      addAndMakeVisible(sldSpray_);
+    addAndMakeVisible(lblGrainSize_);  addAndMakeVisible(sldGrainSize_);
+    addAndMakeVisible(lblGrainPitch_); addAndMakeVisible(sldGrainPitch_);
+    addAndMakeVisible(btnPosEnabled_);
+
+    sldDensity_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTimbralAnchorDensity, selection_.index, (float)sldDensity_.getValue());
+    };
+    sldJitter_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTimbralAnchorJitter, selection_.index, (float)sldJitter_.getValue());
+    };
+    sldSpray_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTimbralAnchorSpray, selection_.index, (float)sldSpray_.getValue());
+    };
+    sldGrainSize_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTimbralAnchorGrainSize, selection_.index, (float)sldGrainSize_.getValue());
+    };
+    sldGrainPitch_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTimbralAnchorPitch, selection_.index, (float)sldGrainPitch_.getValue());
+    };
+    btnPosEnabled_.onClick = [this] {
+        if (!selection_.valid()) return;
+        const bool now = !btnPosEnabled_.getToggleState();
+        btnPosEnabled_.setToggleState(now, juce::dontSendNotification);
+        btnPosEnabled_.setButtonText(now ? "Scrub: On" : "Scrub: Off (texture)");
+        sendEdit(ManifoldEdit::Type::SetTimbralAnchorPositionEnabled,
+                 selection_.index, now ? 1.0f : 0.0f);
     };
 
     // ── Field object sliders ───────────────────────────────────────────────────
@@ -1308,6 +1414,17 @@ void MorphosEditor::setupSliders()
                                (float)sldFriction_.getValue(),
                                ModDestType::GlobalFriction);
     };
+
+    styleLabel(lblGrainLevel_, "Grain Level");
+    styleSlider(sldGrainLevel_, 0.0, 2.0);
+    sldGrainLevel_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblGrainLevel_);
+    addAndMakeVisible(sldGrainLevel_);
+    sldGrainLevel_.onValueChange = [this]
+    {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetGlobalGrainLevel, 0, (float)sldGrainLevel_.getValue());
+    };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1556,6 +1673,14 @@ void MorphosEditor::installPanelViewport()
         // Anchor
         &lblBrightness_,       &sldBrightness_,
         &lblInharmonicity_,    &sldInharmonicity_,
+        &lblReadPos_,          &sldReadPos_,
+        &btnLoadSample_,       &lblSampleName_,
+        &lblDensity_,          &sldDensity_,
+        &lblJitter_,           &sldJitter_,
+        &lblSpray_,            &sldSpray_,
+        &lblGrainSize_,        &sldGrainSize_,
+        &lblGrainPitch_,       &sldGrainPitch_,
+        &btnPosEnabled_,
         // Field object
         &lblFOStrength_,       &sldFOStrength_,
         &lblFORadius_,         &sldFORadius_,
@@ -1776,12 +1901,21 @@ void MorphosEditor::updatePanel()
         ignoreSliderCallbacks_ = true;
         sldGlideTime_.setValue(state.globalGlideTime, juce::dontSendNotification);
         sldFriction_ .setValue(state.globalFriction,  juce::dontSendNotification);
+        sldGrainLevel_.setValue(state.globalGrainLevel, juce::dontSendNotification);
         ignoreSliderCallbacks_ = false;
     }
 
     // Hide every per-selection slider group first
     lblBrightness_.setVisible(false);    sldBrightness_.setVisible(false);
     lblInharmonicity_.setVisible(false); sldInharmonicity_.setVisible(false);
+    lblReadPos_.setVisible(false);       sldReadPos_.setVisible(false);
+    btnLoadSample_.setVisible(false);    lblSampleName_.setVisible(false);
+    lblDensity_.setVisible(false);       sldDensity_.setVisible(false);
+    lblJitter_.setVisible(false);        sldJitter_.setVisible(false);
+    lblSpray_.setVisible(false);         sldSpray_.setVisible(false);
+    lblGrainSize_.setVisible(false);     sldGrainSize_.setVisible(false);
+    lblGrainPitch_.setVisible(false);    sldGrainPitch_.setVisible(false);
+    btnPosEnabled_.setVisible(false);
 
     lblFOStrength_.setVisible(false);    sldFOStrength_.setVisible(false);
     lblFORadius_.setVisible(false);      sldFORadius_.setVisible(false);
@@ -1874,11 +2008,44 @@ void MorphosEditor::updatePanel()
 
         lblPanelHeader_.setText("Anchor " + juce::String(i), juce::dontSendNotification);
 
-        sldBrightness_.setValue(state.timbralAnchors[i].timbreX, juce::dontSendNotification);
-        sldInharmonicity_.setValue(state.timbralAnchors[i].timbreY, juce::dontSendNotification);
+        const auto& a   = state.timbralAnchors[i];
+        const int   sid = a.sourceId;
+        const bool  granular = (sid >= 0);
 
-        lblBrightness_.setVisible(true);    sldBrightness_.setVisible(true);
-        lblInharmonicity_.setVisible(true); sldInharmonicity_.setVisible(true);
+        // Always visible: source attach + name.
+        btnLoadSample_.setVisible(true);
+        lblSampleName_.setVisible(true);
+        lblSampleName_.setText(granular ? processor_.getSourceName(sid)
+                                        : juce::String("Additive"),
+                               juce::dontSendNotification);
+
+        if (granular)
+        {
+            sldReadPos_.setValue(a.readPosition,  juce::dontSendNotification);
+            sldDensity_.setValue(a.density,       juce::dontSendNotification);
+            sldJitter_.setValue(a.jitter,         juce::dontSendNotification);
+            sldSpray_.setValue(a.spray,           juce::dontSendNotification);
+            sldGrainSize_.setValue(a.grainSize,   juce::dontSendNotification);
+            sldGrainPitch_.setValue(a.pitchSemis, juce::dontSendNotification);
+            btnPosEnabled_.setToggleState(a.positionEnabled, juce::dontSendNotification);
+            btnPosEnabled_.setButtonText(a.positionEnabled ? "Scrub: On"
+                                                           : "Scrub: Off (texture)");
+
+            lblReadPos_.setVisible(true);    sldReadPos_.setVisible(true);
+            lblDensity_.setVisible(true);    sldDensity_.setVisible(true);
+            lblJitter_.setVisible(true);     sldJitter_.setVisible(true);
+            lblSpray_.setVisible(true);      sldSpray_.setVisible(true);
+            lblGrainSize_.setVisible(true);  sldGrainSize_.setVisible(true);
+            lblGrainPitch_.setVisible(true); sldGrainPitch_.setVisible(true);
+            btnPosEnabled_.setVisible(true);
+        }
+        else
+        {
+            sldBrightness_.setValue(a.timbreX,    juce::dontSendNotification);
+            sldInharmonicity_.setValue(a.timbreY, juce::dontSendNotification);
+            lblBrightness_.setVisible(true);    sldBrightness_.setVisible(true);
+            lblInharmonicity_.setVisible(true); sldInharmonicity_.setVisible(true);
+        }
     }
     else if (selection_.kind == ObjectKind::FieldObject)
     {

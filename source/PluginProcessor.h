@@ -1,9 +1,15 @@
 #pragma once
 #include <array>
+#include <atomic>
+#include <memory>
+#include <vector>
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 
 #include "physics/PhysicsEngine.h"
+#include "synthesis/SampleSource.h"
+#include "synthesis/GrainEngine.h"
 #include "Parameters.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -81,6 +87,13 @@ public:
     int  getStoredEditorHeight() const noexcept { return editorHeight_; }
     void setStoredEditorSize(int w, int h) noexcept { editorWidth_ = w; editorHeight_ = h; }
 
+    // ── Granular source registry (called from the message/UI thread) ──────────
+    // Load an audio file into a free source slot, summed to mono. Returns the
+    // new sourceId, or -1 on failure / no free slot. The buffer is published
+    // atomically so the audio thread can read it lock-free.
+    int          loadSampleSource(const juce::File& file);
+    juce::String getSourceName(int sourceId) const;
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
@@ -125,6 +138,18 @@ private:
     };
 
     std::array<AdditiveVoice, MAX_MORPHONS> voices_{};
+
+    // ── Granular synthesis (slice 1) ──────────────────────────────────────────
+    static constexpr int MAX_SOURCES = 16;
+
+    // Source lifetimes are owned here (message thread); the audio thread reads
+    // them through atomic raw pointers. Sources are never freed mid-session in
+    // slice 1, so a published pointer is always valid for the audio thread.
+    juce::AudioFormatManager                            formatManager_;
+    std::vector<std::unique_ptr<SampleSource>>          sourceStorage_;
+    std::array<std::atomic<SampleSource*>, MAX_SOURCES> sources_{};
+
+    std::array<GrainVoice, MAX_MORPHONS> grainVoices_{};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MorphosProcessor)
 };

@@ -97,6 +97,20 @@ struct MorphonState
     float timbreX = 0.5f;
     float timbreY = 0.5f;
 
+    // ── Granular blend (written by anchor blending each tick) ─────────────────
+    // The dominant granular source at this Morphon's position, its blended
+    // read-head (scrub), and the group's weight share for the additive↔granular
+    // equal-power crossfade. granularSourceId < 0 → purely additive voice.
+    int   granularSourceId   = -1;
+    float granularReadPos    = 0.5f;
+    float granularWeight     = 0.0f;   // dominant granular group's weight share
+    float additiveWeight     = 1.0f;   // additive group's weight share (own group, not 1−granular)
+    float granularDensity    = 0.3f;   // blended grain params (spatial fields)
+    float granularJitter     = 0.0f;
+    float granularSpray      = 0.0f;
+    float granularGrainSize  = 0.06f;  // seconds
+    float granularPitch      = 0.0f;   // semitones
+
     // Fundamental frequency derived from midiNote (Hz).
     // When glide time > 0, fundamentalHz interpolates toward targetFundamentalHz
     // each physics tick; otherwise they are always equal.
@@ -154,6 +168,14 @@ struct TimbralAnchorSnapshot
     float timbreX = 0.5f;   // spectral rolloff [0,1]
     float timbreY = 0.0f;   // inharmonicity    [0,1]
     int   trajectoryPathIndex = -1;
+    int   sourceId     = -1;    // < 0 = additive; >= 0 = granular source binding
+    float readPosition = 0.5f;  // [0,1] read-head into the bound source buffer
+    float density      = 0.3f;
+    float jitter       = 0.0f;
+    float spray        = 0.0f;
+    float grainSize    = 0.06f; // seconds
+    float pitchSemis   = 0.0f;  // semitones
+    bool  positionEnabled = true;
     bool  active  = false;
 };
 
@@ -282,6 +304,7 @@ struct PhysicsStateSnapshot
     BoundaryBehavior globalBoundary           = BoundaryBehavior::Wrap;
     float            globalGlideTime          = 0.0f;   // Portamento seconds [0, 5]
     float            globalFriction           = 0.0f;   // Per-tick velocity damping [0, 0.1]
+    float            globalGrainLevel         = 1.0f;   // Granular output trim [0, 2]
     // Bumped every time an object is added or removed (or a FieldObject's
     // type changes). UI watches this to know when to rebuild the mod-matrix
     // dropdowns without polling every per-slot active flag itself.
@@ -351,6 +374,15 @@ struct ManifoldEdit
         SetEmitterSpawnMass,   // x = mass [0.1, 4.0]; index = emitter slot
         SetTimbralAnchorTimbreX,
         SetTimbralAnchorTimbreY,
+        SetTimbralAnchorSource,       // x = (float)sourceId (-1 = additive); index = anchor slot
+        SetTimbralAnchorReadPosition, // x = read position [0,1];            index = anchor slot
+        SetTimbralAnchorDensity,      // x = density [0,1];                  index = anchor slot
+        SetTimbralAnchorJitter,       // x = jitter  [0,1];                  index = anchor slot
+        SetTimbralAnchorSpray,        // x = spray   [0,1];                  index = anchor slot
+        SetTimbralAnchorGrainSize,    // x = grain length seconds;          index = anchor slot
+        SetTimbralAnchorPitch,        // x = pitch semitones [-24,+24];      index = anchor slot
+        SetTimbralAnchorPositionEnabled, // x = 1/0;                         index = anchor slot
+        SetGlobalGrainLevel,          // x = granular output trim [0,2];     index unused
         SetGlideTime,          // x = portamento time in seconds [0, 5]; index unused
         SetGlobalFriction,     // x = decay rate per second (1/s) [0, 10]; index unused
 

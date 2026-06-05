@@ -68,6 +68,7 @@ struct PatchState
     BoundaryBehavior boundary          = BoundaryBehavior::Wrap;
     float            glideTimeSec      = 0.0f;
     float            globalFriction    = 0.0f;
+    float            globalGrainLevel  = 1.0f;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -189,6 +190,7 @@ private:
     // Range [0, 1]; 0 = no extra friction, larger = quicker velocity decay.
     // Treated as a per-tick fraction (compounds at TICK_RATE_HZ).
     float            globalFriction_     = 0.0f;
+    float            globalGrainLevel_   = 1.0f;   // Granular output trim [0, 2]
 
     // ── Per-Emitter held-note stack — supports legato last-note priority ──────
     // On note-off, Legato/Slur Emitters fall back to the most recently pressed

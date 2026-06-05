@@ -60,6 +60,8 @@ MorphosProcessor::MorphosProcessor()
     jassert(pGain_            != nullptr);
     jassert(pGlobalTimeScale_ != nullptr);
 
+    formatManager_.registerBasicFormats();   // WAV / AIFF (+ FLAC/Ogg if enabled)
+
     physicsEngine_.startSimulation();
 }
 
@@ -85,11 +87,71 @@ void MorphosProcessor::prepareToPlay(double sampleRate, int /*samplesPerBlock*/)
         v.prevAmplitude = 0.0f;
         v.wasActive     = false;
     }
+
+    for (auto& g : grainVoices_)
+        g.reset();
 }
 
 void MorphosProcessor::releaseResources()
 {
     // Nothing to release — additive voice state is POD, lives inline.
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Granular source registry (message/UI thread)
+// ─────────────────────────────────────────────────────────────────────────────
+
+int MorphosProcessor::loadSampleSource(const juce::File& file)
+{
+    std::unique_ptr<juce::AudioFormatReader> reader(formatManager_.createReaderFor(file));
+    if (reader == nullptr || reader->lengthInSamples <= 0 || reader->numChannels < 1)
+        return -1;
+
+    // Find a free source slot.
+    int slot = -1;
+    for (int i = 0; i < MAX_SOURCES; ++i)
+        if (sources_[i].load(std::memory_order_relaxed) == nullptr) { slot = i; break; }
+    if (slot < 0) return -1;
+
+    const double srcSR      = reader->sampleRate > 0.0 ? reader->sampleRate : sampleRate_;
+    const juce::int64 capSamples = (juce::int64) (60.0 * srcSR);   // slice 1: cap at 60 s
+    const int    numSamples = (int) juce::jmin(reader->lengthInSamples, capSamples);
+    const int    numCh      = (int) reader->numChannels;
+    if (numSamples <= 0) return -1;
+
+    auto src        = std::make_unique<SampleSource>();
+    src->id         = slot;
+    src->name       = file.getFileNameWithoutExtension();
+    src->sampleRate = srcSR;
+
+    // Read the file's channels, then sum to mono.
+    juce::AudioBuffer<float> tmp(numCh, numSamples);
+    reader->read(tmp.getArrayOfWritePointers(), numCh, 0, numSamples);
+
+    src->mono.setSize(1, numSamples);
+    src->mono.clear();
+    auto* dst = src->mono.getWritePointer(0);
+    for (int ch = 0; ch < numCh; ++ch)
+    {
+        const auto* s = tmp.getReadPointer(ch);
+        for (int n = 0; n < numSamples; ++n) dst[n] += s[n];
+    }
+    if (numCh > 1)
+        src->mono.applyGain(1.0f / static_cast<float>(numCh));
+
+    // Publish: keep ownership here, hand the audio thread an atomic raw pointer.
+    SampleSource* raw = src.get();
+    sourceStorage_.push_back(std::move(src));
+    sources_[slot].store(raw, std::memory_order_release);
+    return slot;
+}
+
+juce::String MorphosProcessor::getSourceName(int sourceId) const
+{
+    if (sourceId < 0 || sourceId >= MAX_SOURCES) return {};
+    if (auto* src = sources_[sourceId].load(std::memory_order_acquire))
+        return src->name;
+    return {};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,6 +248,9 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         // Master gain (APVTS) applied to the accumulated mix after this loop.
         constexpr float VOICE_SCALE = 0.12f;
 
+        // Global granular output trim (constant per buffer).
+        const float globalGrainLevel = juce::jlimit(0.0f, 2.0f, snapshot.globalGrainLevel);
+
         for (int i = 0; i < MAX_MORPHONS; ++i)
         {
             const auto& m     = snapshot.morphons[i];
@@ -204,6 +269,7 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                 voice.prevPartialAmps.fill(0.0f);
                 voice.prevAmplitude = 0.0f;
                 voice.wasActive = true;
+                grainVoices_[i].reset();   // fresh grain scheduler for this voice
             }
 
             // ── Amplitude ramp — eliminates clicks at buffer boundaries ──────────
@@ -273,6 +339,55 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             // Reciprocal buffer length for spectral lerp fraction.
             const float invN = 1.0f / static_cast<float>(std::max(numSamples, 1));
 
+            // ── Granular setup (slice 1) ─────────────────────────────────────────
+            // Resolve the dominant granular source for this Morphon (blended by the
+            // physics thread). Pitch is decoupled: playback rate follows MIDI note
+            // (note 60 = source's natural pitch) and the source/host SR ratio; scrub
+            // position comes from geometry. The granular and additive renders are
+            // equal-power crossfaded by m.granularWeight.
+            const float* grainSrc       = nullptr;
+            int          grainSrcLen    = 0;
+            double       grainRate      = 1.0;
+            float        grainLenSamp   = 0.0f;
+            float        grainSpawnSamp = 0.0f;
+            float        grainJitterSamp= 0.0f;
+            float        grainSpray     = 0.0f;
+            float        granW          = juce::jlimit(0.0f, 1.0f, m.granularWeight);
+
+            if (granW > 1.0e-4f && m.granularSourceId >= 0 && m.granularSourceId < MAX_SOURCES)
+            {
+                if (auto* src = sources_[m.granularSourceId].load(std::memory_order_acquire))
+                {
+                    if (src->valid())
+                    {
+                        grainSrc    = src->data();
+                        grainSrcLen = src->numSamples();
+                        // Pitch: MIDI note (60 = natural) + per-anchor semitone field + zone pitch.
+                        const double srRatio   = src->sampleRate / sampleRate_;
+                        const double pitchMul2 = std::pow(2.0, (m.midiNote - 60) / 12.0);
+                        const double anchorPit = std::pow(2.0, m.granularPitch / 12.0);
+                        grainRate    = srRatio * pitchMul2 * anchorPit * static_cast<double>(pitchMult);
+                        // Grain size (per-anchor field, seconds) → window span in samples.
+                        grainLenSamp = juce::jmax(1.0f, m.granularGrainSize * static_cast<float>(sampleRate_));
+                        // Density [0,1] → overlap factor [0.5, 8]; spawn interval = len / overlap.
+                        const float overlap = 0.5f + juce::jlimit(0.0f, 1.0f, m.granularDensity) * 7.5f;
+                        grainSpawnSamp = grainLenSamp / overlap;
+                        // Jitter spreads the read start over up to ±10% of the buffer.
+                        grainJitterSamp = juce::jlimit(0.0f, 1.0f, m.granularJitter) * 0.1f * static_cast<float>(grainSrcLen);
+                        grainSpray      = juce::jlimit(0.0f, 1.0f, m.granularSpray);
+                    }
+                }
+            }
+            if (grainSrc == nullptr) granW = 0.0f;   // no usable source → no grain power
+
+            // Equal-power group gains: gain = sqrt(weight share). Each render group
+            // contributes its own power; groups not rendered (other granular sources
+            // in slice 1) simply contribute none — so regions with no additive
+            // anchors produce no additive bleed. Granular output is trimmed by the
+            // global grain level.
+            const float addGain   = std::sqrt(juce::jlimit(0.0f, 1.0f, m.additiveWeight));
+            const float grainGain = std::sqrt(granW) * globalGrainLevel;
+
             for (int s = 0; s < numSamples; ++s)
             {
                 // Per-sample amplitude: linear ramp from startAmp to targetAmp
@@ -284,7 +399,7 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                 // prevPartialAmps == partialAmps, so the lerp is a no-op.
                 const float tFrac = static_cast<float>(s) * invN;
 
-                float sample = 0.0f;
+                float additive = 0.0f;
 
                 for (int k = 0; k < NUM_PARTIALS; ++k)
                 {
@@ -292,10 +407,17 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                     if (voice.phases[k] >= 1.0f) voice.phases[k] -= 1.0f;
                     const float pa = voice.prevPartialAmps[k]
                                    + (partialAmps[k] - voice.prevPartialAmps[k]) * tFrac;
-                    sample += pa * std::sin(voice.phases[k] * twoPi);
+                    additive += pa * std::sin(voice.phases[k] * twoPi);
                 }
 
-                sample *= amp;
+                // Granular render (read-head fixed for this buffer; geometry-driven).
+                const float grain = (grainSrc != nullptr)
+                    ? grainVoices_[i].process(grainSrc, grainSrcLen, m.granularReadPos,
+                                              grainRate, grainLenSamp, grainSpawnSamp,
+                                              grainJitterSamp, grainSpray)
+                    : 0.0f;
+
+                float sample = (additive * addGain + grain * grainGain) * amp;
 
                 // Equal-power pan: θ maps pan [-1,+1] → [0, π/2]; L=cos(θ), R=sin(θ)
                 if (clampedCh >= 2)
@@ -357,6 +479,7 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
     manifoldData.setProperty("boundary",    (int)snap.globalBoundary,      nullptr);
     manifoldData.setProperty("glideTime",   snap.globalGlideTime,          nullptr);
     manifoldData.setProperty("friction",    snap.globalFriction,           nullptr);
+    manifoldData.setProperty("grainLevel",  snap.globalGrainLevel,         nullptr);
     manifoldData.setProperty("editorW",     editorWidth_,                  nullptr);
     manifoldData.setProperty("editorH",     editorHeight_,                 nullptr);
 
@@ -413,6 +536,18 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         node.setProperty("timbreX", a.timbreX, nullptr);
         node.setProperty("timbreY", a.timbreY, nullptr);
         node.setProperty("trajPath", a.trajectoryPathIndex, nullptr);
+        // Granular: readPosition always persists; sourceId persists but only
+        // rebinds while the source registry still holds it (same session). The
+        // registry itself isn't serialised yet (path+embed lands in a later
+        // phase), so a stale sourceId degrades gracefully to additive on load.
+        node.setProperty("sourceId",     a.sourceId,     nullptr);
+        node.setProperty("readPosition", a.readPosition, nullptr);
+        node.setProperty("density",      a.density,      nullptr);
+        node.setProperty("jitter",       a.jitter,       nullptr);
+        node.setProperty("spray",        a.spray,        nullptr);
+        node.setProperty("grainSize",    a.grainSize,    nullptr);
+        node.setProperty("pitchSemis",   a.pitchSemis,   nullptr);
+        node.setProperty("posEnabled",   a.positionEnabled, nullptr);
         manifoldData.appendChild(node, nullptr);
     }
 
@@ -548,7 +683,8 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
     patch.boundary     = static_cast<BoundaryBehavior>(
                              (int)manifoldData.getProperty("boundary",  0));
     patch.glideTimeSec   = (float)manifoldData.getProperty("glideTime", 0.0f);
-    patch.globalFriction = (float)manifoldData.getProperty("friction",  0.0f);
+    patch.globalFriction   = (float)manifoldData.getProperty("friction",   0.0f);
+    patch.globalGrainLevel = (float)manifoldData.getProperty("grainLevel", 1.0f);
 
     // Window size (v2+). Defaults preserve the current editor size on older saves.
     if (patchVersion >= 2)
@@ -615,6 +751,14 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             a.timbreX = (float)child.getProperty("timbreX", 0.5f);
             a.timbreY = (float)child.getProperty("timbreY", 0.0f);
             a.trajectoryPathIndex = (int)child.getProperty("trajPath", -1);
+            a.sourceId     = (int)  child.getProperty("sourceId",     -1);
+            a.readPosition = (float)child.getProperty("readPosition", 0.5f);
+            a.density      = (float)child.getProperty("density",      0.3f);
+            a.jitter       = (float)child.getProperty("jitter",       0.0f);
+            a.spray        = (float)child.getProperty("spray",        0.0f);
+            a.grainSize    = (float)child.getProperty("grainSize",    0.06f);
+            a.pitchSemis   = (float)child.getProperty("pitchSemis",   0.0f);
+            a.positionEnabled = (bool)child.getProperty("posEnabled", true);
             a.active  = true;
         }
         else if (child.hasType("Zone") && zoneSlot < MAX_EFFECT_ZONES)
