@@ -84,3 +84,22 @@ target_link_libraries(Morphos
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
 )
+
+# ── macOS: repair the ad-hoc code-signature seal ──────────────────────────────
+# JUCE regenerates Contents/Resources/moduleinfo.json AFTER it ad-hoc-signs the
+# VST3 bundle, which invalidates the signature seal ("a sealed resource is missing
+# or invalid"). Ableton then SILENTLY skips the plugin during its scan — it never
+# appears in the browser and leaves no entry in Live's Log.txt. Re-sign each bundle
+# as a POST_BUILD step: registered here (after juce_add_plugin) it runs after JUCE's
+# own manifest step, restoring a valid seal. Ad-hoc (-s -) is correct for local dev;
+# for distribution swap in a Developer ID identity + notarization (see MAC_PORT.md).
+if(APPLE)
+    foreach(_fmt VST3 AU)
+        if(TARGET Morphos_${_fmt})
+            add_custom_command(TARGET Morphos_${_fmt} POST_BUILD
+                COMMAND codesign --force --sign - "$<TARGET_BUNDLE_DIR:Morphos_${_fmt}>"
+                COMMENT "Re-signing Morphos_${_fmt} bundle to restore a valid seal"
+                VERBATIM)
+        endif()
+    endforeach()
+endif()

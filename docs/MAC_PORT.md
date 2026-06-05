@@ -39,6 +39,18 @@ Install (or set `COPY_PLUGIN_AFTER_BUILD TRUE` in CMakeLists to automate):
 - VST3 → `~/Library/Audio/Plug-Ins/VST3/`
 - AU   → `~/Library/Audio/Plug-Ins/Components/`
 
+**Code-signature seal (don't skip).** JUCE regenerates the VST3's
+`Contents/Resources/moduleinfo.json` *after* ad-hoc-signing the bundle, which
+breaks the signature seal (`codesign --verify` → "a sealed resource is missing or
+invalid"). A bundle with a broken seal is **silently skipped by Ableton's scanner**
+— it never appears in the browser and leaves no entry in Live's `Log.txt`, even
+with "Use VST3 System Folders" on and after a Rescan. CMakeLists now re-signs both
+bundles as a `POST_BUILD` step on Apple, so a normal build is loadable as-is. If
+you ever sign by hand, do it *after* the build: `codesign --force -s -
+~/Library/Audio/Plug-Ins/VST3/Morphos.vst3`. (Tip: when a plugin won't appear,
+check `~/Library/Preferences/Ableton/Live <ver>/Log.txt` — a beta uses its own
+versioned folder.)
+
 ## Validate the AU
 
 Logic/GarageBand won't load an AU until it passes `auval`. Codes: type `aumu`
