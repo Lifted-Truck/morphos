@@ -8,7 +8,8 @@ concept and is a known tripwire.
 
 ## Build & test
 
-Windows, Visual Studio 2026, x64 Debug. From `plugin/`:
+Windows, Visual Studio 2026, x64 Debug. Run from the **repository root** (the
+directory containing this file and `CMakeLists.txt`):
 
 ```
 "C:/Program Files/Microsoft Visual Studio/18/Community/MSBuild/Current/Bin/MSBuild.exe" \
@@ -53,8 +54,12 @@ taxonomy, mod matrix, the granular blend model, and the roadmap — see
 
 - **Ask, don't assume.** On ambiguous scope / UX / math / naming, ask one focused
   question before writing code rather than shipping a "reasonable" guess.
-- **Git lives in `plugin/`** (`Lifted-Truck/morphos`, branch `master`). The parent
-  workspace folder is not version-controlled — run git from here.
+- **This directory is the repo root** — it *is* the `Lifted-Truck/morphos` checkout
+  (branch `master`), with `CMakeLists.txt`, `source/`, and `docs/` at top level.
+  Run git/build from here. (On the original Windows machine this folder is named
+  `plugin/` under a non-versioned `morphogenic/` workspace; a fresh clone names it
+  after the repo, e.g. `morphos/`. Same contents either way — there is no nested
+  `plugin/` subfolder inside the repo.)
 - **Never commit or push without an explicit request.** "Works" / "looks good" is a
   green-light to *propose* a commit; wait for "commit" / "ship it" before running it.
 - **Commit style**: descriptive title (no Conventional Commits prefix) + body

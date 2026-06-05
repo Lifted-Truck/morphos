@@ -23,7 +23,8 @@ below instead.)
 
 ## Build
 
-From `plugin/`:
+From the **repository root** (the clone, e.g. `morphos/` — the directory holding
+`CMakeLists.txt`; there is no nested `plugin/` subfolder):
 
 ```sh
 cmake -S . -B build -G "Xcode"          # or: -G "Ninja" for faster CLI builds
