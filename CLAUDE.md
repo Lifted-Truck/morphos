@@ -18,6 +18,7 @@ Windows, Visual Studio 2026, x64 Debug. From `plugin/`:
 - Output VST3: `build/Morphos_artefacts/Debug/VST3/Morphos.vst3`. Tested by reloading in Ableton.
 - **Build after every substantive change** — compile errors are cheap to catch now, expensive later.
 - **C++17.** (e.g. no `= default` for `operator==`; write comparison ops by hand.)
+- **macOS** (VST3 + AU via CMake/Xcode): see `docs/MAC_PORT.md` — the command above is Windows-only.
 
 ## Architecture (one screen)
 

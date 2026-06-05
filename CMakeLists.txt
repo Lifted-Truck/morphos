@@ -18,13 +18,23 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(JUCE)
 
+# ── Plugin formats ────────────────────────────────────────────────────────────
+# VST3 on every platform; AU is macOS-only (JUCE builds it only on Apple, but we
+# gate it with if(APPLE) so the format list is clean per-platform). See
+# docs/MAC_PORT.md for the macOS build + AU validation flow.
+set(MORPHOS_FORMATS VST3)
+if(APPLE)
+    list(APPEND MORPHOS_FORMATS AU)
+endif()
+
 # ── Plugin target ─────────────────────────────────────────────────────────────
 juce_add_plugin(Morphos
     VERSION                     0.1.0
     COMPANY_NAME                "Morphos"
+    BUNDLE_ID                   com.liftedtruck.morphos   # reverse-DNS; used for the macOS bundle
     PLUGIN_MANUFACTURER_CODE    Mrph        # 4 chars, identifies manufacturer
     PLUGIN_CODE                 Mph1        # 4 chars, unique per plugin
-    FORMATS                     VST3
+    FORMATS                     ${MORPHOS_FORMATS}
     PRODUCT_NAME                "Morphos"
     IS_SYNTH                    TRUE
     NEEDS_MIDI_INPUT            TRUE
