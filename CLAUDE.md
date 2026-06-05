@@ -31,9 +31,9 @@ Three threads, lock-free communication:
   second SPSC FIFO.
 
 Canvas object types live in `source/physics/` (+ `synthesis/TimbralAnchor.h`), each
-mirrored into `PhysicsStateSnapshot`. Rich design context (object taxonomy, mod
-matrix, roadmap) is maintained in Claude's project memory, not here — keep this
-file lean.
+mirrored into `PhysicsStateSnapshot`. For the fuller "why" — concept, object
+taxonomy, mod matrix, the granular blend model, and the roadmap — see
+`docs/CONTEXT.md`. Keep *this* file lean.
 
 ## Gotchas that have caused real bugs
 
