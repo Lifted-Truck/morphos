@@ -139,6 +139,16 @@ int MorphosProcessor::loadSampleSource(const juce::File& file)
     if (numCh > 1)
         src->mono.applyGain(1.0f / static_cast<float>(numCh));
 
+    // Normalise to a target peak so grain level doesn't ride on the file's
+    // recording level — a quiet file would otherwise produce quiet grains.
+    {
+        const float* d = src->mono.getReadPointer(0);
+        float peak = 0.0f;
+        for (int n = 0; n < numSamples; ++n) peak = juce::jmax(peak, std::abs(d[n]));
+        if (peak > 1.0e-6f)
+            src->mono.applyGain(0.89f / peak);   // ≈ −1 dBFS
+    }
+
     // Publish: keep ownership here, hand the audio thread an atomic raw pointer.
     SampleSource* raw = src.get();
     sourceStorage_.push_back(std::move(src));
@@ -277,7 +287,9 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             // discontinuously between processBlock calls. Lerping from the previous
             // buffer's end amplitude to the current snapshot value smooths the step
             // into a ramp across the buffer, which the ear cannot distinguish.
-            const float targetAmp = m.amplitude * VOICE_SCALE;
+            // Voice level: envelope × calibration × per-Emitter gain × per-anchor
+            // volume field. (Master gain is applied to the whole bus below.)
+            const float targetAmp = m.amplitude * VOICE_SCALE * m.gainScale * m.anchorVolume;
             const float startAmp  = voice.prevAmplitude;
             voice.prevAmplitude   = targetAmp;  // Store for next buffer
 
@@ -385,8 +397,12 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             // in slice 1) simply contribute none — so regions with no additive
             // anchors produce no additive bleed. Granular output is trimmed by the
             // global grain level.
+            // GRAIN_MAKEUP compensates the Hann window's ~0.5 average and brings
+            // the (now peak-normalised) grain output to parity with additive at
+            // default Grain Level. Tunable by ear alongside the global trim.
+            constexpr float GRAIN_MAKEUP = 2.0f;
             const float addGain   = std::sqrt(juce::jlimit(0.0f, 1.0f, m.additiveWeight));
-            const float grainGain = std::sqrt(granW) * globalGrainLevel;
+            const float grainGain = std::sqrt(granW) * globalGrainLevel * GRAIN_MAKEUP;
 
             for (int s = 0; s < numSamples; ++s)
             {
@@ -524,6 +540,7 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         node.setProperty("terminusRad",    em.terminusArrivalRadius,    nullptr);
         node.setProperty("polyMode",       (int)em.polyMode,            nullptr);
         node.setProperty("trajPath",       em.trajectoryPathIndex,      nullptr);
+        node.setProperty("gain",           em.gain,                     nullptr);
         manifoldData.appendChild(node, nullptr);
     }
 
@@ -548,6 +565,7 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         node.setProperty("grainSize",    a.grainSize,    nullptr);
         node.setProperty("pitchSemis",   a.pitchSemis,   nullptr);
         node.setProperty("posEnabled",   a.positionEnabled, nullptr);
+        node.setProperty("volume",       a.volume,       nullptr);
         manifoldData.appendChild(node, nullptr);
     }
 
@@ -741,6 +759,7 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
                 ? static_cast<PolyMode>((int)child.getProperty("polyMode", 0))
                 : v1GlobalPolyMode;  // v1 fallback: broadcast the old global value
             em.trajectoryPathIndex   = (int)child.getProperty("trajPath", -1);
+            em.gain                  = (float)child.getProperty("gain", 1.0f);
             em.active                = true;
         }
         else if (child.hasType("Anchor") && anchorSlot < MAX_TIMBRAL_ANCHORS)
@@ -759,6 +778,7 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             a.grainSize    = (float)child.getProperty("grainSize",    0.06f);
             a.pitchSemis   = (float)child.getProperty("pitchSemis",   0.0f);
             a.positionEnabled = (bool)child.getProperty("posEnabled", true);
+            a.volume       = (float)child.getProperty("volume",       1.0f);
             a.active  = true;
         }
         else if (child.hasType("Zone") && zoneSlot < MAX_EFFECT_ZONES)

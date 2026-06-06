@@ -273,9 +273,16 @@ private:
     juce::TextButton btnPosEnabled_ { "Scrub: On" };   // toggles read-position contribution
     std::unique_ptr<juce::FileChooser> fileChooser_;   // kept alive across async launch
 
-    // Global granular output trim (lives with the other always-visible globals).
+    // Per-anchor output level (shown for every anchor, additive or granular).
+    juce::Label  lblAnchorVol_;
+    juce::Slider sldAnchorVol_;
+
+    // Global granular output trim + master gain (always-visible globals).
     juce::Label  lblGrainLevel_;
     juce::Slider sldGrainLevel_;
+    juce::Label  lblMasterGain_;
+    juce::Slider sldMasterGain_;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterGainAttach_;
 
     // Field object section (visible when a FieldObject is selected)
     juce::Label  lblFOStrength_,    lblFORadius_,    lblFOChirality_;
@@ -286,8 +293,8 @@ private:
     juce::Slider sldKeyLow_,        sldKeyHigh_;
     juce::Label  lblTransposeOct_,  lblTransposeSemi_, lblTransposeCents_;
     juce::Slider sldTransposeOct_,  sldTransposeSemi_, sldTransposeCents_;
-    juce::Label  lblEmitPan_,       lblEmitMass_;
-    juce::Slider sldEmitPan_,       sldEmitMass_;
+    juce::Label  lblEmitPan_,       lblEmitMass_,    lblEmitGain_;
+    juce::Slider sldEmitPan_,       sldEmitMass_,    sldEmitGain_;
 
     // Per-Emitter polyphony row (replaces the old global Voices row)
     juce::Label      lblEmitPolyMode_;

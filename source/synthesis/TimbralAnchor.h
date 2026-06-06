@@ -38,6 +38,9 @@ struct TimbralAnchor
     float grainSize    = 0.06f; // grain/window length in seconds
     float pitchSemis   = 0.0f;  // grain detune in semitones [-24,+24]
     bool  positionEnabled = true; // false → "texture waypoint": no read-pos contribution
+    // Per-anchor output level — a spatial loudness field blended over ALL anchors
+    // (additive and granular), applied to the voice. [0, 2], 1 = unity.
+    float volume       = 1.0f;
     bool  active  = false;  // Slot in use (physics thread manages compaction)
 };
 
@@ -115,13 +118,14 @@ struct GranularBlend
 inline void blendAnchorsGranular(float px, float py,
                                  const TimbralAnchor* anchors, int count,
                                  float& outTimbreX, float& outTimbreY,
-                                 float& outAdditiveWeight,
+                                 float& outAdditiveWeight, float& outVolume,
                                  GranularBlend& g) noexcept
 {
     constexpr float EPSILON = 1e-6f;
 
     float totalW = 0.0f;
     float addW = 0.0f, addX = 0.0f, addY = 0.0f;
+    float volSum = 0.0f;
     int   domSource = -1;
     float domW      = 0.0f;
 
@@ -131,9 +135,13 @@ inline void blendAnchorsGranular(float px, float py,
         const float dx = px - a.x, dy = py - a.y;
         const float w  = 1.0f / (dx * dx + dy * dy + EPSILON);
         totalW += w;
+        volSum += w * a.volume;
         if (a.sourceId < 0)      { addW += w; addX += w * a.timbreX; addY += w * a.timbreY; }
         else if (w > domW)       { domW = w; domSource = a.sourceId; }
     }
+
+    // Per-anchor volume — a loudness field over all anchors (additive + granular).
+    outVolume = (totalW > 0.0f) ? (volSum / totalW) : 1.0f;
 
     if (addW > 0.0f) { outTimbreX = addX / addW; outTimbreY = addY / addW; }
     else             { outTimbreX = 0.5f;        outTimbreY = 0.0f;        }

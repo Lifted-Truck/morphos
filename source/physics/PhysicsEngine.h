@@ -46,6 +46,7 @@ struct Emitter
     float           terminusArrivalRadius = 0.04f; // Deactivate when within this distance
     PolyMode        polyMode              = PolyMode::Polyphonic;  // Per-Emitter voice routing
     int             trajectoryPathIndex   = -1;   // -1 = stationary; else attached to traj[index]
+    float           gain                  = 1.0f;  // Per-Emitter output level [0, 2]; baked into spawned Morphons
     bool            active       = false;   // Slots are inactive by default; constructor enables [0]
 };
 

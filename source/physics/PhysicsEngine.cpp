@@ -581,6 +581,16 @@ void PhysicsEngine::drainEditCommands()
                         timbralAnchors_[idx].positionEnabled = (e.x > 0.5f);
                     break;
 
+                case ManifoldEdit::Type::SetTimbralAnchorVolume:
+                    if (idx >= 0 && idx < activeAnchorCount_)
+                        timbralAnchors_[idx].volume = juce::jlimit(0.0f, 2.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterGain:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].gain = juce::jlimit(0.0f, 2.0f, e.x);
+                    break;
+
                 case ManifoldEdit::Type::SetGlobalGrainLevel:
                     globalGrainLevel_ = juce::jlimit(0.0f, 2.0f, e.x);
                     break;
@@ -642,6 +652,7 @@ void PhysicsEngine::drainEditCommands()
                     em.sustainLevel = 0.70f;
                     em.releaseTime  = 0.35f;
                     em.trajectoryPathIndex = -1;
+                    em.gain         = 1.0f;
                     em.active       = true;
                     break;
                 }
@@ -663,6 +674,7 @@ void PhysicsEngine::drainEditCommands()
                         a.grainSize       = 0.06f;
                         a.pitchSemis      = 0.0f;
                         a.positionEnabled = true;
+                        a.volume          = 1.0f;
                         a.active  = true;
                         ++activeAnchorCount_;
                     }
@@ -1480,6 +1492,8 @@ void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
         m.pan                = em.pan;
         m.pitchZoneSemitones = 0.0f;
         m.pathIndex          = -1;   // Fresh voice starts unpinned
+        m.gainScale          = em.gain;   // Bake the Emitter's level into the voice
+        m.anchorVolume       = 1.0f;      // Overwritten by anchor blend each tick
         {
             const float newHz = midiNoteToHz(note)
                 * std::pow(2.0f, em.transposeOct
@@ -2065,7 +2079,7 @@ void PhysicsEngine::integrateMorphons(double dt)
         GranularBlend gb;
         blendAnchorsGranular(m.x, m.y,
                              timbralAnchors_.data(), activeAnchorCount_,
-                             m.timbreX, m.timbreY, m.additiveWeight, gb);
+                             m.timbreX, m.timbreY, m.additiveWeight, m.anchorVolume, gb);
         m.granularSourceId  = gb.sourceId;
         m.granularReadPos   = gb.readPos;
         m.granularWeight    = gb.weight;
@@ -2628,6 +2642,7 @@ void PhysicsEngine::writeSnapshot()
         dst.terminusArrivalRadius  = src.terminusArrivalRadius;
         dst.polyMode               = src.polyMode;
         dst.trajectoryPathIndex    = src.trajectoryPathIndex;
+        dst.gain                   = src.gain;
         dst.active                 = src.active;
     }
 
@@ -2750,6 +2765,7 @@ void PhysicsEngine::writeSnapshot()
         dst.grainSize       = src.grainSize;
         dst.pitchSemis      = src.pitchSemis;
         dst.positionEnabled = src.positionEnabled;
+        dst.volume          = src.volume;
         dst.active  = (i < activeAnchorCount_);
     }
 

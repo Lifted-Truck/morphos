@@ -110,6 +110,8 @@ struct MorphonState
     float granularSpray      = 0.0f;
     float granularGrainSize  = 0.06f;  // seconds
     float granularPitch      = 0.0f;   // semitones
+    float anchorVolume       = 1.0f;   // blended per-anchor loudness field
+    float gainScale          = 1.0f;   // spawning Emitter's gain, baked in at spawn
 
     // Fundamental frequency derived from midiNote (Hz).
     // When glide time > 0, fundamentalHz interpolates toward targetFundamentalHz
@@ -155,6 +157,7 @@ struct EmitterSnapshot
     float          terminusArrivalRadius = 0.04f;
     PolyMode       polyMode              = PolyMode::Polyphonic;
     int            trajectoryPathIndex   = -1;   // -1 = stationary; else attached
+    float          gain                  = 1.0f; // Per-Emitter output level [0, 2]
     bool           active                = false;
 };
 
@@ -176,6 +179,7 @@ struct TimbralAnchorSnapshot
     float grainSize    = 0.06f; // seconds
     float pitchSemis   = 0.0f;  // semitones
     bool  positionEnabled = true;
+    float volume       = 1.0f;  // per-anchor loudness field [0, 2]
     bool  active  = false;
 };
 
@@ -382,6 +386,8 @@ struct ManifoldEdit
         SetTimbralAnchorGrainSize,    // x = grain length seconds;          index = anchor slot
         SetTimbralAnchorPitch,        // x = pitch semitones [-24,+24];      index = anchor slot
         SetTimbralAnchorPositionEnabled, // x = 1/0;                         index = anchor slot
+        SetTimbralAnchorVolume,       // x = anchor volume [0,2];            index = anchor slot
+        SetEmitterGain,               // x = emitter gain [0,2];             index = emitter slot
         SetGlobalGrainLevel,          // x = granular output trim [0,2];     index unused
         SetGlideTime,          // x = portamento time in seconds [0, 5]; index unused
         SetGlobalFriction,     // x = decay rate per second (1/s) [0, 10]; index unused

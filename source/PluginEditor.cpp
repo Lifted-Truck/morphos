@@ -217,6 +217,11 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     // ── Global grain level — granular output trim; always visible ──────────────
     lblGrainLevel_.setBounds(x, y,           w, LABEL_H);
     sldGrainLevel_.setBounds(x, y + LABEL_H, w, SLIDER_H);
+    y += ROW_H;
+
+    // ── Master gain — output level (host-automatable); always visible ──────────
+    lblMasterGain_.setBounds(x, y,           w, LABEL_H);
+    sldMasterGain_.setBounds(x, y + LABEL_H, w, SLIDER_H);
     y += ROW_H + 4;
 
     // ── Tab buttons (Inspector | Mod) ────────────────────────────────────────
@@ -288,6 +293,7 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     y += BTN_ROW_H + 2;
     lblSampleName_.setBounds(x, y, w, LABEL_H);
     y += LABEL_H;
+    layoutRow(lblAnchorVol_, sldAnchorVol_);
     const int anchorCommonEndY = y;
 
     layoutRow(lblBrightness_,    sldBrightness_);
@@ -335,6 +341,7 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     layoutRow(lblTransposeCents_, sldTransposeCents_);
     layoutRow(lblEmitPan_,        sldEmitPan_);
     layoutRow(lblEmitMass_,       sldEmitMass_);
+    layoutRow(lblEmitGain_,       sldEmitGain_);
     layoutRow(lblEmitAngle_,      sldEmitAngle_);
     layoutRow(lblEmitSpeed_,   sldEmitSpeed_);
     layoutRow(lblEmitAttack_,  sldEmitAttack_);
@@ -714,6 +721,16 @@ void MorphosEditor::setupSliders()
         btnPosEnabled_.setButtonText(now ? "Scrub: On" : "Scrub: Off (texture)");
         sendEdit(ManifoldEdit::Type::SetTimbralAnchorPositionEnabled,
                  selection_.index, now ? 1.0f : 0.0f);
+    };
+
+    // Per-anchor volume (shown for every anchor, additive or granular).
+    styleLabel (lblAnchorVol_, "Volume");
+    styleSlider(sldAnchorVol_, 0.0, 2.0);
+    sldAnchorVol_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblAnchorVol_); addAndMakeVisible(sldAnchorVol_);
+    sldAnchorVol_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetTimbralAnchorVolume, selection_.index, (float)sldAnchorVol_.getValue());
     };
 
     // ── Field object sliders ───────────────────────────────────────────────────
@@ -1382,6 +1399,15 @@ void MorphosEditor::setupSliders()
                                ModDestType::EmitterSpawnMass);
     };
 
+    styleLabel(lblEmitGain_, "Level");
+    styleSlider(sldEmitGain_, 0.0, 2.0);
+    sldEmitGain_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblEmitGain_); addAndMakeVisible(sldEmitGain_);
+    sldEmitGain_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterGain, selection_.index, (float)sldEmitGain_.getValue());
+    };
+
     // ── Glide time — portamento rate; always visible ───────────────────────────
     // Applies during Legato / Slur retarget: fundamentalHz slides exponentially
     // (in log-frequency space) from the old pitch toward the new one.
@@ -1425,6 +1451,15 @@ void MorphosEditor::setupSliders()
         if (!ignoreSliderCallbacks_)
             sendEdit(ManifoldEdit::Type::SetGlobalGrainLevel, 0, (float)sldGrainLevel_.getValue());
     };
+
+    // Master gain — bound directly to the host-automatable APVTS param.
+    styleLabel(lblMasterGain_, "Master");
+    styleSlider(sldMasterGain_, 0.0, 1.0);   // range is overridden by the attachment
+    sldMasterGain_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblMasterGain_);
+    addAndMakeVisible(sldMasterGain_);
+    masterGainAttach_ = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        processor_.getAPVTS(), ParamID::MASTER_GAIN, sldMasterGain_);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1681,6 +1716,7 @@ void MorphosEditor::installPanelViewport()
         &lblGrainSize_,        &sldGrainSize_,
         &lblGrainPitch_,       &sldGrainPitch_,
         &btnPosEnabled_,
+        &lblAnchorVol_,        &sldAnchorVol_,
         // Field object
         &lblFOStrength_,       &sldFOStrength_,
         &lblFORadius_,         &sldFORadius_,
@@ -1696,6 +1732,7 @@ void MorphosEditor::installPanelViewport()
         &lblTransposeCents_,   &sldTransposeCents_,
         &lblEmitPan_,          &sldEmitPan_,
         &lblEmitMass_,         &sldEmitMass_,
+        &lblEmitGain_,         &sldEmitGain_,
         &lblEmitAngle_,        &sldEmitAngle_,
         &lblEmitSpeed_,        &sldEmitSpeed_,
         &lblEmitAttack_,       &sldEmitAttack_,
@@ -1916,6 +1953,7 @@ void MorphosEditor::updatePanel()
     lblGrainSize_.setVisible(false);     sldGrainSize_.setVisible(false);
     lblGrainPitch_.setVisible(false);    sldGrainPitch_.setVisible(false);
     btnPosEnabled_.setVisible(false);
+    lblAnchorVol_.setVisible(false);     sldAnchorVol_.setVisible(false);
 
     lblFOStrength_.setVisible(false);    sldFOStrength_.setVisible(false);
     lblFORadius_.setVisible(false);      sldFORadius_.setVisible(false);
@@ -1928,6 +1966,7 @@ void MorphosEditor::updatePanel()
     lblTransposeCents_.setVisible(false);  sldTransposeCents_.setVisible(false);
     lblEmitPan_.setVisible(false);             sldEmitPan_.setVisible(false);
     lblEmitMass_.setVisible(false);            sldEmitMass_.setVisible(false);
+    lblEmitGain_.setVisible(false);            sldEmitGain_.setVisible(false);
     lblEmitPolyMode_.setVisible(false);
     btnEmitPoly_.setVisible(false);            btnEmitMono_.setVisible(false);
     btnEmitLegato_.setVisible(false);          btnEmitSlur_.setVisible(false);
@@ -2012,12 +2051,14 @@ void MorphosEditor::updatePanel()
         const int   sid = a.sourceId;
         const bool  granular = (sid >= 0);
 
-        // Always visible: source attach + name.
+        // Always visible: source attach + name + per-anchor volume.
         btnLoadSample_.setVisible(true);
         lblSampleName_.setVisible(true);
         lblSampleName_.setText(granular ? processor_.getSourceName(sid)
                                         : juce::String("Additive"),
                                juce::dontSendNotification);
+        sldAnchorVol_.setValue(a.volume, juce::dontSendNotification);
+        lblAnchorVol_.setVisible(true);  sldAnchorVol_.setVisible(true);
 
         if (granular)
         {
@@ -2096,6 +2137,7 @@ void MorphosEditor::updatePanel()
         sldTransposeCents_.setValue((double)e.transposeCents, juce::dontSendNotification);
         sldEmitPan_.setValue           ((double)e.pan,                    juce::dontSendNotification);
         sldEmitMass_.setValue          ((double)e.spawnMass,               juce::dontSendNotification);
+        sldEmitGain_.setValue          ((double)e.gain,                    juce::dontSendNotification);
         // Trajectory attachment value is set generically below for every attachable kind.
         btnEmitPoly_  .setToggleState(e.polyMode == PolyMode::Polyphonic, juce::dontSendNotification);
         btnEmitMono_  .setToggleState(e.polyMode == PolyMode::Mono,       juce::dontSendNotification);
@@ -2118,6 +2160,7 @@ void MorphosEditor::updatePanel()
         lblTransposeCents_.setVisible(true);   sldTransposeCents_.setVisible(true);
         lblEmitPan_.setVisible(true);              sldEmitPan_.setVisible(true);
         lblEmitMass_.setVisible(true);             sldEmitMass_.setVisible(true);
+        lblEmitGain_.setVisible(true);             sldEmitGain_.setVisible(true);
         // Trajectory attach visibility is set generically below for every attachable kind.
         lblEmitPolyMode_.setVisible(true);
         btnEmitPoly_.setVisible(true);             btnEmitMono_.setVisible(true);
