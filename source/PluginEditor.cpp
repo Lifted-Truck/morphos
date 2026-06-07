@@ -289,10 +289,12 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     // sets overlap at the same y — updatePanel shows exactly one based on whether
     // the anchor has a source bound.
     y = sectionTopY;
-    btnLoadSample_.setBounds(x, y, w, BTN_ROW_H);
-    y += BTN_ROW_H + 2;
-    lblSampleName_.setBounds(x, y, w, LABEL_H);
-    y += LABEL_H;
+    {
+        const int bw = w * 2 / 3;
+        cbSource_.setBounds(x, y, bw, BTN_ROW_H);
+        btnLoadSample_.setBounds(x + bw + 4, y, w - bw - 4, BTN_ROW_H);
+        y += BTN_ROW_H + 2;
+    }
     layoutRow(lblAnchorVol_, sldAnchorVol_);
     const int anchorCommonEndY = y;
 
@@ -301,6 +303,8 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     const int anchorAdditiveEndY = y;
 
     y = anchorCommonEndY;
+    waveform_.setBounds(x, y, w, 48);
+    y += 48 + 4;
     layoutRow(lblReadPos_,    sldReadPos_);
     layoutRow(lblDensity_,    sldDensity_);
     layoutRow(lblJitter_,     sldJitter_);
@@ -644,12 +648,12 @@ void MorphosEditor::setupSliders()
                                ModDestType::AnchorTimbreY);
     };
 
-    // ── Anchor granular controls (slice 1) ──────────────────────────────────────
+    // ── Anchor granular controls ────────────────────────────────────────────────
     styleLabel (lblReadPos_,     "Scrub Pos");
     styleSlider(sldReadPos_, 0.0, 1.0);
-    styleLabel (lblSampleName_,  "Additive");
     addAndMakeVisible(lblReadPos_);     addAndMakeVisible(sldReadPos_);
-    addAndMakeVisible(btnLoadSample_);  addAndMakeVisible(lblSampleName_);
+    addAndMakeVisible(btnLoadSample_);  addAndMakeVisible(cbSource_);
+    addAndMakeVisible(waveform_);
 
     sldReadPos_.onValueChange = [this] {
         if (!ignoreSliderCallbacks_)
@@ -657,6 +661,22 @@ void MorphosEditor::setupSliders()
                      selection_.index, (float)sldReadPos_.getValue());
     };
 
+    // Drag on the waveform → scrub; also reflect into the numeric Scrub Pos slider.
+    waveform_.onScrub = [this](float pos01) {
+        if (!selection_.valid()) return;
+        sendEdit(ManifoldEdit::Type::SetTimbralAnchorReadPosition, selection_.index, pos01);
+        sldReadPos_.setValue(pos01, juce::dontSendNotification);
+    };
+
+    // Source picker: "Additive" (id 1) + each loaded source (id = sourceId+2).
+    cbSource_.onChange = [this] {
+        if (ignoreSliderCallbacks_ || !selection_.valid()) return;
+        const int sel = cbSource_.getSelectedId();
+        const int sourceId = (sel >= 2) ? (sel - 2) : -1;   // id 1 = Additive
+        sendEdit(ManifoldEdit::Type::SetTimbralAnchorSource, selection_.index, (float)sourceId);
+    };
+
+    // Load New: decode a file into a fresh source and bind it to this anchor.
     btnLoadSample_.onClick = [this] {
         if (!selection_.valid() || selection_.kind != ObjectKind::TimbralAnchor)
             return;
@@ -674,8 +694,7 @@ void MorphosEditor::setupSliders()
                 if (sourceId < 0)
                     return;
                 sendEdit(ManifoldEdit::Type::SetTimbralAnchorSource, anchorIdx, (float)sourceId);
-                lblSampleName_.setText(processor_.getSourceName(sourceId),
-                                       juce::dontSendNotification);
+                populateSourceCombo(sourceId);   // include + select the new source now
             });
     };
 
@@ -1709,7 +1728,7 @@ void MorphosEditor::installPanelViewport()
         &lblBrightness_,       &sldBrightness_,
         &lblInharmonicity_,    &sldInharmonicity_,
         &lblReadPos_,          &sldReadPos_,
-        &btnLoadSample_,       &lblSampleName_,
+        &btnLoadSample_,       &cbSource_,        &waveform_,
         &lblDensity_,          &sldDensity_,
         &lblJitter_,           &sldJitter_,
         &lblSpray_,            &sldSpray_,
@@ -1946,7 +1965,8 @@ void MorphosEditor::updatePanel()
     lblBrightness_.setVisible(false);    sldBrightness_.setVisible(false);
     lblInharmonicity_.setVisible(false); sldInharmonicity_.setVisible(false);
     lblReadPos_.setVisible(false);       sldReadPos_.setVisible(false);
-    btnLoadSample_.setVisible(false);    lblSampleName_.setVisible(false);
+    btnLoadSample_.setVisible(false);    cbSource_.setVisible(false);
+    waveform_.setVisible(false);
     lblDensity_.setVisible(false);       sldDensity_.setVisible(false);
     lblJitter_.setVisible(false);        sldJitter_.setVisible(false);
     lblSpray_.setVisible(false);         sldSpray_.setVisible(false);
@@ -2051,17 +2071,20 @@ void MorphosEditor::updatePanel()
         const int   sid = a.sourceId;
         const bool  granular = (sid >= 0);
 
-        // Always visible: source attach + name + per-anchor volume.
+        // Always visible: source picker + Load New + per-anchor volume.
         btnLoadSample_.setVisible(true);
-        lblSampleName_.setVisible(true);
-        lblSampleName_.setText(granular ? processor_.getSourceName(sid)
-                                        : juce::String("Additive"),
-                               juce::dontSendNotification);
+        cbSource_.setVisible(true);
+        populateSourceCombo(sid);
         sldAnchorVol_.setValue(a.volume, juce::dontSendNotification);
         lblAnchorVol_.setVisible(true);  sldAnchorVol_.setVisible(true);
 
         if (granular)
         {
+            int n = 0;
+            waveform_.setSource(processor_.getSourceAudio(sid, n), n);
+            waveform_.setReadPosition(a.readPosition);
+            waveform_.setVisible(true);
+
             sldReadPos_.setValue(a.readPosition,  juce::dontSendNotification);
             sldDensity_.setValue(a.density,       juce::dontSendNotification);
             sldJitter_.setValue(a.jitter,         juce::dontSendNotification);
@@ -3055,6 +3078,16 @@ void MorphosEditor::pasteClipboard()
     drag_.active = false;
     updatePanel();
     repaint();
+}
+
+void MorphosEditor::populateSourceCombo(int selectedSourceId)
+{
+    cbSource_.clear(juce::dontSendNotification);
+    cbSource_.addItem("Additive", 1);                       // id 1 → sourceId -1
+    for (const auto& s : processor_.getLoadedSources())
+        cbSource_.addItem(s.second, s.first + 2);           // id = sourceId + 2
+    cbSource_.setSelectedId(selectedSourceId >= 0 ? selectedSourceId + 2 : 1,
+                            juce::dontSendNotification);
 }
 
 void MorphosEditor::buildMultiSelectionFromMarquee(const PhysicsStateSnapshot& state,

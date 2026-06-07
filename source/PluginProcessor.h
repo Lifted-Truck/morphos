@@ -2,6 +2,7 @@
 #include <array>
 #include <atomic>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -93,6 +94,13 @@ public:
     // atomically so the audio thread can read it lock-free.
     int          loadSampleSource(const juce::File& file);
     juce::String getSourceName(int sourceId) const;
+
+    // Enumerate currently-loaded sources as {id, name} (for the anchor picker).
+    std::vector<std::pair<int, juce::String>> getLoadedSources() const;
+    // Read-only view of a source's mono audio for UI waveform drawing; nullptr if
+    // not loaded. The buffer is immutable for the session, so the pointer is safe
+    // to hold while the editor is open.
+    const float* getSourceAudio(int sourceId, int& outNumSamples) const;
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();

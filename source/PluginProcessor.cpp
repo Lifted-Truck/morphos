@@ -164,6 +164,24 @@ juce::String MorphosProcessor::getSourceName(int sourceId) const
     return {};
 }
 
+std::vector<std::pair<int, juce::String>> MorphosProcessor::getLoadedSources() const
+{
+    std::vector<std::pair<int, juce::String>> out;
+    for (int i = 0; i < MAX_SOURCES; ++i)
+        if (auto* src = sources_[i].load(std::memory_order_acquire))
+            out.emplace_back(i, src->name);
+    return out;
+}
+
+const float* MorphosProcessor::getSourceAudio(int sourceId, int& outNumSamples) const
+{
+    outNumSamples = 0;
+    if (sourceId < 0 || sourceId >= MAX_SOURCES) return nullptr;
+    if (auto* src = sources_[sourceId].load(std::memory_order_acquire))
+        if (src->valid()) { outNumSamples = src->numSamples(); return src->data(); }
+    return nullptr;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // processBlock — audio thread, called at buffer rate (~100–350 Hz)
 //

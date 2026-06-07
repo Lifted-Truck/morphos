@@ -7,6 +7,7 @@
 
 #include "PluginProcessor.h"
 #include "physics/PhysicsState.h"
+#include "WaveformDisplay.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MorphosEditor — Manifold canvas + parameter panel
@@ -168,6 +169,9 @@ private:
     void copySelectionToClipboard();
     void pasteClipboard();
 
+    // Fill cbSource_ with "Additive" + every loaded source, selecting the given one.
+    void populateSourceCombo(int selectedSourceId);
+
     // Returns the top-priority object under canvasPt, or None if nothing hit.
     // Priority: TimbralAnchors > Emitters > FieldObjects.
     Selection hitTest(juce::Point<float> canvasPt,
@@ -264,8 +268,9 @@ private:
     juce::Slider sldBrightness_,    sldInharmonicity_;
     // Granular controls: attach a sample, then per-anchor grain fields. The grain
     // rows are shown only when the selected anchor has a source bound.
-    juce::TextButton btnLoadSample_ { "Load Sample" };
-    juce::Label      lblSampleName_;          // shows the bound source, or "Additive"
+    juce::TextButton btnLoadSample_ { "Load New" };
+    juce::ComboBox   cbSource_;               // pick among loaded sources (or Additive)
+    WaveformDisplay  waveform_;               // waveform + draggable scrub marker
     juce::Label      lblReadPos_,   lblDensity_,   lblSpray_;
     juce::Slider     sldReadPos_,   sldDensity_,   sldSpray_;
     juce::Label      lblJitter_,    lblGrainSize_, lblGrainPitch_;
