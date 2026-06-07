@@ -5,7 +5,7 @@ particles (Morphons) travel through a 2D vector field (the Manifold), and timbra
 evolution is a consequence of geometry rather than envelopes. There are no LFOs routing
 into filter cutoff. The path a Morphon traces *is* the sound's timbral biography.
 
-Full design specification: [`../morphos_orientation.md`](../morphos_orientation.md)
+Full design context: [`docs/CONTEXT.md`](docs/CONTEXT.md)
 
 ---
 
@@ -190,7 +190,7 @@ is shipped — DAW automation is keyed to these strings.
 
 ## Far-future concepts
 
-- **Morphogenetic MIDI Generator** — a sibling panel / plugin that runs the same Manifold physics engine as a *generative MIDI source*: Morphon positions trigger notes, Flux Gate crossings fire rhythmic events, Trigger Anchors define pitch mappings. The most powerful form shares geometry with the synthesis Manifold so field objects simultaneously shape timbres and generate melodies. Closed-loop routing (generator output → Morphos input) creates self-sustaining generative systems. Full spec in `morphos_orientation.md`.
+- **Morphogenetic MIDI Generator** — a sibling panel / plugin that runs the same Manifold physics engine as a *generative MIDI source*: Morphon positions trigger notes, Flux Gate crossings fire rhythmic events, Trigger Anchors define pitch mappings. The most powerful form shares geometry with the synthesis Manifold so field objects simultaneously shape timbres and generate melodies. Closed-loop routing (generator output → Morphos input) creates self-sustaining generative systems.
 
 ## Future concepts (not in current scope)
 
