@@ -106,16 +106,20 @@ Three volume controls exist: Master (bound to the `MASTER_GAIN` APVTS param,
 host-automatable), per-Emitter **Level** (baked at note-on, like pan/mass — affects
 new notes, not held ones), per-anchor **Volume** (live each tick).
 
-**Current state.** Slice 1 shipped: foundation + grain cloud + per-anchor knobs +
-the level/volume layer above. A single granular group wins; **no cross-source
-crossfade yet**, and each *Load* mints a distinct source — so two granular anchors
-currently crossfade rather than scrub. The **source-picker dropdown** (let anchors
-pick an already-loaded source → shared `sourceId`) is the next step and unblocks
-same-file scrub. Mono only; sample data not yet embedded in patches.
+**Current state.** Shipped: foundation + grain cloud + per-anchor knobs + the
+level/volume layer + the **source picker and waveform scrub**. Each anchor has a
+source dropdown (Additive + every loaded source) and a draggable waveform marker —
+so two anchors can share a `sourceId` and a Morphon **scrubs** between their read
+positions (N same-file anchors → time-warp). Still open: a **single granular group
+wins** (no cross-source crossfade — other sources fade to silence rather than
+crossfading), mono only, sample data not yet embedded in patches, and the grain
+**levels are pending ear-confirmation** (tune `GRAIN_MAKEUP` / normalize target if
+hot or shy).
 
 Key files: `synthesis/SampleSource.h` (mono source, atomic-published to audio),
 `synthesis/GrainEngine.h` (per-voice Hann grain pool), `blendAnchorsGranular` in
-`synthesis/TimbralAnchor.h`, grain render in `PluginProcessor.cpp::processBlock`.
+`synthesis/TimbralAnchor.h`, grain render in `PluginProcessor.cpp::processBlock`,
+`WaveformDisplay.h` + the source picker in `PluginEditor.cpp`.
 
 ## Conventions (summary — full list in CLAUDE.md)
 
@@ -126,8 +130,9 @@ are descriptive (no Conventional-Commits prefix) with a `Co-Authored-By` footer.
 
 ## Roadmap (condensed; reprioritise with Julian)
 
-- **Granular next**: source-picker dropdown (→ same-file scrub), then cross-source
-  crossfade, waveform UI + draggable scrub marker, DAW drag-and-drop, patch embed.
+- **Granular next**: cross-source crossfade (render multiple groups + additive
+  instead of single-dominant-group), then stereo grains, DAW drag-and-drop, patch
+  embed. (Source picker, waveform scrub, level/volume layer are done.)
 - **Undo/redo + Ctrl/Cmd+Z** — state-memento approach (snapshot `PatchState`),
   with edit coalescing.
 - **Object groups + modulatable group + Ticker** — group-scoped Morphon
