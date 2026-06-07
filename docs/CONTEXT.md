@@ -92,16 +92,26 @@ by source:
   swirling Morphon time-warps for free.
 
 **Per-anchor grain fields** (each a spatial RBF field): readPosition, density,
-jitter, spray, grainSize, pitchSemis, + a positionEnabled toggle (off = "texture
-waypoint": contributes texture but not read-position). Plus a global grain-level
-trim.
+jitter, spray, grainSize, pitchSemis, a positionEnabled toggle (off = "texture
+waypoint": contributes texture but not read-position), and a per-anchor **volume**
+(a loudness field blended over *all* anchors, not just granular). Plus a global
+grain-level trim.
 
-**Current state (slice 1, shipped).** Foundation + grain cloud + per-anchor knobs.
-A single granular group wins; **no cross-source crossfade yet**, and each *Load*
-mints a distinct source — so two granular anchors currently crossfade rather than
-scrub. The **source-picker dropdown** (let anchors pick an already-loaded source →
-shared `sourceId`) is the next step and unblocks same-file scrub. Mono only;
-sample data not yet embedded in patches.
+**Level & gain staging.** Loaded samples are peak-normalised to ~−1 dBFS (so grain
+level doesn't ride on the file's recording level), and the grain path has a makeup
+gain (`GRAIN_MAKEUP`, compensates the Hann window's ~0.5 average) bringing it to
+additive parity. Voice gain chain: `envelope × VOICE_SCALE(0.12) × emitter Level ×
+anchor Volume field` → grain makeup on the grain portion → **Master** at the bus.
+Three volume controls exist: Master (bound to the `MASTER_GAIN` APVTS param,
+host-automatable), per-Emitter **Level** (baked at note-on, like pan/mass — affects
+new notes, not held ones), per-anchor **Volume** (live each tick).
+
+**Current state.** Slice 1 shipped: foundation + grain cloud + per-anchor knobs +
+the level/volume layer above. A single granular group wins; **no cross-source
+crossfade yet**, and each *Load* mints a distinct source — so two granular anchors
+currently crossfade rather than scrub. The **source-picker dropdown** (let anchors
+pick an already-loaded source → shared `sourceId`) is the next step and unblocks
+same-file scrub. Mono only; sample data not yet embedded in patches.
 
 Key files: `synthesis/SampleSource.h` (mono source, atomic-published to audio),
 `synthesis/GrainEngine.h` (per-voice Hann grain pool), `blendAnchorsGranular` in
@@ -118,8 +128,6 @@ are descriptive (no Conventional-Commits prefix) with a `Co-Authored-By` footer.
 
 - **Granular next**: source-picker dropdown (→ same-file scrub), then cross-source
   crossfade, waveform UI + draggable scrub marker, DAW drag-and-drop, patch embed.
-- **Master gain knob** — surface the existing `MASTER_GAIN` APVTS param as an
-  editor control.
 - **Undo/redo + Ctrl/Cmd+Z** — state-memento approach (snapshot `PatchState`),
   with edit coalescing.
 - **Object groups + modulatable group + Ticker** — group-scoped Morphon
