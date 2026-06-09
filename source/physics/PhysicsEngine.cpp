@@ -596,7 +596,7 @@ void PhysicsEngine::drainEditCommands()
                     break;
 
                 case ManifoldEdit::Type::SetGlobalFriction:
-                    globalFriction_ = juce::jlimit(0.0f, 10.0f, e.x);
+                    globalFriction_ = juce::jlimit(0.0f, 200.0f, e.x);
                     break;
 
                 case ManifoldEdit::Type::SetGlideTime:

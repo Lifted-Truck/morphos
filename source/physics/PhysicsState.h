@@ -388,9 +388,9 @@ struct ManifoldEdit
         SetTimbralAnchorPositionEnabled, // x = 1/0;                         index = anchor slot
         SetTimbralAnchorVolume,       // x = anchor volume [0,2];            index = anchor slot
         SetEmitterGain,               // x = emitter gain [0,2];             index = emitter slot
-        SetGlobalGrainLevel,          // x = granular output trim [0,2];     index unused
+        SetGlobalGrainLevel,          // x = granular output trim [0,4];     index unused
         SetGlideTime,          // x = portamento time in seconds [0, 5]; index unused
-        SetGlobalFriction,     // x = decay rate per second (1/s) [0, 10]; index unused
+        SetGlobalFriction,     // x = decay rate per second (1/s) [0, 200]; index unused
 
         // ── Spawn / remove — x,y = initial position for Add types ────────────
         AddAttractor,          // Spawn a new Attractor at (x,y) with defaults

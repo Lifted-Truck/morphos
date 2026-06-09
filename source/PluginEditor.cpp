@@ -1450,9 +1450,15 @@ void MorphosEditor::setupSliders()
     // Global friction — the sole damping authority for every Morphon. Read by
     // the integrator as a decay rate per second (1/s) and converted to a
     // per-tick factor via 1 − exp(−rate·dt). Slider 0 = frictionless coast;
-    // 10 = near-instant damping over a second.
+    // the very top (200) freezes motion in ~25 ms (a "total stop").
+    //
+    // The audibly-useful range lives at the very bottom (~0–2), so the travel is
+    // skewed exponentially — midpoint of the slider sits at rate 1.5 — giving fine
+    // control where it matters and compressing the heavy-damping/freeze band into
+    // the top. (Linear 0–10 crammed everything useful into the first ~10%.)
     styleLabel(lblFriction_, "Friction (1/s)");
-    styleSlider(sldFriction_, 0.0, 10.0);
+    styleSlider(sldFriction_, 0.0, 200.0);
+    sldFriction_.setSkewFactorFromMidPoint(1.5);
     sldFriction_.setNumDecimalPlacesToDisplay(2);
     addAndMakeVisible(lblFriction_);
     addAndMakeVisible(sldFriction_);
