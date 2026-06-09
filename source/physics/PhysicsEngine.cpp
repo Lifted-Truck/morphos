@@ -583,16 +583,16 @@ void PhysicsEngine::drainEditCommands()
 
                 case ManifoldEdit::Type::SetTimbralAnchorVolume:
                     if (idx >= 0 && idx < activeAnchorCount_)
-                        timbralAnchors_[idx].volume = juce::jlimit(0.0f, 2.0f, e.x);
+                        timbralAnchors_[idx].volume = juce::jlimit(0.0f, 4.0f, e.x);
                     break;
 
                 case ManifoldEdit::Type::SetEmitterGain:
                     if (idx >= 0 && idx < MAX_EMITTERS)
-                        emitters_[idx].gain = juce::jlimit(0.0f, 2.0f, e.x);
+                        emitters_[idx].gain = juce::jlimit(0.0f, 4.0f, e.x);
                     break;
 
                 case ManifoldEdit::Type::SetGlobalGrainLevel:
-                    globalGrainLevel_ = juce::jlimit(0.0f, 2.0f, e.x);
+                    globalGrainLevel_ = juce::jlimit(0.0f, 4.0f, e.x);
                     break;
 
                 case ManifoldEdit::Type::SetGlobalFriction:

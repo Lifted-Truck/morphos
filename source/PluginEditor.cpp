@@ -222,7 +222,11 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     // ── Master gain — output level (host-automatable); always visible ──────────
     lblMasterGain_.setBounds(x, y,           w, LABEL_H);
     sldMasterGain_.setBounds(x, y + LABEL_H, w, SLIDER_H);
-    y += ROW_H + 4;
+    y += ROW_H;
+
+    // ── Output level meter — post-master-gain peak; always visible ─────────────
+    levelMeter_.setBounds(x, y, w, 8);
+    y += 8 + 4;
 
     // ── Tab buttons (Inspector | Mod) ────────────────────────────────────────
     {
@@ -744,7 +748,7 @@ void MorphosEditor::setupSliders()
 
     // Per-anchor volume (shown for every anchor, additive or granular).
     styleLabel (lblAnchorVol_, "Volume");
-    styleSlider(sldAnchorVol_, 0.0, 2.0);
+    styleSlider(sldAnchorVol_, 0.0, 4.0);
     sldAnchorVol_.setNumDecimalPlacesToDisplay(2);
     addAndMakeVisible(lblAnchorVol_); addAndMakeVisible(sldAnchorVol_);
     sldAnchorVol_.onValueChange = [this] {
@@ -1419,7 +1423,7 @@ void MorphosEditor::setupSliders()
     };
 
     styleLabel(lblEmitGain_, "Level");
-    styleSlider(sldEmitGain_, 0.0, 2.0);
+    styleSlider(sldEmitGain_, 0.0, 4.0);
     sldEmitGain_.setNumDecimalPlacesToDisplay(2);
     addAndMakeVisible(lblEmitGain_); addAndMakeVisible(sldEmitGain_);
     sldEmitGain_.onValueChange = [this] {
@@ -1461,7 +1465,7 @@ void MorphosEditor::setupSliders()
     };
 
     styleLabel(lblGrainLevel_, "Grain Level");
-    styleSlider(sldGrainLevel_, 0.0, 2.0);
+    styleSlider(sldGrainLevel_, 0.0, 4.0);
     sldGrainLevel_.setNumDecimalPlacesToDisplay(2);
     addAndMakeVisible(lblGrainLevel_);
     addAndMakeVisible(sldGrainLevel_);
@@ -1479,6 +1483,45 @@ void MorphosEditor::setupSliders()
     addAndMakeVisible(sldMasterGain_);
     masterGainAttach_ = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         processor_.getAPVTS(), ParamID::MASTER_GAIN, sldMasterGain_);
+
+    addAndMakeVisible(levelMeter_);   // always-visible output meter
+
+    // ── Double-click any slider → reset to its factory default ─────────────────
+    // JUCE resets the slider on double-click and fires onValueChange, so the
+    // object/parameter edit propagates normally. Defaults mirror the object-struct
+    // member initialisers (physics/synthesis headers) and the APVTS param defaults.
+    struct DClickDefault { juce::Slider* s; double def; };
+    const DClickDefault dclickDefaults[] = {
+        { &sldBrightness_,       0.5  }, { &sldInharmonicity_,    0.0   },
+        { &sldReadPos_,          0.5  }, { &sldDensity_,          0.3   },
+        { &sldJitter_,           0.0  }, { &sldSpray_,            0.0   },
+        { &sldGrainSize_,        0.06 }, { &sldGrainPitch_,       0.0   },
+        { &sldAnchorVol_,        1.0  },
+        { &sldFOStrength_,       0.3  }, { &sldFORadius_,         0.4   },
+        { &sldFOChirality_,      1.0  },
+        { &sldKeyLow_,           0.0  }, { &sldKeyHigh_,          127.0 },
+        { &sldTransposeOct_,     0.0  }, { &sldTransposeSemi_,    0.0   },
+        { &sldTransposeCents_,   0.0  }, { &sldEmitPan_,          0.0   },
+        { &sldTerminusStrength_, 0.30 }, { &sldTerminusRadius_,   0.04  },
+        { &sldEmitAngle_,        0.0  }, { &sldEmitSpeed_,        0.0   },
+        { &sldEmitAttack_,       0.05 }, { &sldEmitDecay_,        0.15  },
+        { &sldEmitSustain_,      0.70 }, { &sldEmitRelease_,      0.30  },
+        { &sldEmitMass_,         1.0  }, { &sldEmitGain_,         1.0   },
+        { &sldZoneRadius_,       0.15 }, { &sldZoneDepth_,        0.0   },
+        { &sldGateLength_,       0.20 }, { &sldGateAngle_,        0.0   },
+        { &sldGateRadius_,       0.15 },
+        { &sldPathRadius_,       0.15 }, { &sldPathSnap_,         0.04  },
+        { &sldPathEscape_,       0.0  },
+        { &sldTrajRadius_,       0.15 }, { &sldTrajSpeed_,        0.5   },
+        { &sldTrajPos_,          0.0  }, { &sldTrajLength_,       0.30  },
+        { &sldTrajAngle_,        0.0  }, { &sldTrajAttach_,      -1.0   },
+        { &sldFlowRadius_,       0.15 }, { &sldFlowWidth_,        0.08  },
+        { &sldFlowStrength_,     0.40 }, { &sldFlowChirality_,    1.0   },
+        { &sldGlideTime_,        0.0  }, { &sldFriction_,         0.0   },
+        { &sldGrainLevel_,       1.0  }, { &sldMasterGain_,       0.8   },
+    };
+    for (const auto& d : dclickDefaults)
+        d.s->setDoubleClickReturnValue(true, d.def);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2657,6 +2700,8 @@ bool MorphosEditor::keyPressed(const juce::KeyPress& key)
 
 void MorphosEditor::timerCallback()
 {
+    levelMeter_.setLevel(processor_.getOutputLevel());
+
     const auto& state = processor_.getPhysicsStateForUI();
 
     for (int i = 0; i < MAX_MORPHONS; ++i)

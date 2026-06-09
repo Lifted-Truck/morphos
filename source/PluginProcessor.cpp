@@ -15,7 +15,7 @@ MorphosProcessor::createParameterLayout()
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID{ ParamID::MASTER_GAIN, 1 },
         "Master Gain",
-        juce::NormalisableRange<float>(0.0f, 1.0f),
+        juce::NormalisableRange<float>(0.0f, 2.0f),   // up to +6 dB of boost headroom
         0.8f));
 
     layout.add(std::make_unique<juce::AudioParameterFloat>(
@@ -272,12 +272,14 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
         const float invSampleRate = 1.0f / static_cast<float>(sampleRate_);
         const float twoPi         = juce::MathConstants<float>::twoPi;
 
-        // Per-voice gain: scale so a single full-amplitude voice peaks around -12 dBFS.
+        // Per-voice gain calibration. Raised from 0.12 → 0.25 (~+6 dB) because the
+        // instrument read as too quiet; master + per-component ranges now also reach
+        // higher (see createParameterLayout / the editor slider ranges).
         // Master gain (APVTS) applied to the accumulated mix after this loop.
-        constexpr float VOICE_SCALE = 0.12f;
+        constexpr float VOICE_SCALE = 0.25f;
 
         // Global granular output trim (constant per buffer).
-        const float globalGrainLevel = juce::jlimit(0.0f, 2.0f, snapshot.globalGrainLevel);
+        const float globalGrainLevel = juce::jlimit(0.0f, 4.0f, snapshot.globalGrainLevel);
 
         for (int i = 0; i < MAX_MORPHONS; ++i)
         {
@@ -476,6 +478,10 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
     // ── 6. Apply master gain ──────────────────────────────────────────────────
     const float gain = pGain_->load(std::memory_order_relaxed);
     buffer.applyGain(gain);
+
+    // Publish the post-gain block peak for the editor's level meter (lock-free).
+    outputLevel_.store(buffer.getMagnitude(0, buffer.getNumSamples()),
+                       std::memory_order_relaxed);
 
     // ── 7. Copy snapshot for UI thread (relaxed — UI only needs approximate data)
     latestSnapshotForUI_ = snapshot;

@@ -22,6 +22,43 @@
 
 static constexpr int MAX_TRAIL_LENGTH = 180;   // Points; 6 s at 30 Hz
 
+// ─────────────────────────────────────────────────────────────────────────────
+// LevelMeter — thin horizontal post-master-gain output meter.
+// The editor feeds it a linear peak each timer tick (~30 Hz); it applies
+// instant-attack / smooth-release ballistics and colours green→amber→red as the
+// level approaches and exceeds 0 dBFS.
+// ─────────────────────────────────────────────────────────────────────────────
+class LevelMeter : public juce::Component
+{
+public:
+    void setLevel(float newLevel) noexcept
+    {
+        level_ = newLevel > level_ ? newLevel              // instant attack
+                                   : level_ * 0.80f + newLevel * 0.20f;  // smooth release
+        repaint();
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        auto r = getLocalBounds().toFloat();
+        g.setColour(juce::Colour(0xFF1A1A18));
+        g.fillRect(r);
+
+        const float clamped = juce::jlimit(0.0f, 1.0f, level_);
+        const juce::Colour c = level_ >= 1.0f ? juce::Colour(0xFFE05A4A)   // clipping (red)
+                             : level_ >  0.7f ? juce::Colour(0xFFE0B84A)   // hot (amber)
+                                              : juce::Colour(0xFF3DC9B0);  // nominal (teal)
+        g.setColour(c);
+        g.fillRect(r.withWidth(r.getWidth() * clamped));
+
+        g.setColour(juce::Colour(0xFF252522));
+        g.drawRect(r, 1.0f);
+    }
+
+private:
+    float level_ = 0.0f;
+};
+
 class MorphosEditor : public juce::AudioProcessorEditor,
                       private juce::Timer
 {
@@ -288,6 +325,7 @@ private:
     juce::Label  lblMasterGain_;
     juce::Slider sldMasterGain_;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> masterGainAttach_;
+    LevelMeter   levelMeter_;
 
     // Field object section (visible when a FieldObject is selected)
     juce::Label  lblFOStrength_,    lblFORadius_,    lblFOChirality_;

@@ -102,6 +102,13 @@ public:
     // to hold while the editor is open.
     const float* getSourceAudio(int sourceId, int& outNumSamples) const;
 
+    // Post-master-gain peak of the last processed block, published lock-free for
+    // the editor's level meter. UI polls this at ~30 Hz.
+    float getOutputLevel() const noexcept
+    {
+        return outputLevel_.load(std::memory_order_relaxed);
+    }
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
@@ -121,6 +128,10 @@ private:
 
     // Current sample rate — set in prepareToPlay, read in processBlock
     double sampleRate_ = 44100.0;
+
+    // Output level (post-master-gain block peak) for the editor's meter.
+    // Written on the audio thread, read on the UI thread — relaxed atomic is fine.
+    std::atomic<float> outputLevel_{ 0.0f };
 
     // Last known editor size — survives editor close/reopen and is serialised
     // by getStateInformation. Default matches MorphosEditor's setSize() call.
