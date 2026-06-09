@@ -268,6 +268,7 @@ private:
     // updatePanel() only re-runs layoutPanel when the selection's section
     // actually changes (avoids relayouting on every 30Hz timer tick).
     ObjectKind      lastPanelLayoutKind_ = ObjectKind::None;
+    int             panelAnchorSourceId_ = -2;   // sourceId the inspector was last built for; -2 = n/a
 
     // Helper: send a single edit command to the physics thread
     void sendEdit(ManifoldEdit::Type type, int index, float x, float y = 0.0f);

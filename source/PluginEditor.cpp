@@ -1986,6 +1986,8 @@ void MorphosEditor::setupModMatrix()
 
 void MorphosEditor::updatePanel()
 {
+    panelAnchorSourceId_ = -2;   // set to the anchor's sourceId below if one is shown
+
     // Re-layout the panel viewport's content when the selected section changes,
     // so panelContent_ is sized to fit the current section (and scrollbar
     // appears only when that specific section overflows the panel area).
@@ -2121,6 +2123,7 @@ void MorphosEditor::updatePanel()
         const auto& a   = state.timbralAnchors[i];
         const int   sid = a.sourceId;
         const bool  granular = (sid >= 0);
+        panelAnchorSourceId_ = sid;   // remember what the panel is now built for
 
         // Always visible: source picker + Load New + per-anchor volume.
         btnLoadSample_.setVisible(true);
@@ -2719,6 +2722,19 @@ void MorphosEditor::timerCallback()
             trails_[i].push(m.x, m.y);
         else
             trails_[i].clear();
+    }
+
+    // Inspector refresh: switching an anchor's source (Additive↔granular, or
+    // between loaded files) via the picker only reaches the snapshot after a
+    // physics round-trip. Detect the sourceId change here and rebuild the panel,
+    // so the granular/additive controls swap in without a deselect-and-reselect.
+    if (panelMode_ == PanelMode::Inspector
+        && selection_.kind == ObjectKind::TimbralAnchor
+        && selection_.index >= 0
+        && selection_.index < state.activeTimbralAnchorCount
+        && state.timbralAnchors[selection_.index].sourceId != panelAnchorSourceId_)
+    {
+        updatePanel();
     }
 
     // Mod-tab refresh: only re-layout + re-sync when the active-connection
