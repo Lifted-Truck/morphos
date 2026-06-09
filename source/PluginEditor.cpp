@@ -660,9 +660,11 @@ void MorphosEditor::setupSliders()
     addAndMakeVisible(waveform_);
 
     sldReadPos_.onValueChange = [this] {
+        const float pos01 = (float)sldReadPos_.getValue();
+        waveform_.setReadPosition(pos01);   // two-way: slider drag moves the marker
         if (!ignoreSliderCallbacks_)
             sendEdit(ManifoldEdit::Type::SetTimbralAnchorReadPosition,
-                     selection_.index, (float)sldReadPos_.getValue());
+                     selection_.index, pos01);
     };
 
     // Drag on the waveform → scrub; also reflect into the numeric Scrub Pos slider.
