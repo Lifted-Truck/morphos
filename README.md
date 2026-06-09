@@ -47,7 +47,7 @@ Open the **Visual Studio Installer** → **Modify** on your VS 2026 installation
 ## Build
 
 ```powershell
-# From the plugin/ directory — first time or after wiping build/:
+# From the repository root — first time or after wiping build/:
 cmake --preset debug
 
 # Subsequent builds:
@@ -59,7 +59,7 @@ cmake --build --preset release
 ```
 
 First configure downloads JUCE via FetchContent (~300 MB, one time only).
-Generator is locked to `Visual Studio 18 2026 / x64` via `CMakePresets.json` — no need to specify `-G` manually.
+Generator is locked to `Visual Studio 18 2026 / x64` via `CMakePresets.json` — no need to specify `-G` manually. (The presets are Windows-only; on **macOS** build VST3 + AU via CMake per `docs/MAC_PORT.md`.)
 
 **Plugin output:** `build\Morphos_artefacts\Debug\VST3\Morphos.vst3`
 
@@ -153,7 +153,9 @@ is shipped — DAW automation is keyed to these strings.
   - **Priority destinations:** Emitter position XY, launch angle, launch speed (keytracking these to MIDI pitch is the canonical Morphos expressive relationship). All field-object XY positions must be both sources and destinations. Per-Morphon mass.
   - **Path Objects as modulation sources** — Path Objects exist (v1: circle). For Phase 6 they should expose pinned-Morphon arc-length / tangent-angle / current-XY as mod-matrix sources, so any parameter can be driven by where a Morphon is on the rail. Adding richer shapes (Line, Arc, Polyline, Bezier) feeds the same source interface unchanged.
   - **Tempo-synced sources** — host-tempo LFOs (BPM ratios, divisions, dotted/triplet) and tempo-locked triggers ("fire every 1/16"). Wires through `juce::AudioPlayHead::CurrentPositionInfo` for BPM + transport position so anything in the matrix (Emitter retrigger, field-object position, gate position, zone depth) can lock to the song grid. Critical for using Morphos as a rhythmic synthesizer; without it, geometry-driven motion is free-running only.
-- [ ] **Phase 7** — Additional engines: FM, wavetable, heterogeneous blending. **Transient Objects**: percussive event synthesis layer triggered by Emitter generation, Terminus arrival, Event Horizon absorption, and Flux Gate crossings. **Emitter unison/detune mode**: N Morphons per note with per-parameter spread (angle, speed, detune, pan, mass); spread values are mod destinations.
+  - **Random value modulators** — two kinds: **synchronized random** (sample-&-hold on a synced clock; ~2 instances, Serum-style) and **async random** (every destination it drives receives an *independent* fresh value on each trigger, rather than one shared value).
+  - **Bipolar / unipolar toggle** per modulator (random sources included).
+- [ ] **Phase 7** — Additional engines: FM, **wavetable**, heterogeneous blending. The wavetable engine may start *outside* the anchor RBF model — pick from a collection of 2D waveforms that fill the entire Manifold; decide later how/whether it merges with anchors. **Transient Objects**: percussive event synthesis layer — its own oscillator/sampler that fires when a threshold is crossed (Emitter generation, Terminus arrival, Event Horizon absorption, Flux Gate crossings). **Emitter unison/chaos mode**: a Morphon-count slider launches N Morphons per note; when N > 1 each parameter gains a secondary **chaos** slider (random per-Morphon offset on angle, speed, detune, pan, mass) plus a global **blend/shape** knob over the spread's distribution curve relative to the central value; spread values are mod destinations.
 - [ ] **Phase 8** — Scaling: spatial hash, SIMD, engine LOD, physics quality settings, **offline-rendering correctness** (switch physics from wall-clock to buffer-clock advance under `isNonRealtime()`)
 - [ ] **Phase 9** — Advanced: granular, physical model, spectral engines, full mod matrix, **tuning modes** (harmonic series, ratio-based pitch mapping, alternate temperaments)
 - [ ] **Phase 10** — Product:
@@ -165,18 +167,22 @@ is shipped — DAW automation is keyed to these strings.
   - **Panel scrolling / `juce::Viewport`** — Phase-5 work shipped a section-overlap fix that collapsed ~500px of stacked invisible sliders. The Emitter section still runs ~600px tall on its own, so wrapping the panel content in a `Viewport` for vertical scroll is the next step once any further controls land. Compact mode (smaller fonts / shorter sliders) is a fallback if scrolling proves awkward.
   - **Gate endpoint drag** — currently a Flux Gate drags as a rigid segment from any point along its line (centre + length + angle stays bound together). Endpoints should be individually grabbable so rotation/length can be set on-canvas without falling back to the Length / Angle sliders. Likely uses a small hit zone at each endpoint distinct from the main line.
   - **Timbral visualizer** — partial amplitude bar graph (cheapest given the additive engine); oscilloscope or FFT waterfall are alternatives. Shows the timbre of the most recently launched Morphon.
+  - **Output level meter** — post-Master signal meter in the editor (distinct from the per-Morphon Timbral visualizer above).
+  - **Double-click a parameter → reset to default** — global behaviour across every slider/knob.
   - **Object layer panel** — list of all objects on the canvas with selectable rows; alt-click on canvas cycles through objects beneath the cursor (the panel surfaces what's covered). Layer order reorderable to control z-stack and selection priority.
   - **Object staging area** — configure Emitter/Anchor/Zone defaults in the panel before clicking to place, so the first instance lands already tuned rather than requiring post-placement edits.
   - **Per-Morphon visual identity** — note number or pitch-class label on each Morphon dot; per-note colour generation (toggleable).
   - **Patch randomizer** — randomise parameters with configurable mutation depth and optional seeded anchoring ("randomise around current patch").
   - **Piano keyboard strip** at the bottom — lights active MIDI notes, clickable for in-VST testing.
   - GUI polish, code signing.
-- [ ] **Phase 11** — Cross-platform: macOS port (AU + VST3 universal binary, code signing & notarisation, Retina-aware rendering). Build system already CMake-based; the JUCE side is portable, but anything Windows-specific (paths, file dialogs, font assumptions) gets audited here.
+- [~] **Phase 11** — Cross-platform: macOS port. **In progress** — VST3 + AU build, run, and pass `auval` on Apple Silicon (arm64); CMake re-signs both bundles post-build so Ableton scans them (see `docs/MAC_PORT.md`). Remaining: universal x86_64 + arm64 binary, code signing & notarisation, Retina-aware rendering, and auditing anything Windows-specific (paths, file dialogs, font assumptions).
 
 **Known deferred issues:**
 - **Offline-rendering / Bounce** — the physics thread is wall-clock-driven (a `juce::Thread` ticking at 500 Hz of real time), so during Ableton's faster-than-realtime render (Freeze, Bounce in Place, Export Audio) the audio thread renders many buffers per wall second while physics still advances at only 500 ticks/sec. The bounced audio will not match live playback. Fix: detect `isNonRealtime()` in `processBlock` and advance physics inline with `dt = numSamples / sampleRate`. Threaded path stays for live use. Target: Phase 8.
 - **Topology-aware anchor blending** — Timbral Anchor IDW uses raw Euclidean distance; crossing a wrap boundary causes a sharp timbral discontinuity. Fix: use `min(|Δx|, 1−|Δx|)` per axis conditioned on `globalBoundary`. The discontinuity has its own character and should be a toggle once the continuous version exists.
 - **Manifold aspect-ratio handling** — currently the Manifold stretches to fill the canvas, so resizing the window non-uniformly changes the relative dynamics of objects and the apparent scale of radii. This is interesting as an authoring tool but should not be the only mode. Options to design: lock 1:1 (letterbox), free-stretch (current), or global rescale (uniform scaling that preserves dynamics). Likely surfaced as a startup-menu preference.
+- **Output is too quiet / gain range too low** — the whole instrument is quiet. Raise the *overall* output gain range **and** each component's range individually (Master, per-Emitter Level, per-anchor Volume, grain); revisit the gain-staging constants (`VOICE_SCALE` 0.12, `GRAIN_MAKEUP`, normalize target) alongside the APVTS param ranges so the ceiling moves together.
+- **Friction slider curve** — the useful range is crammed into the first ~10% of travel. Remap the slider→rate mapping to a steep **exponential**, with the very top of travel bringing motion to a **total stop**. Curve the mapping, not the integrator (`globalFriction_` stays a 1/s decay rate).
 
 **Phase 5 follow-ups (queued for a later pass through the field-model chapter):**
 - **Open-path shapes** — Line / Arc / Polyline / Bezier shape variants for both rail and trajectory paths. Open paths ping-pong rather than wrap; the `PathShape` enum and `pathClosestPoint()` / `trajectoryPathSample()` indirection is already in place, so each shape is one closest-point + one sample-position implementation.
@@ -184,7 +190,14 @@ is shipped — DAW automation is keyed to these strings.
 - **Curved Flux Gates** — Flux Gates that use a path shape (line / arc / bezier) instead of a single line segment. Same crossing semantics (re-trigger envelope on prev→cur intersection); just a richer geometry that can wrap around an Attractor or trace an irregular boundary.
 - **Off-path escape** — currently a Morphon pinned to a rail stays pinned for its lifetime (path removal or voice death are the only escape paths). Add an escape condition (velocity threshold, MIDI source, explicit unpin event from a Flux Gate, or a panel-toggleable "no escape / escape on impulse / escape on note-off").
 - **Manual-mode trajectory paths** — `currentT` is driven externally rather than by `speed * dt`. Lands with Phase 6 mod matrix: `currentT` becomes a destination, any mod source (LFO, MIDI CC, Morphon position) can drive it. Slider in the Trajectory panel selects mode.
-- **Global friction slider** — a global multiplier on per-Morphon drag. At 0, Morphons hold velocity indefinitely (terminal velocity bounded only by field-force magnitudes); at max, motion decays to zero in a fraction of a second. Sits next to Glide Time in the always-visible top section.
+- **Expand Effect Zones** — broaden Zone functionality beyond the current proximity modulator (scope TBD with Julian: e.g. more target params, alternate shapes/falloffs, polarity, or zone-scoped behaviours).
+- **Global friction slider** — a global multiplier on per-Morphon drag. At 0, Morphons hold velocity indefinitely (terminal velocity bounded only by field-force magnitudes); at max, motion decays to zero in a fraction of a second. **Shipped** — sits next to Glide Time in the always-visible top section; curve refinement tracked under Known deferred issues.
+
+**Granular follow-ups (engine shipped ahead of its Phase 9 slot):**
+- **Cross-source crossfade** — render multiple granular groups + additive together (equal-power) instead of a single dominant group winning; the others currently fade to silence rather than crossfading.
+- **Proximity-scaled additive↔granular overlap** — today an additive anchor is always audible under the granular ones. Add a slider governing how much the systems overlap *as a Morphon approaches the anchor*, instead of constant overlap.
+- **Scrub marker ↔ slider two-way bind** — dragging the waveform marker moves the scrub slider, but not the reverse; each must drive the other.
+- **Stereo grains**, **DAW file drag-and-drop**, and **sample data embedded in patches**.
 
 ---
 

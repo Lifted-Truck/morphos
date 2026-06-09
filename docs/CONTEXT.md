@@ -128,21 +128,13 @@ object structs; `Parameters.h` ID strings are forever; `globalFriction_` is a
 decay rate (1/s); never commit/push without an explicit request; commit messages
 are descriptive (no Conventional-Commits prefix) with a `Co-Authored-By` footer.
 
-## Roadmap (condensed; reprioritise with Julian)
+## Roadmap
 
-- **Granular next**: cross-source crossfade (render multiple groups + additive
-  instead of single-dominant-group), then stereo grains, DAW drag-and-drop, patch
-  embed. (Source picker, waveform scrub, level/volume layer are done.)
-- **Undo/redo + Ctrl/Cmd+Z** — state-memento approach (snapshot `PatchState`),
-  with edit coalescing.
-- **Object groups + modulatable group + Ticker** — group-scoped Morphon
-  interaction; a crossing-advanced step-sequencer mod source.
-- **Shift+click multi-select**; object-distance mod source; friction-curve tweak.
-- **Manifold size/aspect as parameters**; real-unit grid + tempo sync + isometric
-  + snap-to-grid.
-- **macOS port** — prep done (see `MAC_PORT.md`); remaining work is Mac-side.
-- **Future**: React/webview editor (parallel-branch experiment); Sheaf Synthesis
-  (Julian's next-paradigm idea, post-Morphos).
+The roadmap is maintained in the **README** (`README.md`) — its phased plan
+(Phase 0–11), "Known deferred issues", "Phase 5 / Granular follow-ups", and
+"Far-future / Future concepts" are the single source of truth. This file stays
+focused on the *why* (concept, taxonomy, mod matrix, granular model); the README
+tracks *what's next*.
 
 ## Collaborator
 
