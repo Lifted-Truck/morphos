@@ -83,6 +83,8 @@ PhysicsEngine::PhysicsEngine()
     timbralAnchors_[0].y       = 0.15f;
     timbralAnchors_[0].timbreX = 0.05f;
     timbralAnchors_[0].timbreY = 0.00f;
+    timbralAnchors_[0].spectrumType = (int)SpectrumType::Triangle;
+    fillSpectrum(SpectrumType::Triangle, timbralAnchors_[0].spectrum, MORPH_NUM_PARTIALS);
     timbralAnchors_[0].trajectoryPathIndex = -1;
     timbralAnchors_[0].active  = true;
     // Anchor 1 — lower-right: bright (flat spectrum) and heavily inharmonic
@@ -90,6 +92,8 @@ PhysicsEngine::PhysicsEngine()
     timbralAnchors_[1].y       = 0.85f;
     timbralAnchors_[1].timbreX = 0.92f;
     timbralAnchors_[1].timbreY = 0.80f;
+    timbralAnchors_[1].spectrumType = (int)SpectrumType::Saw;
+    fillSpectrum(SpectrumType::Saw, timbralAnchors_[1].spectrum, MORPH_NUM_PARTIALS);
     timbralAnchors_[1].trajectoryPathIndex = -1;
     timbralAnchors_[1].active  = true;
 
@@ -591,6 +595,15 @@ void PhysicsEngine::drainEditCommands()
                         emitters_[idx].gain = juce::jlimit(0.0f, 4.0f, e.x);
                     break;
 
+                case ManifoldEdit::Type::SetTimbralAnchorSpectrum:
+                    if (idx >= 0 && idx < activeAnchorCount_)
+                    {
+                        const int st = juce::jlimit(0, (int)SpectrumType::Count - 1, (int)e.x);
+                        timbralAnchors_[idx].spectrumType = st;
+                        fillSpectrum((SpectrumType)st, timbralAnchors_[idx].spectrum, MORPH_NUM_PARTIALS);
+                    }
+                    break;
+
                 case ManifoldEdit::Type::SetGlobalGrainLevel:
                     globalGrainLevel_ = juce::jlimit(0.0f, 4.0f, e.x);
                     break;
@@ -665,6 +678,8 @@ void PhysicsEngine::drainEditCommands()
                         a.y      = e.y;
                         a.timbreX = 0.5f;
                         a.timbreY = 0.0f;
+                        a.spectrumType = (int)SpectrumType::Saw;
+                        fillSpectrum(SpectrumType::Saw, a.spectrum, MORPH_NUM_PARTIALS);
                         a.trajectoryPathIndex = -1;   // Don't inherit stale state from a previously-removed slot
                         a.sourceId     = -1;          // New anchors are additive until a source is attached
                         a.readPosition = 0.5f;
@@ -2089,6 +2104,10 @@ void PhysicsEngine::integrateMorphons(double dt)
         m.granularGrainSize = gb.grainSize;
         m.granularPitch     = gb.pitch;
 
+        // Morph Surface: IDW-blend additive anchors' spectrum tables → per-Morphon
+        // partial-amplitude table the audio engine synthesises from directly.
+        blendAnchorSpectrum(m.x, m.y, timbralAnchors_.data(), activeAnchorCount_, m.spectrum);
+
         // ── Pitch glide ───────────────────────────────────────────────────────
         // Exponential approach in log-frequency space so the slide rate is
         // perceptually constant regardless of interval size (semitones/sec).
@@ -2756,6 +2775,7 @@ void PhysicsEngine::writeSnapshot()
         dst.y       = src.y;
         dst.timbreX = src.timbreX;
         dst.timbreY = src.timbreY;
+        dst.spectrumType        = src.spectrumType;
         dst.trajectoryPathIndex = src.trajectoryPathIndex;
         dst.sourceId        = src.sourceId;
         dst.readPosition    = src.readPosition;

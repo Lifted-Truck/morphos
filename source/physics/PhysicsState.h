@@ -92,10 +92,12 @@ struct MorphonState
 
     // ── Timbral parameters ────────────────────────────────────────────────────
     // Output of Timbral Anchor RBF blending at current Manifold position.
-    // Phase 2: timbreX = spectral rolloff, timbreY = inharmonicity.
-    // Extended in later phases.
+    // timbreX = additive brightness/spectral tilt (0.5 = neutral); timbreY =
+    // inharmonicity (partial-frequency stretch). spectrum[] = the per-Morphon
+    // Morph-Surface partial-amplitude table, IDW-blended from additive anchors.
     float timbreX = 0.5f;
     float timbreY = 0.5f;
+    float spectrum[MORPH_NUM_PARTIALS] = {};
 
     // ── Granular blend (written by anchor blending each tick) ─────────────────
     // The dominant granular source at this Morphon's position, its blended
@@ -168,8 +170,9 @@ struct TimbralAnchorSnapshot
 {
     float x       = 0.5f;
     float y       = 0.5f;
-    float timbreX = 0.5f;   // spectral rolloff [0,1]
+    float timbreX = 0.5f;   // additive brightness/tilt [0,1]
     float timbreY = 0.0f;   // inharmonicity    [0,1]
+    int   spectrumType = (int)SpectrumType::Saw;  // additive spectrum preset (UI + patch)
     int   trajectoryPathIndex = -1;
     int   sourceId     = -1;    // < 0 = additive; >= 0 = granular source binding
     float readPosition = 0.5f;  // [0,1] read-head into the bound source buffer
@@ -387,6 +390,7 @@ struct ManifoldEdit
         SetTimbralAnchorPitch,        // x = pitch semitones [-24,+24];      index = anchor slot
         SetTimbralAnchorPositionEnabled, // x = 1/0;                         index = anchor slot
         SetTimbralAnchorVolume,       // x = anchor volume [0,2];            index = anchor slot
+        SetTimbralAnchorSpectrum,     // x = (float)SpectrumType preset;     index = anchor slot
         SetEmitterGain,               // x = emitter gain [0,2];             index = emitter slot
         SetGlobalGrainLevel,          // x = granular output trim [0,4];     index unused
         SetGlideTime,          // x = portamento time in seconds [0, 5]; index unused

@@ -142,7 +142,7 @@ private:
     // Phasor accumulators for each Morphon slot's additive engine.
     // Indexed by Morphon slot (not MIDI note) so state is preserved across retrigs.
     // Reset on each new activation (wasActive false → true transition).
-    static constexpr int NUM_PARTIALS = 20;
+    static constexpr int NUM_PARTIALS = MORPH_NUM_PARTIALS;   // 64 (Morph Surface)
 
     struct AdditiveVoice
     {

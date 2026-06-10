@@ -304,6 +304,8 @@ private:
     // Anchor section (visible when a TimbralAnchor is selected)
     juce::Label  lblBrightness_,    lblInharmonicity_;
     juce::Slider sldBrightness_,    sldInharmonicity_;
+    juce::Label  lblSpectrum_;                 // additive Morph-Surface spectrum preset
+    juce::ComboBox cbSpectrum_;
     // Granular controls: attach a sample, then per-anchor grain fields. The grain
     // rows are shown only when the selected anchor has a source bound.
     juce::TextButton btnLoadSample_ { "Load New" };

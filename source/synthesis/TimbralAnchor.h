@@ -1,5 +1,6 @@
 #pragma once
 #include <cmath>
+#include "SpectrumPalette.h"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TimbralAnchor.h — Manifold timbre nodes + IDW blending
@@ -23,8 +24,15 @@ struct TimbralAnchor
 {
     float x       = 0.5f;   // Manifold position [0,1]
     float y       = 0.5f;
-    float timbreX = 0.5f;   // Phase 2: spectral rolloff [0,1]
-    float timbreY = 0.0f;   // Phase 2: inharmonicity    [0,1]
+    float timbreX = 0.5f;   // Additive: brightness/spectral tilt [0,1], 0.5 = neutral
+    float timbreY = 0.0f;   // Additive: inharmonicity    [0,1]
+    // ── Additive "Morph Surface" spectrum ──────────────────────────────────────
+    // Additive anchors (sourceId < 0) carry a normalised partial-amplitude table
+    // the Manifold IDW-blends per Morphon. spectrumType is the chosen palette
+    // preset (UI + patch); spectrum[] is the realised table the blend reads. Filled
+    // by fillSpectrum() on add / preset change / patch load (never per audio sample).
+    int   spectrumType = (int)SpectrumType::Saw;
+    float spectrum[MORPH_NUM_PARTIALS] = {};
     int   trajectoryPathIndex = -1;  // -1 = stationary; else attached to traj[index]
     // ── Granular ──────────────────────────────────────────────────────────────
     // sourceId < 0 → additive anchor (timbreX/Y). sourceId >= 0 → granular anchor
@@ -84,6 +92,46 @@ inline void blendAnchors(float px, float py,
     {
         outTimbreX = 0.5f;
         outTimbreY = 0.0f;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// blendAnchorSpectrum — IDW-blend the additive anchors' spectrum tables at a
+// Morphon position into outSpectrum[MORPH_NUM_PARTIALS]. Additive anchors only
+// (sourceId < 0). Falls back to a plain saw (1/k, no pow) when there are no
+// additive anchors, so a bare patch still makes tone. Cheap and allocation-free:
+// count × MORPH_NUM_PARTIALS multiply-adds per call.
+// ─────────────────────────────────────────────────────────────────────────────
+inline void blendAnchorSpectrum(float px, float py,
+                                const TimbralAnchor* anchors, int count,
+                                float* outSpectrum) noexcept
+{
+    constexpr float EPSILON = 1e-6f;
+    for (int p = 0; p < MORPH_NUM_PARTIALS; ++p) outSpectrum[p] = 0.0f;
+
+    float addW = 0.0f;
+    for (int i = 0; i < count; ++i)
+    {
+        const auto& a = anchors[i];
+        if (a.sourceId >= 0) continue;            // additive anchors only
+        const float dx = px - a.x, dy = py - a.y;
+        const float w  = 1.0f / (dx * dx + dy * dy + EPSILON);
+        addW += w;
+        for (int p = 0; p < MORPH_NUM_PARTIALS; ++p)
+            outSpectrum[p] += w * a.spectrum[p];
+    }
+
+    if (addW > 0.0f)
+    {
+        const float inv = 1.0f / addW;
+        for (int p = 0; p < MORPH_NUM_PARTIALS; ++p) outSpectrum[p] *= inv;
+    }
+    else
+    {
+        float sum = 0.0f;
+        for (int p = 0; p < MORPH_NUM_PARTIALS; ++p) { outSpectrum[p] = 1.0f / static_cast<float>(p + 1); sum += outSpectrum[p]; }
+        const float inv = (sum > 0.0f) ? 1.0f / sum : 0.0f;
+        for (int p = 0; p < MORPH_NUM_PARTIALS; ++p) outSpectrum[p] *= inv;
     }
 }
 

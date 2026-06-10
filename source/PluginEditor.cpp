@@ -302,6 +302,10 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     layoutRow(lblAnchorVol_, sldAnchorVol_);
     const int anchorCommonEndY = y;
 
+    // Additive section (overlaps the granular section below; updatePanel shows one).
+    lblSpectrum_.setBounds(x, y,           w, LABEL_H);
+    cbSpectrum_.setBounds (x, y + LABEL_H, w, SLIDER_H);
+    y += ROW_H;
     layoutRow(lblBrightness_,    sldBrightness_);
     layoutRow(lblInharmonicity_, sldInharmonicity_);
     const int anchorAdditiveEndY = y;
@@ -650,6 +654,23 @@ void MorphosEditor::setupSliders()
             sendParamOrModBase(ManifoldEdit::Type::SetTimbralAnchorTimbreY,
                                selection_.index, (float)sldInharmonicity_.getValue(),
                                ModDestType::AnchorTimbreY);
+    };
+
+    // Morph-Surface spectrum preset (additive anchors). ComboBox IDs are 1-based,
+    // so id = (int)SpectrumType + 1.
+    styleLabel(lblSpectrum_, "Spectrum");
+    for (int t = 0; t < (int)SpectrumType::Count; ++t)
+        cbSpectrum_.addItem(spectrumTypeName((SpectrumType)t), t + 1);
+    cbSpectrum_.setColour(juce::ComboBox::backgroundColourId, juce::Colour(0xFF252522));
+    cbSpectrum_.setColour(juce::ComboBox::textColourId,       juce::Colour(0xFFE8E4DC));
+    cbSpectrum_.setVisible(false);
+    addAndMakeVisible(lblSpectrum_);
+    addAndMakeVisible(cbSpectrum_);
+    cbSpectrum_.onChange = [this] {
+        if (ignoreSliderCallbacks_ || !selection_.valid()) return;
+        const int sel = cbSpectrum_.getSelectedId();
+        if (sel <= 0) return;
+        sendEdit(ManifoldEdit::Type::SetTimbralAnchorSpectrum, selection_.index, (float)(sel - 1));
     };
 
     // ── Anchor granular controls ────────────────────────────────────────────────
@@ -1776,6 +1797,7 @@ void MorphosEditor::installPanelViewport()
 
     juce::Component* perSection[] = {
         // Anchor
+        &lblSpectrum_,         &cbSpectrum_,
         &lblBrightness_,       &sldBrightness_,
         &lblInharmonicity_,    &sldInharmonicity_,
         &lblReadPos_,          &sldReadPos_,
@@ -2016,6 +2038,7 @@ void MorphosEditor::updatePanel()
 
     // Hide every per-selection slider group first
     lblBrightness_.setVisible(false);    sldBrightness_.setVisible(false);
+    lblSpectrum_.setVisible(false);      cbSpectrum_.setVisible(false);
     lblInharmonicity_.setVisible(false); sldInharmonicity_.setVisible(false);
     lblReadPos_.setVisible(false);       sldReadPos_.setVisible(false);
     btnLoadSample_.setVisible(false);    cbSource_.setVisible(false);
@@ -2159,8 +2182,10 @@ void MorphosEditor::updatePanel()
         }
         else
         {
+            cbSpectrum_.setSelectedId(a.spectrumType + 1, juce::dontSendNotification);
             sldBrightness_.setValue(a.timbreX,    juce::dontSendNotification);
             sldInharmonicity_.setValue(a.timbreY, juce::dontSendNotification);
+            lblSpectrum_.setVisible(true);      cbSpectrum_.setVisible(true);
             lblBrightness_.setVisible(true);    sldBrightness_.setVisible(true);
             lblInharmonicity_.setVisible(true); sldInharmonicity_.setVisible(true);
         }

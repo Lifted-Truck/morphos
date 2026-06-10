@@ -319,10 +319,13 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                                   / static_cast<float>(std::max(numSamples, 1));
 
             // ── Timbral parameters (written by physics thread via anchor blending + zones) ─
-            // timbreX = spectral rolloff [0..1]: 0 = dark, 1 = bright
-            // timbreY = inharmonicity    [0..1]: 0 = harmonic, 1 = stretched partials
-            const float rolloffExp   = 3.5f - m.timbreX * 3.2f;  // [0,1] → [3.5, 0.3]
+            // Morph Surface: m.spectrum[] is the per-Morphon partial-amplitude table,
+            // IDW-blended from additive anchors. timbreX = brightness/spectral tilt
+            // (0.5 = neutral), timbreY = inharmonicity (partial-frequency stretch).
             const float stretchCoeff = 0.012f * m.timbreY;        // partial k stretches by k*coeff
+            // Brightness: tilt the blended spectrum by k^tiltExp. timbreX 0→dark,
+            // 0.5→neutral, 1→bright. ±1.5 exponent at the extremes.
+            const float tiltExp = (m.timbreX - 0.5f) * 3.0f;
 
             // Pitch zone shift (semitones accumulated by applyEffectZones); applied
             // multiplicatively so it doesn't corrupt the glide-target fundamentalHz.
@@ -344,8 +347,9 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                                       * static_cast<float>(k)
                                       * (1.0f + static_cast<float>(k) * stretchCoeff);
 
-                // Spectral rolloff: a_k = 1 / k^rolloffExp
-                const float pa = 1.0f / std::pow(static_cast<float>(k), rolloffExp);
+                // Morph-Surface spectrum × brightness tilt (k^tiltExp).
+                const float pa = m.spectrum[k - 1]
+                                 * std::pow(static_cast<float>(k), tiltExp);
                 partialAmps[k - 1] = pa;
                 ampSum += pa;
             }
@@ -590,6 +594,7 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         node.setProperty("pitchSemis",   a.pitchSemis,   nullptr);
         node.setProperty("posEnabled",   a.positionEnabled, nullptr);
         node.setProperty("volume",       a.volume,       nullptr);
+        node.setProperty("spectrumType", a.spectrumType, nullptr);
         manifoldData.appendChild(node, nullptr);
     }
 
@@ -803,6 +808,8 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             a.pitchSemis   = (float)child.getProperty("pitchSemis",   0.0f);
             a.positionEnabled = (bool)child.getProperty("posEnabled", true);
             a.volume       = (float)child.getProperty("volume",       1.0f);
+            a.spectrumType = (int)child.getProperty("spectrumType", (int)SpectrumType::Saw);
+            fillSpectrum((SpectrumType)a.spectrumType, a.spectrum, MORPH_NUM_PARTIALS);
             a.active  = true;
         }
         else if (child.hasType("Zone") && zoneSlot < MAX_EFFECT_ZONES)
