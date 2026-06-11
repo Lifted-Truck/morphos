@@ -204,25 +204,23 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     }
     y += BTN_ROW_H + 2;
 
-    // ── Glide time — portamento rate; always visible ───────────────────────────
-    lblGlideTime_.setBounds(x, y,           w, LABEL_H);
-    sldGlideTime_.setBounds(x, y + LABEL_H, w, SLIDER_H);
-    y += ROW_H;
-
-    // ── Global friction — extra damping applied to every Morphon; always visible
-    lblFriction_.setBounds(x, y,           w, LABEL_H);
-    sldFriction_.setBounds(x, y + LABEL_H, w, SLIDER_H);
-    y += ROW_H;
-
-    // ── Global grain level — granular output trim; always visible ──────────────
-    lblGrainLevel_.setBounds(x, y,           w, LABEL_H);
-    sldGrainLevel_.setBounds(x, y + LABEL_H, w, SLIDER_H);
-    y += ROW_H;
-
-    // ── Master gain — output level (host-automatable); always visible ──────────
-    lblMasterGain_.setBounds(x, y,           w, LABEL_H);
-    sldMasterGain_.setBounds(x, y + LABEL_H, w, SLIDER_H);
-    y += ROW_H;
+    // ── Global parameter sliders — compact inline (label left, slider right on
+    //    one line) so the always-visible block stays short on small windows. ─────
+    {
+        constexpr int GLBL_W = 84;            // inline label column width
+        constexpr int GROW_H = SLIDER_H + 3;  // compact row pitch (~23 vs 35 stacked)
+        auto compactRow = [&](juce::Label& l, juce::Slider& s)
+        {
+            l.setBounds(x, y, GLBL_W, SLIDER_H);
+            s.setBounds(x + GLBL_W, y, w - GLBL_W, SLIDER_H);
+            y += GROW_H;
+        };
+        compactRow(lblGlideTime_,   sldGlideTime_);    // portamento rate
+        compactRow(lblFriction_,    sldFriction_);     // global damping
+        compactRow(lblGrainLevel_,  sldGrainLevel_);   // granular output trim
+        compactRow(lblMaxMorphons_, sldMaxMorphons_);  // CPU-safety voice cap
+        compactRow(lblMasterGain_,  sldMasterGain_);   // output level (host-automatable)
+    }
 
     // ── Output level meter — post-master-gain peak; always visible ─────────────
     levelMeter_.setBounds(x, y, w, 8);
@@ -346,6 +344,10 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     }
     y += BTN_ROW_H + 2;
 
+    layoutRow(lblEmitCount_,      sldEmitCount_);
+    // CPU advisory directly under the Count row (single label row).
+    lblCountWarn_.setBounds(x, y, w, LABEL_H);
+    y += LABEL_H + 2;
     layoutRow(lblKeyLow_,         sldKeyLow_);
     layoutRow(lblKeyHigh_,        sldKeyHigh_);
     layoutRow(lblTransposeOct_,   sldTransposeOct_);
@@ -360,6 +362,16 @@ void MorphosEditor::layoutPanel(juce::Rectangle<int> panel)
     layoutRow(lblEmitDecay_,   sldEmitDecay_);
     layoutRow(lblEmitSustain_, sldEmitSustain_);
     layoutRow(lblEmitRelease_, sldEmitRelease_);
+
+    // Per-spawn chaos spread group
+    layoutRow(lblChaosAngle_,  sldChaosAngle_);
+    layoutRow(lblChaosSpeed_,  sldChaosSpeed_);
+    layoutRow(lblChaosMass_,   sldChaosMass_);
+    layoutRow(lblChaosPan_,    sldChaosPan_);
+    layoutRow(lblChaosAttack_, sldChaosAttack_);
+    layoutRow(lblChaosDecay_,  sldChaosDecay_);
+    layoutRow(lblChaosFine_,   sldChaosFine_);
+    layoutRow(lblSpreadShape_, sldSpreadShape_);
 
     // Terminus toggle button (full width)
     btnTerminusEnabled_.setBounds(x, y, w, BTN_ROW_H);
@@ -1454,6 +1466,109 @@ void MorphosEditor::setupSliders()
             sendEdit(ManifoldEdit::Type::SetEmitterGain, selection_.index, (float)sldEmitGain_.getValue());
     };
 
+    // ── Morphon count + per-spawn chaos spread (Emitter) ────────────────────────
+    // Count launches N Morphons per note (Polyphonic only). The chaos sliders
+    // scatter per-spawn launch kinematics + amplitude-envelope rate; SpreadShape
+    // warps the scatter distribution (0 = uniform, 1 = centre-weighted).
+    styleLabel(lblEmitCount_, "Count");
+    styleSlider(sldEmitCount_, 1.0, 16.0);
+    sldEmitCount_.setNumDecimalPlacesToDisplay(0);
+    addAndMakeVisible(lblEmitCount_); addAndMakeVisible(sldEmitCount_);
+    sldEmitCount_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterMorphonCount,
+                     selection_.index, (float)sldEmitCount_.getValue());
+        // Live CPU advisory: show when this Emitter would launch many voices/note.
+        lblCountWarn_.setVisible(sldEmitCount_.getValue() > 8.0);
+    };
+
+    // High-voice-count CPU advisory (amber). Hidden unless an Emitter with a high
+    // morphonCount is selected; driven from updatePanel + sldEmitCount_ callback.
+    styleLabel(lblCountWarn_, "High voice count - watch CPU");
+    lblCountWarn_.setColour(juce::Label::textColourId, juce::Colour(0xFFE0B84A));
+    addAndMakeVisible(lblCountWarn_);
+    lblCountWarn_.setVisible(false);
+
+    styleLabel(lblChaosAngle_, "Chaos Angle");
+    styleSlider(sldChaosAngle_, 0.0, 1.0);
+    sldChaosAngle_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblChaosAngle_); addAndMakeVisible(sldChaosAngle_);
+    sldChaosAngle_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterChaosLaunchAngle,
+                     selection_.index, (float)sldChaosAngle_.getValue());
+    };
+
+    styleLabel(lblChaosSpeed_, "Chaos Speed");
+    styleSlider(sldChaosSpeed_, 0.0, 1.0);
+    sldChaosSpeed_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblChaosSpeed_); addAndMakeVisible(sldChaosSpeed_);
+    sldChaosSpeed_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterChaosLaunchSpeed,
+                     selection_.index, (float)sldChaosSpeed_.getValue());
+    };
+
+    styleLabel(lblChaosMass_, "Chaos Mass");
+    styleSlider(sldChaosMass_, 0.0, 1.0);
+    sldChaosMass_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblChaosMass_); addAndMakeVisible(sldChaosMass_);
+    sldChaosMass_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterChaosSpawnMass,
+                     selection_.index, (float)sldChaosMass_.getValue());
+    };
+
+    styleLabel(lblChaosPan_, "Chaos Pan");
+    styleSlider(sldChaosPan_, 0.0, 1.0);
+    sldChaosPan_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblChaosPan_); addAndMakeVisible(sldChaosPan_);
+    sldChaosPan_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterChaosPan,
+                     selection_.index, (float)sldChaosPan_.getValue());
+    };
+
+    styleLabel(lblChaosAttack_, "Chaos Attack");
+    styleSlider(sldChaosAttack_, 0.0, 1.0);
+    sldChaosAttack_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblChaosAttack_); addAndMakeVisible(sldChaosAttack_);
+    sldChaosAttack_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterChaosAttack,
+                     selection_.index, (float)sldChaosAttack_.getValue());
+    };
+
+    styleLabel(lblChaosDecay_, "Chaos Decay");
+    styleSlider(sldChaosDecay_, 0.0, 1.0);
+    sldChaosDecay_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblChaosDecay_); addAndMakeVisible(sldChaosDecay_);
+    sldChaosDecay_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterChaosDecay,
+                     selection_.index, (float)sldChaosDecay_.getValue());
+    };
+
+    styleLabel(lblChaosFine_, "Chaos Fine");
+    styleSlider(sldChaosFine_, 0.0, 1.0);
+    sldChaosFine_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblChaosFine_); addAndMakeVisible(sldChaosFine_);
+    sldChaosFine_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterChaosFineTune,
+                     selection_.index, (float)sldChaosFine_.getValue());
+    };
+
+    styleLabel(lblSpreadShape_, "Spread Shape");
+    styleSlider(sldSpreadShape_, 0.0, 1.0);
+    sldSpreadShape_.setNumDecimalPlacesToDisplay(2);
+    addAndMakeVisible(lblSpreadShape_); addAndMakeVisible(sldSpreadShape_);
+    sldSpreadShape_.onValueChange = [this] {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetEmitterSpreadShape,
+                     selection_.index, (float)sldSpreadShape_.getValue());
+    };
+
     // ── Glide time — portamento rate; always visible ───────────────────────────
     // Applies during Legato / Slur retarget: fundamentalHz slides exponentially
     // (in log-frequency space) from the old pitch toward the new one.
@@ -1504,6 +1619,19 @@ void MorphosEditor::setupSliders()
             sendEdit(ManifoldEdit::Type::SetGlobalGrainLevel, 0, (float)sldGrainLevel_.getValue());
     };
 
+    // Global max-Morphon cap — CPU-safety limit on simultaneous active voices.
+    // 256 = no limit (the pool size). Always visible alongside Friction/Grain.
+    styleLabel(lblMaxMorphons_, "Max Morphons");
+    styleSlider(sldMaxMorphons_, 1.0, 256.0);
+    sldMaxMorphons_.setNumDecimalPlacesToDisplay(0);
+    addAndMakeVisible(lblMaxMorphons_);
+    addAndMakeVisible(sldMaxMorphons_);
+    sldMaxMorphons_.onValueChange = [this]
+    {
+        if (!ignoreSliderCallbacks_)
+            sendEdit(ManifoldEdit::Type::SetMaxMorphons, 0, (float)sldMaxMorphons_.getValue());
+    };
+
     // Master gain — bound directly to the host-automatable APVTS param.
     styleLabel(lblMasterGain_, "Master");
     styleSlider(sldMasterGain_, 0.0, 1.0);   // range is overridden by the attachment
@@ -1548,6 +1676,13 @@ void MorphosEditor::setupSliders()
         { &sldFlowStrength_,     0.40 }, { &sldFlowChirality_,    1.0   },
         { &sldGlideTime_,        0.0  }, { &sldFriction_,         0.0   },
         { &sldGrainLevel_,       1.0  }, { &sldMasterGain_,       0.8   },
+        { &sldMaxMorphons_,      256.0 },
+        { &sldEmitCount_,        1.0  },
+        { &sldChaosAngle_,       0.0  }, { &sldChaosSpeed_,       0.0   },
+        { &sldChaosMass_,        0.0  }, { &sldChaosPan_,         0.0   },
+        { &sldChaosAttack_,      0.0  }, { &sldChaosDecay_,       0.0   },
+        { &sldChaosFine_,        0.0  },
+        { &sldSpreadShape_,      0.0  },
     };
     for (const auto& d : dclickDefaults)
         d.s->setDoubleClickReturnValue(true, d.def);
@@ -1835,6 +1970,16 @@ void MorphosEditor::installPanelViewport()
         &lblTerminusStrength_, &sldTerminusStrength_,
         &lblTerminusRadius_,   &sldTerminusRadius_,
         &lblTrajAttach_,         &sldTrajAttach_,
+        // Emitter — Morphon count + chaos spread (count/chaos feature)
+        &lblEmitCount_,        &sldEmitCount_,        &lblCountWarn_,
+        &lblChaosAngle_,       &sldChaosAngle_,
+        &lblChaosSpeed_,       &sldChaosSpeed_,
+        &lblChaosMass_,        &sldChaosMass_,
+        &lblChaosPan_,         &sldChaosPan_,
+        &lblChaosAttack_,      &sldChaosAttack_,
+        &lblChaosDecay_,       &sldChaosDecay_,
+        &lblChaosFine_,        &sldChaosFine_,
+        &lblSpreadShape_,      &sldSpreadShape_,
         // Zone
         &lblZoneRadius_,       &sldZoneRadius_,
         &lblZoneDepth_,        &sldZoneDepth_,
@@ -2033,6 +2178,7 @@ void MorphosEditor::updatePanel()
         sldGlideTime_.setValue(state.globalGlideTime, juce::dontSendNotification);
         sldFriction_ .setValue(state.globalFriction,  juce::dontSendNotification);
         sldGrainLevel_.setValue(state.globalGrainLevel, juce::dontSendNotification);
+        sldMaxMorphons_.setValue(state.maxActiveMorphons, juce::dontSendNotification);
         ignoreSliderCallbacks_ = false;
     }
 
@@ -2063,6 +2209,16 @@ void MorphosEditor::updatePanel()
     lblEmitPan_.setVisible(false);             sldEmitPan_.setVisible(false);
     lblEmitMass_.setVisible(false);            sldEmitMass_.setVisible(false);
     lblEmitGain_.setVisible(false);            sldEmitGain_.setVisible(false);
+    lblEmitCount_.setVisible(false);           sldEmitCount_.setVisible(false);
+    lblChaosAngle_.setVisible(false);          sldChaosAngle_.setVisible(false);
+    lblChaosSpeed_.setVisible(false);          sldChaosSpeed_.setVisible(false);
+    lblChaosMass_.setVisible(false);           sldChaosMass_.setVisible(false);
+    lblChaosPan_.setVisible(false);            sldChaosPan_.setVisible(false);
+    lblChaosAttack_.setVisible(false);         sldChaosAttack_.setVisible(false);
+    lblChaosDecay_.setVisible(false);          sldChaosDecay_.setVisible(false);
+    lblChaosFine_.setVisible(false);           sldChaosFine_.setVisible(false);
+    lblCountWarn_.setVisible(false);
+    lblSpreadShape_.setVisible(false);         sldSpreadShape_.setVisible(false);
     lblEmitPolyMode_.setVisible(false);
     btnEmitPoly_.setVisible(false);            btnEmitMono_.setVisible(false);
     btnEmitLegato_.setVisible(false);          btnEmitSlur_.setVisible(false);
@@ -2240,6 +2396,15 @@ void MorphosEditor::updatePanel()
         sldEmitPan_.setValue           ((double)e.pan,                    juce::dontSendNotification);
         sldEmitMass_.setValue          ((double)e.spawnMass,               juce::dontSendNotification);
         sldEmitGain_.setValue          ((double)e.gain,                    juce::dontSendNotification);
+        sldEmitCount_.setValue         ((double)e.morphonCount,            juce::dontSendNotification);
+        sldChaosAngle_.setValue        ((double)e.chaosLaunchAngle,        juce::dontSendNotification);
+        sldChaosSpeed_.setValue        ((double)e.chaosLaunchSpeed,        juce::dontSendNotification);
+        sldChaosMass_.setValue         ((double)e.chaosSpawnMass,          juce::dontSendNotification);
+        sldChaosPan_.setValue          ((double)e.chaosPan,                juce::dontSendNotification);
+        sldChaosAttack_.setValue       ((double)e.chaosAttack,             juce::dontSendNotification);
+        sldChaosDecay_.setValue        ((double)e.chaosDecay,              juce::dontSendNotification);
+        sldChaosFine_.setValue         ((double)e.chaosFineTune,           juce::dontSendNotification);
+        sldSpreadShape_.setValue       ((double)e.spreadShape,             juce::dontSendNotification);
         // Trajectory attachment value is set generically below for every attachable kind.
         btnEmitPoly_  .setToggleState(e.polyMode == PolyMode::Polyphonic, juce::dontSendNotification);
         btnEmitMono_  .setToggleState(e.polyMode == PolyMode::Mono,       juce::dontSendNotification);
@@ -2263,6 +2428,17 @@ void MorphosEditor::updatePanel()
         lblEmitPan_.setVisible(true);              sldEmitPan_.setVisible(true);
         lblEmitMass_.setVisible(true);             sldEmitMass_.setVisible(true);
         lblEmitGain_.setVisible(true);             sldEmitGain_.setVisible(true);
+        lblEmitCount_.setVisible(true);            sldEmitCount_.setVisible(true);
+        lblChaosAngle_.setVisible(true);           sldChaosAngle_.setVisible(true);
+        lblChaosSpeed_.setVisible(true);           sldChaosSpeed_.setVisible(true);
+        lblChaosMass_.setVisible(true);            sldChaosMass_.setVisible(true);
+        lblChaosPan_.setVisible(true);             sldChaosPan_.setVisible(true);
+        lblChaosAttack_.setVisible(true);          sldChaosAttack_.setVisible(true);
+        lblChaosDecay_.setVisible(true);           sldChaosDecay_.setVisible(true);
+        lblChaosFine_.setVisible(true);            sldChaosFine_.setVisible(true);
+        // CPU advisory: show only when this Emitter launches many voices per note.
+        lblCountWarn_.setVisible(e.morphonCount > 8);
+        lblSpreadShape_.setVisible(true);          sldSpreadShape_.setVisible(true);
         // Trajectory attach visibility is set generically below for every attachable kind.
         lblEmitPolyMode_.setVisible(true);
         btnEmitPoly_.setVisible(true);             btnEmitMono_.setVisible(true);

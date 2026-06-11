@@ -1,6 +1,8 @@
 #pragma once
 #include <atomic>
 #include <array>
+#include <cmath>
+#include <cstdint>
 
 #include <juce_core/juce_core.h>
 
@@ -47,6 +49,15 @@ struct Emitter
     PolyMode        polyMode              = PolyMode::Polyphonic;  // Per-Emitter voice routing
     int             trajectoryPathIndex   = -1;   // -1 = stationary; else attached to traj[index]
     float           gain                  = 1.0f;  // Per-Emitter output level [0, 2]; baked into spawned Morphons
+    int   morphonCount     = 1;     // launch N Morphons per note (Polyphonic only) [1..16]
+    float chaosLaunchAngle = 0.0f;  // [0..1]
+    float chaosLaunchSpeed = 0.0f;  // [0..1]
+    float chaosSpawnMass   = 0.0f;  // [0..1]
+    float chaosPan         = 0.0f;  // [0..1]
+    float chaosAttack      = 0.0f;  // [0..1]
+    float chaosDecay       = 0.0f;  // [0..1]
+    float chaosFineTune    = 0.0f;  // [0..1] per-voice cents pitch spread (±50 cents at 1)
+    float spreadShape      = 0.0f;  // [0..1] 0=uniform, 1=centre-weighted
     bool            active       = false;   // Slots are inactive by default; constructor enables [0]
 };
 
@@ -70,6 +81,7 @@ struct PatchState
     float            glideTimeSec      = 0.0f;
     float            globalFriction    = 0.0f;
     float            globalGrainLevel  = 1.0f;
+    int              maxActiveMorphons = MAX_MORPHONS;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -156,6 +168,9 @@ private:
     void handleNoteOn(int channel, int note, int velocity);
     void handleNoteOff(int channel, int note);
     int  findFreeSlot() const noexcept;   // Returns -1 if none
+    int  oldestActiveMorphon() const noexcept;  // Largest-age active slot, or -1
+    int  acquireMorphonSlot() noexcept;   // Free slot, or steal oldest at the cap
+    void cullToMaxMorphons() noexcept;    // Terminate excess when the cap drops
 
     // ── Communication ─────────────────────────────────────────────────────────
     PhysicsAudioBridge bridge_;
@@ -192,6 +207,11 @@ private:
     // Treated as a per-tick fraction (compounds at TICK_RATE_HZ).
     float            globalFriction_     = 0.0f;
     float            globalGrainLevel_   = 1.0f;   // Granular output trim [0, 2]
+    // Global CPU-safety cap on simultaneously-active Morphons. MAX_MORPHONS = no
+    // limit. Enforced by voice-stealing: acquireMorphonSlot() reuses the oldest
+    // active voice at the cap (new notes win), and cullToMaxMorphons() terminates
+    // excess immediately when the cap is lowered.
+    int              maxActiveMorphons_  = MAX_MORPHONS;
 
     // ── Per-Emitter held-note stack — supports legato last-note priority ──────
     // On note-off, Legato/Slur Emitters fall back to the most recently pressed
@@ -291,6 +311,33 @@ private:
     // Returns the slot of the active connection whose destination is (type, index),
     // or -1 if no connection targets that destination.
     int   findActiveConnectionForDest(ModDestType type, int index) const noexcept;
+
+    // ── Spawn-time chaos RNG (physics thread only) ────────────────────────────
+    // Cheap xorshift32 used to draw per-spawn, per-parameter chaos offsets when
+    // an Emitter launches multiple Morphons per note. No std::rand / no heap /
+    // no atomics — realtime safe on the physics thread. Must stay nonzero.
+    uint32_t spawnRng_ = 0x1234567u;
+
+    // Uniform random in [0,1). xorshift32 step then scale the top 24 bits.
+    float nextSpawnRand01() noexcept
+    {
+        spawnRng_ ^= spawnRng_ << 13;
+        spawnRng_ ^= spawnRng_ >> 17;
+        spawnRng_ ^= spawnRng_ << 5;
+        return (spawnRng_ >> 8) * (1.0f / 16777216.0f);
+    }
+
+    // Shaped signed offset in [-1,1]. g (spreadShape) in [0,1] warps magnitude
+    // via a power law (k = 1 + 3g): g=0 → uniform, g=1 → centre-weighted. The
+    // [-1,1] support is preserved.
+    float shapedOffset(float g) noexcept
+    {
+        float u = nextSpawnRand01();
+        float b = 2.0f * u - 1.0f;
+        float k = 1.0f + 3.0f * g;
+        float m = std::pow(std::fabs(b), k);
+        return (b < 0.0f ? -m : m);
+    }
 
     uint64_t tickIndex_        = 0;
     double   simulationTimeMs_ = 0.0;

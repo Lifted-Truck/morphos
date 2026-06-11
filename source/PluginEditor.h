@@ -342,6 +342,18 @@ private:
     juce::Label  lblEmitPan_,       lblEmitMass_,    lblEmitGain_;
     juce::Slider sldEmitPan_,       sldEmitMass_,    sldEmitGain_;
 
+    // Emitter Morphon-count + per-spawn chaos spread
+    juce::Label  lblEmitCount_;
+    juce::Slider sldEmitCount_;
+    juce::Label  lblChaosAngle_,  lblChaosSpeed_,  lblChaosMass_,  lblChaosPan_;
+    juce::Slider sldChaosAngle_,  sldChaosSpeed_,  sldChaosMass_,  sldChaosPan_;
+    juce::Label  lblChaosAttack_, lblChaosDecay_,  lblSpreadShape_;
+    juce::Slider sldChaosAttack_, sldChaosDecay_,  sldSpreadShape_;
+    juce::Label  lblChaosFine_;
+    juce::Slider sldChaosFine_;
+    // Amber advisory shown when an Emitter's morphonCount is high (CPU warning).
+    juce::Label  lblCountWarn_;
+
     // Per-Emitter polyphony row (replaces the old global Voices row)
     juce::Label      lblEmitPolyMode_;
     juce::TextButton btnEmitPoly_   { "Poly"   };
@@ -370,6 +382,9 @@ private:
     juce::Slider sldGlideTime_;
     juce::Label  lblFriction_;
     juce::Slider sldFriction_;
+    // Global CPU-safety cap on simultaneous active Morphons (always visible).
+    juce::Label  lblMaxMorphons_;
+    juce::Slider sldMaxMorphons_;
 
     // Effect zone section (visible when an EffectZone is selected)
     juce::Label  lblZoneRadius_,     lblZoneDepth_;

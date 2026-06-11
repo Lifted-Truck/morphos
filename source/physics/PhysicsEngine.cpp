@@ -531,6 +531,51 @@ void PhysicsEngine::drainEditCommands()
                         emitters_[idx].spawnMass = juce::jlimit(0.1f, 4.0f, e.x);
                     break;
 
+                case ManifoldEdit::Type::SetEmitterMorphonCount:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].morphonCount = juce::jlimit(1, 16, (int)e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterChaosLaunchAngle:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].chaosLaunchAngle = juce::jlimit(0.0f, 1.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterChaosLaunchSpeed:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].chaosLaunchSpeed = juce::jlimit(0.0f, 1.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterChaosSpawnMass:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].chaosSpawnMass = juce::jlimit(0.0f, 1.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterChaosPan:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].chaosPan = juce::jlimit(0.0f, 1.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterChaosAttack:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].chaosAttack = juce::jlimit(0.0f, 1.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterChaosDecay:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].chaosDecay = juce::jlimit(0.0f, 1.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterChaosFineTune:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].chaosFineTune = juce::jlimit(0.0f, 1.0f, e.x);
+                    break;
+
+                case ManifoldEdit::Type::SetEmitterSpreadShape:
+                    if (idx >= 0 && idx < MAX_EMITTERS)
+                        emitters_[idx].spreadShape = juce::jlimit(0.0f, 1.0f, e.x);
+                    break;
+
                 // ── Timbral Anchor property edits ─────────────────────────────
                 case ManifoldEdit::Type::SetTimbralAnchorTimbreX:
                     if (idx >= 0 && idx < activeAnchorCount_)
@@ -612,6 +657,11 @@ void PhysicsEngine::drainEditCommands()
                     globalFriction_ = juce::jlimit(0.0f, 200.0f, e.x);
                     break;
 
+                case ManifoldEdit::Type::SetMaxMorphons:
+                    maxActiveMorphons_ = juce::jlimit(1, MAX_MORPHONS, (int)e.x);
+                    cullToMaxMorphons();   // terminate excess voices immediately
+                    break;
+
                 case ManifoldEdit::Type::SetGlideTime:
                     globalGlideTimeSec_ = juce::jlimit(0.0f, 5.0f, e.x);
                     break;
@@ -666,6 +716,18 @@ void PhysicsEngine::drainEditCommands()
                     em.releaseTime  = 0.35f;
                     em.trajectoryPathIndex = -1;
                     em.gain         = 1.0f;
+                    // Reset all spawn-chaos fields so a recycled slot doesn't
+                    // leak stale spread/count values from a previously-removed
+                    // Emitter.
+                    em.morphonCount     = 1;
+                    em.chaosLaunchAngle = 0.0f;
+                    em.chaosLaunchSpeed = 0.0f;
+                    em.chaosSpawnMass   = 0.0f;
+                    em.chaosPan         = 0.0f;
+                    em.chaosAttack      = 0.0f;
+                    em.chaosDecay       = 0.0f;
+                    em.chaosFineTune    = 0.0f;
+                    em.spreadShape      = 0.0f;
                     em.active       = true;
                     break;
                 }
@@ -1481,41 +1543,95 @@ void PhysicsEngine::handleNoteOn(int channel, int note, int /*velocity*/)
             }
         }
 
-        const int slot = findFreeSlot();
-        if (slot < 0) continue;   // Pool full — skip this Emitter, try the next
+        // ── Multi-spawn cluster ────────────────────────────────────────────────
+        // Polyphonic Emitters can launch morphonCount Morphons per note; n==0 is
+        // always the exact unperturbed centre voice (offset 0), so count==1 stays
+        // bit-identical to a single spawn. n>=1 voices get per-parameter, per-voice
+        // chaos offsets shaped by spreadShape. Mono/Legato/Slur always spawn one.
+        const int spawnN = (em.polyMode == PolyMode::Polyphonic)
+                         ? juce::jlimit(1, 16, em.morphonCount) : 1;
 
-        auto& m           = morphons_[slot];
-        m.active          = true;
-        m.noteReleased    = false;
-        m.terminusArmed   = false;
-        m.terminusReached = false;
-        m.envStage        = EnvelopeStage::Attack;
-        m.midiNote      = note;
-        m.midiChannel   = channel;
-        m.emitterIndex  = ei;
-        m.x             = em.x;
-        m.y             = em.y;
-        m.vx            = std::cosf(em.launchAngle) * em.launchSpeed;
-        m.vy            = std::sinf(em.launchAngle) * em.launchSpeed;
-        m.mass          = em.spawnMass;
-        m.drag          = em.spawnDrag;
-        m.amplitude          = 0.0f;
-        m.age                = 0.0f;
-        m.timbreX            = 0.5f;
-        m.timbreY            = 0.0f;
-        m.basePan            = em.pan;
-        m.pan                = em.pan;
-        m.pitchZoneSemitones = 0.0f;
-        m.pathIndex          = -1;   // Fresh voice starts unpinned
-        m.gainScale          = em.gain;   // Bake the Emitter's level into the voice
-        m.anchorVolume       = 1.0f;      // Overwritten by anchor blend each tick
+        const float newHz = midiNoteToHz(note)
+            * std::pow(2.0f, em.transposeOct
+                           + em.transposeSemi / 12.0f
+                           + em.transposeCents / 1200.0f);
+
+        for (int n = 0; n < spawnN; ++n)
         {
-            const float newHz = midiNoteToHz(note)
-                * std::pow(2.0f, em.transposeOct
-                               + em.transposeSemi / 12.0f
-                               + em.transposeCents / 1200.0f);
-            m.fundamentalHz       = newHz;  // Fresh spawn: always instant (no glide)
-            m.targetFundamentalHz = newHz;
+            const int slot = acquireMorphonSlot();   // steals oldest voice at the cap
+            if (slot < 0) break;   // Pool fully active with nothing to steal (cap ≥ MAX)
+
+            // Per-voice perturbed launch params. n==0 → unperturbed centre voice.
+            float launchAngle = em.launchAngle;
+            float launchSpeed = em.launchSpeed;
+            float spawnMass   = em.spawnMass;
+            float basePan     = em.pan;
+            float attackOv    = -1.0f;
+            float decayOv     = -1.0f;
+            float voiceHz     = newHz;   // n==0: exact centre pitch (no detune)
+
+            if (n >= 1)
+            {
+                // Fresh shaped offset per parameter per voice.
+                const float oAngle = shapedOffset(em.spreadShape);
+                const float oSpeed = shapedOffset(em.spreadShape);
+                const float oMass  = shapedOffset(em.spreadShape);
+                const float oPan   = shapedOffset(em.spreadShape);
+                const float oAtk   = shapedOffset(em.spreadShape);
+                const float oDec   = shapedOffset(em.spreadShape);
+
+                launchAngle = em.launchAngle + oAngle * em.chaosLaunchAngle * juce::MathConstants<float>::pi;
+                launchSpeed = juce::jlimit(0.0f, 2.0f,
+                                em.launchSpeed + oSpeed * em.chaosLaunchSpeed * 0.4f);
+                spawnMass   = juce::jlimit(0.1f, 4.0f,
+                                em.spawnMass * (1.0f + oMass * em.chaosSpawnMass * 0.75f));
+                basePan     = juce::jlimit(-1.0f, 1.0f,
+                                em.pan + oPan * em.chaosPan * 1.0f);
+                attackOv    = (em.chaosAttack > 0.0f)
+                            ? juce::jlimit(0.001f, 5.0f,
+                                em.attackTime * (1.0f + oAtk * em.chaosAttack * 0.75f))
+                            : -1.0f;
+                decayOv     = (em.chaosDecay > 0.0f)
+                            ? juce::jlimit(0.001f, 5.0f,
+                                em.decayTime * (1.0f + oDec * em.chaosDecay * 0.75f))
+                            : -1.0f;
+                // Per-voice fine-tune detune (pitch only — never timbre).
+                const float oFine = shapedOffset(em.spreadShape);
+                const float cents = oFine * em.chaosFineTune * 50.0f;  // ±50 cents at chaos=1
+                voiceHz     = newHz * std::pow(2.0f, cents / 1200.0f);
+            }
+
+            auto& m           = morphons_[slot];
+            m.active          = true;
+            m.noteReleased    = false;
+            m.terminusArmed   = false;
+            m.terminusReached = false;
+            m.envStage        = EnvelopeStage::Attack;
+            m.midiNote      = note;
+            m.midiChannel   = channel;
+            m.emitterIndex  = ei;
+            m.x             = em.x;
+            m.y             = em.y;
+            m.vx            = std::cosf(launchAngle) * launchSpeed;
+            m.vy            = std::sinf(launchAngle) * launchSpeed;
+            m.mass          = spawnMass;
+            m.drag          = em.spawnDrag;   // Damping comes from globalFriction; do not perturb
+            m.amplitude          = 0.0f;
+            m.age                = 0.0f;
+            m.timbreX            = 0.5f;
+            m.timbreY            = 0.0f;
+            m.basePan            = basePan;
+            m.pan                = basePan;
+            m.pitchZoneSemitones = 0.0f;
+            m.pathIndex          = -1;   // Fresh voice starts unpinned
+            m.gainScale          = em.gain;   // Bake the Emitter's level into the voice
+            m.anchorVolume       = 1.0f;      // Overwritten by anchor blend each tick
+            // Always set the envelope-rate overrides (override value or -1 sentinel)
+            // so recycled Morphon slots never inherit a stale override.
+            m.attackTimeOverride = attackOv;
+            m.decayTimeOverride  = decayOv;
+            m.fundamentalHz       = voiceHz;  // Fresh spawn: always instant (no glide)
+            m.targetFundamentalHz = voiceHz;
         }
 
         pushHeldNote(ei, note);   // Track for legato fall-back on note-off
@@ -1642,6 +1758,66 @@ int PhysicsEngine::findFreeSlot() const noexcept
         if (!morphons_[i].active)
             return i;
     return -1;
+}
+
+// Index of the oldest active Morphon (largest age), or -1 if none active.
+int PhysicsEngine::oldestActiveMorphon() const noexcept
+{
+    int   best    = -1;
+    float bestAge = -1.0f;
+    for (int i = 0; i < MAX_MORPHONS; ++i)
+        if (morphons_[i].active && morphons_[i].age > bestAge)
+        {
+            bestAge = morphons_[i].age;
+            best    = i;
+        }
+    return best;
+}
+
+// Acquire a slot for a new spawn, honouring the global CPU-safety cap. Under the
+// cap we hand out a free slot; at/over it we STEAL the oldest active Morphon
+// (deactivate it) and reuse its slot — so new notes always sound and the cap
+// terminates existing voices rather than blocking new ones. Always returns a
+// valid slot unless the pool is somehow fully active with no stealable voice.
+int PhysicsEngine::acquireMorphonSlot() noexcept
+{
+    int activeCount = 0;
+    int firstFree   = -1;
+    for (int i = 0; i < MAX_MORPHONS; ++i)
+    {
+        if (morphons_[i].active) ++activeCount;
+        else if (firstFree < 0)  firstFree = i;
+    }
+
+    if (activeCount < maxActiveMorphons_ && firstFree >= 0)
+        return firstFree;
+
+    // At the cap (or pool full): steal the oldest active voice.
+    const int steal = oldestActiveMorphon();
+    if (steal >= 0)
+    {
+        morphons_[steal].active = false;
+        return steal;
+    }
+    return firstFree;   // cap is 0 active but a slot is free — fall back
+}
+
+// Terminate the oldest active Morphons until the active count is within the cap.
+// Called when the cap is lowered so the change takes effect immediately rather
+// than only on the next note.
+void PhysicsEngine::cullToMaxMorphons() noexcept
+{
+    for (;;)
+    {
+        int activeCount = 0;
+        for (int i = 0; i < MAX_MORPHONS; ++i)
+            if (morphons_[i].active) ++activeCount;
+        if (activeCount <= maxActiveMorphons_) break;
+
+        const int steal = oldestActiveMorphon();
+        if (steal < 0) break;
+        morphons_[steal].active = false;
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2207,10 +2383,16 @@ void PhysicsEngine::updateEnvelopes(double dt)
                               ? m.emitterIndex : 0;
         const auto& emitter = emitters_[ei];
 
-        const float attackRate  = (emitter.attackTime  > 0.0f)
-                                  ? dtF / emitter.attackTime  : 1.0f;
-        const float decayRate   = (emitter.decayTime   > 0.0f)
-                                  ? dtF / emitter.decayTime   : 1.0f;
+        // Per-Morphon spawn-chaos can override the attack/decay RATE (amplitude
+        // only — never timbre). -1 sentinel falls back to the Emitter's value.
+        const float attackTime = (m.attackTimeOverride >= 0.0f)
+                                 ? m.attackTimeOverride : emitter.attackTime;
+        const float decayTime  = (m.decayTimeOverride  >= 0.0f)
+                                 ? m.decayTimeOverride  : emitter.decayTime;
+        const float attackRate  = (attackTime > 0.0f)
+                                  ? dtF / attackTime : 1.0f;
+        const float decayRate   = (decayTime  > 0.0f)
+                                  ? dtF / decayTime  : 1.0f;
         // Terminus arrival speeds up the release by this factor so the morphon
         // fades out snappily once it lands on the zone, regardless of the
         // configured release time. Adjust the constant to taste.
@@ -2662,6 +2844,15 @@ void PhysicsEngine::writeSnapshot()
         dst.polyMode               = src.polyMode;
         dst.trajectoryPathIndex    = src.trajectoryPathIndex;
         dst.gain                   = src.gain;
+        dst.morphonCount           = src.morphonCount;
+        dst.chaosLaunchAngle       = src.chaosLaunchAngle;
+        dst.chaosLaunchSpeed       = src.chaosLaunchSpeed;
+        dst.chaosSpawnMass         = src.chaosSpawnMass;
+        dst.chaosPan               = src.chaosPan;
+        dst.chaosAttack            = src.chaosAttack;
+        dst.chaosDecay             = src.chaosDecay;
+        dst.chaosFineTune          = src.chaosFineTune;
+        dst.spreadShape            = src.spreadShape;
         dst.active                 = src.active;
     }
 
@@ -2669,6 +2860,7 @@ void PhysicsEngine::writeSnapshot()
     snap.globalGlideTime = globalGlideTimeSec_;
     snap.globalFriction  = globalFriction_;
     snap.globalGrainLevel = globalGrainLevel_;
+    snap.maxActiveMorphons = maxActiveMorphons_;
     snap.configVersion   = configVersion_;
 
     // Copy effect zones for UI rendering
@@ -2822,6 +3014,7 @@ void PhysicsEngine::applyPatch(const PatchState& patch)
     globalGlideTimeSec_ = patch.glideTimeSec;
     globalFriction_     = patch.globalFriction;
     globalGrainLevel_   = patch.globalGrainLevel;
+    maxActiveMorphons_  = juce::jlimit(1, MAX_MORPHONS, patch.maxActiveMorphons);
     // Loading a patch is a wholesale config change — bump so the UI's mod tab
     // rebuilds its dropdowns to reflect the new object set.
     ++configVersion_;

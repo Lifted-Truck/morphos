@@ -524,6 +524,7 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
     manifoldData.setProperty("glideTime",   snap.globalGlideTime,          nullptr);
     manifoldData.setProperty("friction",    snap.globalFriction,           nullptr);
     manifoldData.setProperty("grainLevel",  snap.globalGrainLevel,         nullptr);
+    manifoldData.setProperty("maxMorphons", snap.maxActiveMorphons,        nullptr);
     manifoldData.setProperty("editorW",     editorWidth_,                  nullptr);
     manifoldData.setProperty("editorH",     editorHeight_,                 nullptr);
 
@@ -569,6 +570,15 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         node.setProperty("polyMode",       (int)em.polyMode,            nullptr);
         node.setProperty("trajPath",       em.trajectoryPathIndex,      nullptr);
         node.setProperty("gain",           em.gain,                     nullptr);
+        node.setProperty("morphonCount",   em.morphonCount,             nullptr);
+        node.setProperty("chaosAngle",     em.chaosLaunchAngle,         nullptr);
+        node.setProperty("chaosSpeed",     em.chaosLaunchSpeed,         nullptr);
+        node.setProperty("chaosMass",      em.chaosSpawnMass,           nullptr);
+        node.setProperty("chaosPan",       em.chaosPan,                 nullptr);
+        node.setProperty("chaosAttack",    em.chaosAttack,              nullptr);
+        node.setProperty("chaosDecay",     em.chaosDecay,               nullptr);
+        node.setProperty("chaosFine",      em.chaosFineTune,            nullptr);
+        node.setProperty("spreadShape",    em.spreadShape,              nullptr);
         manifoldData.appendChild(node, nullptr);
     }
 
@@ -732,6 +742,7 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
     patch.glideTimeSec   = (float)manifoldData.getProperty("glideTime", 0.0f);
     patch.globalFriction   = (float)manifoldData.getProperty("friction",   0.0f);
     patch.globalGrainLevel = (float)manifoldData.getProperty("grainLevel", 1.0f);
+    patch.maxActiveMorphons = (int)manifoldData.getProperty("maxMorphons", MAX_MORPHONS);
 
     // Window size (v2+). Defaults preserve the current editor size on older saves.
     if (patchVersion >= 2)
@@ -789,6 +800,15 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
                 : v1GlobalPolyMode;  // v1 fallback: broadcast the old global value
             em.trajectoryPathIndex   = (int)child.getProperty("trajPath", -1);
             em.gain                  = (float)child.getProperty("gain", 1.0f);
+            em.morphonCount          = (int)  child.getProperty("morphonCount", 1);
+            em.chaosLaunchAngle      = (float)child.getProperty("chaosAngle",   0.0f);
+            em.chaosLaunchSpeed      = (float)child.getProperty("chaosSpeed",   0.0f);
+            em.chaosSpawnMass        = (float)child.getProperty("chaosMass",    0.0f);
+            em.chaosPan              = (float)child.getProperty("chaosPan",     0.0f);
+            em.chaosAttack           = (float)child.getProperty("chaosAttack",  0.0f);
+            em.chaosDecay            = (float)child.getProperty("chaosDecay",   0.0f);
+            em.chaosFineTune         = (float)child.getProperty("chaosFine",    0.0f);
+            em.spreadShape           = (float)child.getProperty("spreadShape",  0.0f);
             em.active                = true;
         }
         else if (child.hasType("Anchor") && anchorSlot < MAX_TIMBRAL_ANCHORS)

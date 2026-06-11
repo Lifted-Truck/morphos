@@ -131,6 +131,14 @@ struct MorphonState
     // snaps to the path each tick and its velocity is projected onto the
     // local tangent. -1 = not pinned (free motion).
     int pathIndex = -1;
+
+    // ── Per-spawn envelope-rate chaos overrides ───────────────────────────────
+    // Set at spawn when the Emitter's chaosAttack/chaosDecay spread is engaged so
+    // each Morphon in a multi-spawn cluster can have a slightly different ADSR
+    // rate. -1 = no override (use the Emitter's attackTime/decayTime). These
+    // perturb amplitude-envelope RATE only — never spectrum/timbre.
+    float attackTimeOverride = -1.0f;  // -1 = use Emitter attackTime
+    float decayTimeOverride  = -1.0f;  // -1 = use Emitter decayTime
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -160,6 +168,15 @@ struct EmitterSnapshot
     PolyMode       polyMode              = PolyMode::Polyphonic;
     int            trajectoryPathIndex   = -1;   // -1 = stationary; else attached
     float          gain                  = 1.0f; // Per-Emitter output level [0, 2]
+    int   morphonCount     = 1;     // launch N Morphons per note (Polyphonic only) [1..16]
+    float chaosLaunchAngle = 0.0f;  // [0..1]
+    float chaosLaunchSpeed = 0.0f;  // [0..1]
+    float chaosSpawnMass   = 0.0f;  // [0..1]
+    float chaosPan         = 0.0f;  // [0..1]
+    float chaosAttack      = 0.0f;  // [0..1]
+    float chaosDecay       = 0.0f;  // [0..1]
+    float chaosFineTune    = 0.0f;  // [0..1] per-voice cents pitch spread (±50 cents at 1)
+    float spreadShape      = 0.0f;  // [0..1] 0=uniform, 1=centre-weighted
     bool           active                = false;
 };
 
@@ -312,6 +329,7 @@ struct PhysicsStateSnapshot
     float            globalGlideTime          = 0.0f;   // Portamento seconds [0, 5]
     float            globalFriction           = 0.0f;   // Per-tick velocity damping [0, 0.1]
     float            globalGrainLevel         = 1.0f;   // Granular output trim [0, 2]
+    int              maxActiveMorphons        = MAX_MORPHONS; // Global active-Morphon cap [1, 256]
     // Bumped every time an object is added or removed (or a FieldObject's
     // type changes). UI watches this to know when to rebuild the mod-matrix
     // dropdowns without polling every per-slot active flag itself.
@@ -379,6 +397,15 @@ struct ManifoldEdit
         SetGlobalBoundary,     // x = (float)cast of BoundaryBehavior uint8_t; index unused
         SetEmitterPolyMode,    // x = (float)cast of PolyMode uint8_t; index = emitter slot
         SetEmitterSpawnMass,   // x = mass [0.1, 4.0]; index = emitter slot
+        SetEmitterMorphonCount,     // x=(float)count [1..16]; index=emitter slot
+        SetEmitterChaosLaunchAngle, // x=chaos [0..1]
+        SetEmitterChaosLaunchSpeed, // x=chaos [0..1]
+        SetEmitterChaosSpawnMass,   // x=chaos [0..1]
+        SetEmitterChaosPan,         // x=chaos [0..1]
+        SetEmitterChaosAttack,      // x=chaos [0..1]
+        SetEmitterChaosDecay,       // x=chaos [0..1]
+        SetEmitterChaosFineTune,    // x=chaos [0..1] per-voice cents pitch spread
+        SetEmitterSpreadShape,      // x=spread [0..1]
         SetTimbralAnchorTimbreX,
         SetTimbralAnchorTimbreY,
         SetTimbralAnchorSource,       // x = (float)sourceId (-1 = additive); index = anchor slot
@@ -395,6 +422,7 @@ struct ManifoldEdit
         SetGlobalGrainLevel,          // x = granular output trim [0,4];     index unused
         SetGlideTime,          // x = portamento time in seconds [0, 5]; index unused
         SetGlobalFriction,     // x = decay rate per second (1/s) [0, 200]; index unused
+        SetMaxMorphons,        // x = max active Morphons [1, 256] (global); index unused
 
         // ── Spawn / remove — x,y = initial position for Add types ────────────
         AddAttractor,          // Spawn a new Attractor at (x,y) with defaults
