@@ -21,6 +21,26 @@
       "displayName": "Release",
       "inherits": "base",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    },
+    {
+      "name": "mac-base",
+      "hidden": true,
+      "generator": "Unix Makefiles",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Darwin" }
+    },
+    {
+      "name": "mac-debug",
+      "displayName": "Mac Debug (Unix Makefiles)",
+      "inherits": "mac-base",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
+    {
+      "name": "mac-release",
+      "displayName": "Mac Release (Unix Makefiles)",
+      "inherits": "mac-base",
+      "binaryDir": "${sourceDir}/build-release",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     }
   ],
 
@@ -36,6 +56,16 @@
       "displayName": "Build Release",
       "configurePreset": "release",
       "configuration": "Release"
+    },
+    {
+      "name": "mac-debug",
+      "displayName": "Build Mac Debug",
+      "configurePreset": "mac-debug"
+    },
+    {
+      "name": "mac-release",
+      "displayName": "Build Mac Release",
+      "configurePreset": "mac-release"
     }
   ]
 }

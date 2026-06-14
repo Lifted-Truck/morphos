@@ -17,19 +17,34 @@ below instead.)
 
 ## Prerequisites
 
-- macOS with **Xcode** + command-line tools (`xcode-select --install`).
+- macOS with **command-line tools** (`xcode-select --install`). Full Xcode is
+  *not* required — the validated flow uses the Unix Makefiles generator. (The
+  dev Mac, Apple Silicon, has CLT only: no Xcode, no Ninja.)
 - **CMake ≥ 3.22** (`brew install cmake`).
 - Network access (FetchContent clones JUCE 8.0.13 on first configure).
 
-## Build
+## Build (validated flow)
 
 From the **repository root** (the clone, e.g. `morphos/` — the directory holding
 `CMakeLists.txt`; there is no nested `plugin/` subfolder):
 
 ```sh
-cmake -S . -B build -G "Xcode"          # or: -G "Ninja" for faster CLI builds
-cmake --build build --config Debug
+cmake --preset mac-debug                # = -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Debug
+cmake --build build -j$(sysctl -n hw.ncpu)
 ```
+
+(`-G "Xcode"` / `-G "Ninja"` also work if installed, but Unix Makefiles is the
+flow that's been validated end-to-end on the dev machine. Note Makefiles are
+single-config: the build type is fixed at configure time, so use the
+`mac-release` preset / a separate build dir for Release.)
+
+**Claude Code sessions on the dev Mac** — two environment gotchas:
+- The shell sandbox resets cwd between Bash calls, so a relative
+  `cmake --build build` silently no-ops (empty bundle skeletons, exit 0). Always
+  pass the **absolute** build path.
+- Writes to `~/Library/...` and `auval`/`codesign`/`killall` hit a sandbox
+  overlay, not the real disk — an install can look successful while Ableton sees
+  nothing. Run install/validate/sign commands with `dangerouslyDisableSandbox: true`.
 
 Artifacts:
 - VST3 → `build/Morphos_artefacts/Debug/VST3/Morphos.vst3`
