@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstdint>
 
+#include "SineTable.h"
+
 // ─────────────────────────────────────────────────────────────────────────────
 // GrainVoice — per-Morphon granular voice: a small pool of overlapping windowed
 // grains plus a spawn scheduler. Reads a mono source buffer at a scrub position
@@ -17,7 +19,6 @@
 struct GrainVoice
 {
     static constexpr int   MAX_GRAINS = 8;
-    static constexpr float TWO_PI     = 6.28318530717958648f;
 
     struct Grain
     {
@@ -101,7 +102,11 @@ struct GrainVoice
         {
             if (!g.active) continue;
 
-            const float win = 0.5f - 0.5f * std::cos(TWO_PI * g.winPhase);
+            // Hann window via the shared sine table: 0.5−0.5·cos(2πx) ≡ sin²(πx),
+            // so one read at half phase + a square replaces std::cos per grain
+            // per sample. winPhase < 1 here, so the argument stays in [0, 0.5).
+            const float ws  = kSineTable(0.5f * g.winPhase);
+            const float win = ws * ws;
 
             const int   i0   = (int) g.pos;
             const float frac = (float) (g.pos - (double) i0);

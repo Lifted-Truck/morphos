@@ -3,6 +3,8 @@
 #include <chrono>
 #include <thread>
 
+#include <juce_audio_basics/juce_audio_basics.h>   // juce::ScopedNoDenormals (FTZ for the tick)
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -247,6 +249,15 @@ void PhysicsEngine::run()
 
 void PhysicsEngine::tick(double dtSeconds)
 {
+    // Flush-to-zero for the whole tick. The integrator decays velocities toward
+    // zero via globalFriction_ every tick, and distant field forces shrink without
+    // bound — both readily produce subnormal floats, whose arithmetic is 10–100×
+    // slower on x86/ARM. One ScopedNoDenormals here covers every hot loop in the
+    // tick (integrate, zones, paths, gates) uniformly, so individual sqrt/divide
+    // sites don't each need an epsilon guard. (The offline path via processBlock
+    // already sets its own; this covers the 500 Hz threaded path.)
+    juce::ScopedNoDenormals noDenormals;
+
     drainEditCommands();          // Apply UI edits first so subsequent steps see them
     advanceTrajectoryPaths(dtSeconds);
     updateAttachedEmitters();     // Move attached Emitters to their path positions
@@ -2582,6 +2593,17 @@ void PhysicsEngine::applyPathConstraints()
             const auto& p = pathObjects_[i];
             if (!p.active) continue;
 
+            // Bounding pre-filter: a Morphon can only be within snapRadius of the
+            // curve if it is within (radius + snapRadius) of the centre. Reject in
+            // squared distance to skip pathClosestPoint (and its sqrt) for the far
+            // common case. Exact for the Circle treatment rails use today; if an
+            // open shape (Line/Arc) ever pins here, widen this bound to its extent.
+            const float cdx   = m.x - p.x;
+            const float cdy   = m.y - p.y;
+            const float bound = p.radius + p.snapRadius;
+            if (cdx * cdx + cdy * cdy > bound * bound)
+                continue;
+
             float px, py, tx, ty;
             pathClosestPoint(p, m.x, m.y, px, py, tx, ty);
 
@@ -2736,21 +2758,23 @@ void PhysicsEngine::applyEffectZones()
             const auto& z = effectZones_[zi];
             if (!z.active) continue;
 
-            const float dx   = m.x - z.x;
-            const float dy   = m.y - z.y;
-            const float dist = std::sqrt(dx * dx + dy * dy);
+            const float dx    = m.x - z.x;
+            const float dy    = m.y - z.y;
+            const float dist2 = dx * dx + dy * dy;
 
-            if (dist >= z.radius) continue;
+            // Squared-distance reject: skip the sqrt for every out-of-radius
+            // Morphon (the common case once a zone is small relative to the field).
+            if (dist2 >= z.radius * z.radius) continue;
 
             float w;
             if (z.falloff == ZoneFalloff::Linear)
             {
-                w = 1.0f - dist / z.radius;
+                w = 1.0f - std::sqrt(dist2) / z.radius;
             }
-            else  // Gaussian: sigma = radius/3 so w ≈ 0.01 at the zone edge
-            {
+            else  // Gaussian: sigma = radius/3 so w ≈ 0.01 at the zone edge.
+            {     // Uses dist² directly — no sqrt needed.
                 const float sigma = z.radius * 0.333f;
-                w = std::exp(-(dist * dist) / (2.0f * sigma * sigma));
+                w = std::exp(-dist2 / (2.0f * sigma * sigma));
             }
 
             const float delta = w * z.depth;
@@ -2789,14 +2813,25 @@ void PhysicsEngine::writeSnapshot()
 {
     auto& snap = bridge_.getWriteBuffer();
 
-    snap.morphons          = morphons_;
     snap.tickIndex         = tickIndex_;
     snap.simulationTimeMs  = simulationTimeMs_;
 
-    // Count active Morphons
+    // Copy only the occupied prefix of the Morphon pool. Allocation is
+    // first-inactive-slot, so active Morphons pack into low indices: at 28 voices
+    // the high-water mark is ~28, turning a full 256-slot copy (each carrying a
+    // 64-float spectrum) into a ~28-slot copy plus cheap flag writes for the tail.
+    // Both snapshot readers (audio processBlock, UI) gate on `active` before
+    // touching any other field, so a stale tail slot marked inactive is never read.
+    int highWater      = -1;
     int activeMorphons = 0;
-    for (const auto& m : morphons_)
-        if (m.active) ++activeMorphons;
+    for (int i = 0; i < MAX_MORPHONS; ++i)
+        if (morphons_[i].active) { highWater = i; ++activeMorphons; }
+
+    for (int i = 0; i <= highWater; ++i)
+        snap.morphons[i] = morphons_[i];
+    for (int i = highWater + 1; i < MAX_MORPHONS; ++i)
+        snap.morphons[i].active = false;
+
     snap.activeMorphonCount = activeMorphons;
 
     // Copy field objects for UI rendering

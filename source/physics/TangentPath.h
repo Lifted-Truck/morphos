@@ -51,6 +51,17 @@ inline void tangentPathForce(const TangentPath& tp,
                              float mx, float my,
                              float& fx, float& fy) noexcept
 {
+    // Bounding pre-filter: a Morphon can only be within the band if it is within
+    // (radius + width) of the centre. Reject in squared distance to skip both the
+    // pathClosestPoint sqrt and the band-distance sqrt below for the far common
+    // case. Exact for the Circle geometry v1 ships; widen for open shapes.
+    {
+        const float cdx   = mx - tp.x;
+        const float cdy   = my - tp.y;
+        const float bound = tp.radius + tp.width;
+        if (cdx * cdx + cdy * cdy > bound * bound) return;
+    }
+
     // Reuse the rail closest-point helper via a temporary PathObject view —
     // both object types share the same circle geometry + CCW tangent.
     PathObject geo;

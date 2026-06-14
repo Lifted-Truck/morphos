@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "synthesis/SineTable.h"
 #include <cmath>
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -262,15 +263,17 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
     // ── 5. Additive synthesis ─────────────────────────────────────────────────
     // Per-voice: read timbre params (pre-blended by physics thread), accumulate
-    // additive partials into the output buffer.
+    // additive partials into the output buffer. Sines come from the shared
+    // kSineTable (std::sin at 64 partials was the dominant CPU cost), and a
+    // per-buffer skip list drops partials that are silent in both the previous
+    // and current spectral shape.
     //
     // Real-time safety: no heap allocation. Stack arrays (NUM_PARTIALS floats) are
-    // fixed-size. std::pow is called once per voice per buffer (not per sample).
+    // fixed-size. Transcendentals run once per voice per buffer (not per sample).
     {
         const int   numSamples    = buffer.getNumSamples();
         const int   numChannels   = buffer.getNumChannels();
         const float invSampleRate = 1.0f / static_cast<float>(sampleRate_);
-        const float twoPi         = juce::MathConstants<float>::twoPi;
 
         // Per-voice gain calibration. Raised from 0.12 → 0.25 (~+6 dB) because the
         // instrument read as too quiet; master + per-component ranges now also reach
@@ -333,31 +336,63 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
                 ? std::pow(2.0f, m.pitchZoneSemitones / 12.0f)
                 : 1.0f;
 
+            // Equal-power additive gain (sqrt of weight share), computed up front
+            // so a granular-dominant voice (additiveWeight ≈ 0) skips the whole
+            // additive render — its partials would only be multiplied to silence.
+            // addGain is a per-buffer constant (never lerped), so gating it here
+            // introduces no step that didn't already exist.
+            const float addGain        = std::sqrt(juce::jlimit(0.0f, 1.0f, m.additiveWeight));
+            const bool  renderAdditive = addGain > 1.0e-3f;   // ≤ −60 dB → inaudible
+
             // ── Precompute per-partial frequency and normalised shape (once per buffer)
-            // std::pow is called 20× per voice here, not 20× per sample.
+            // Brightness tilt k^tiltExp is computed as exp2(tiltExp · log2 k)
+            // from the shared table — same math as std::pow, much cheaper.
+            // Partials at or above Nyquist are zeroed: they contribute only
+            // aliasing, and a zero amp lets the skip list drop them below.
+            const float nyquist = 0.5f * static_cast<float>(sampleRate_);
             float partialFreqs[NUM_PARTIALS];
             float partialAmps [NUM_PARTIALS];
-            float ampSum = 0.0f;
+            int   activePartials[NUM_PARTIALS];
+            int   numActive = 0;
 
-            for (int k = 1; k <= NUM_PARTIALS; ++k)
+            if (renderAdditive)
             {
-                // Inharmonic partial: f_k = f0 * pitchMult * k * (1 + k * stretch)
-                partialFreqs[k - 1] = m.fundamentalHz
-                                      * pitchMult
-                                      * static_cast<float>(k)
-                                      * (1.0f + static_cast<float>(k) * stretchCoeff);
+                float ampSum = 0.0f;
+                for (int k = 1; k <= NUM_PARTIALS; ++k)
+                {
+                    // Inharmonic partial: f_k = f0 * pitchMult * k * (1 + k * stretch)
+                    const float fk = m.fundamentalHz
+                                     * pitchMult
+                                     * static_cast<float>(k)
+                                     * (1.0f + static_cast<float>(k) * stretchCoeff);
+                    partialFreqs[k - 1] = fk;
 
-                // Morph-Surface spectrum × brightness tilt (k^tiltExp).
-                const float pa = m.spectrum[k - 1]
-                                 * std::pow(static_cast<float>(k), tiltExp);
-                partialAmps[k - 1] = pa;
-                ampSum += pa;
+                    // Morph-Surface spectrum × brightness tilt (k^tiltExp).
+                    const float pa = (fk < nyquist)
+                        ? m.spectrum[k - 1] * std::exp2(tiltExp * kSineTable.log2k[k - 1])
+                        : 0.0f;
+                    partialAmps[k - 1] = pa;
+                    ampSum += pa;
+                }
+
+                // Normalise spectral shape to unit sum; amplitude applied per-sample below.
+                const float normFactor = (ampSum > 0.0f) ? 1.0f / ampSum : 0.0f;
+                for (int k = 0; k < NUM_PARTIALS; ++k)
+                    partialAmps[k] *= normFactor;
+
+                // ── Skip list: partials silent in BOTH the previous and current shape
+                // contribute nothing this buffer. Sparse spectra (Sine, Triangle,
+                // Organ) leave most of the 64 slots near zero, so this is a large
+                // win exactly where the full sum is wasted. A fading-out partial
+                // stays listed until its prev amp also drops below the floor. A
+                // skipped partial's phase freezes — safe, because re-entry ramps
+                // its amp from ~0 via the per-sample shape lerp, masking any phase
+                // discontinuity.
+                constexpr float AMP_FLOOR = 1.0e-4f;   // ≈ −80 dB of the unit-sum shape
+                for (int k = 0; k < NUM_PARTIALS; ++k)
+                    if (partialAmps[k] > AMP_FLOOR || voice.prevPartialAmps[k] > AMP_FLOOR)
+                        activePartials[numActive++] = k;
             }
-
-            // Normalise spectral shape to unit sum; amplitude applied per-sample below.
-            const float normFactor = (ampSum > 0.0f) ? 1.0f / ampSum : 0.0f;
-            for (int k = 0; k < NUM_PARTIALS; ++k)
-                partialAmps[k] *= normFactor;
 
             // ── Sample loop: advance phasors, accumulate into all output channels ─
             // Cache write pointers and pan coefficients outside the sample loop.
@@ -425,8 +460,12 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
             // the (now peak-normalised) grain output to parity with additive at
             // default Grain Level. Tunable by ear alongside the global trim.
             constexpr float GRAIN_MAKEUP = 2.0f;
-            const float addGain   = std::sqrt(juce::jlimit(0.0f, 1.0f, m.additiveWeight));
             const float grainGain = std::sqrt(granW) * globalGrainLevel * GRAIN_MAKEUP;
+
+            // Neither engine audible → skip the sample loop entirely. Amp
+            // bookkeeping above already ran; phasor/grain state simply freezes.
+            if (!renderAdditive && grainSrc == nullptr)
+                continue;
 
             for (int s = 0; s < numSamples; ++s)
             {
@@ -441,13 +480,14 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
                 float additive = 0.0f;
 
-                for (int k = 0; k < NUM_PARTIALS; ++k)
+                for (int j = 0; j < numActive; ++j)
                 {
+                    const int k = activePartials[j];
                     voice.phases[k] += partialFreqs[k] * invSampleRate;
                     if (voice.phases[k] >= 1.0f) voice.phases[k] -= 1.0f;
                     const float pa = voice.prevPartialAmps[k]
                                    + (partialAmps[k] - voice.prevPartialAmps[k]) * tFrac;
-                    additive += pa * std::sin(voice.phases[k] * twoPi);
+                    additive += pa * kSineTable(voice.phases[k]);
                 }
 
                 // Granular render (read-head fixed for this buffer; geometry-driven).
@@ -474,8 +514,12 @@ void MorphosProcessor::processBlock(juce::AudioBuffer<float>& buffer,
 
             // Store spectral shape for next buffer — enables smooth lerp on the
             // next call even if timbreX/Y change significantly (e.g. boundary wrap).
-            for (int k = 0; k < NUM_PARTIALS; ++k)
-                voice.prevPartialAmps[k] = partialAmps[k];
+            // While additive is skipped the stored shape goes stale; that's fine —
+            // re-entry lerps from it across one buffer at a gain ramping from
+            // ≤ −60 dB, the same masking the skip list already relies on.
+            if (renderAdditive)
+                for (int k = 0; k < NUM_PARTIALS; ++k)
+                    voice.prevPartialAmps[k] = partialAmps[k];
         }
     }
 
