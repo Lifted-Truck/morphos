@@ -743,6 +743,7 @@ void MorphosProcessor::getStateInformation(juce::MemoryBlock& destData)
         node.setProperty("dstIndex", c.dstIndex,      nullptr);
         node.setProperty("depth",    c.depth,         nullptr);
         node.setProperty("base",     c.base,          nullptr);
+        node.setProperty("bipolar",  c.bipolar,       nullptr);
         manifoldData.appendChild(node, nullptr);
     }
 
@@ -949,6 +950,7 @@ void MorphosProcessor::setStateInformation(const void* data, int sizeInBytes)
             c.dstIndex = (int)child.getProperty("dstIndex", 0);
             c.depth    = (float)child.getProperty("depth",   0.0f);
             c.base     = (float)child.getProperty("base",    0.0f);
+            c.bipolar  = (bool) child.getProperty("bipolar", true);  // legacy patches = bipolar
             c.active   = true;
         }
     }

@@ -2029,6 +2029,7 @@ void MorphosEditor::installPanelViewport()
         panelContentMod_.addAndMakeVisible(modDstCombos_[i]);
         panelContentMod_.addAndMakeVisible(modDepthSliders_[i]);
         panelContentMod_.addAndMakeVisible(modDepthLabels_[i]);
+        panelContentMod_.addAndMakeVisible(modPolarityBtns_[i]);
         panelContentMod_.addAndMakeVisible(modRemoveBtns_[i]);
     }
 }
@@ -2107,6 +2108,14 @@ void MorphosEditor::setupModMatrix()
         dep.setRange(-1.0, 1.0, 0.0);
         dep.setNumDecimalPlacesToDisplay(2);
 
+        auto& pol = modPolarityBtns_[slot];
+        pol.setButtonText("BI");
+        pol.setColour(juce::TextButton::textColourOffId, juce::Colour(0xFFB3B0A6));
+        pol.setColour(juce::TextButton::textColourOnId,  juce::Colour(0xFFEDE9DA));
+        pol.setColour(juce::TextButton::buttonColourId,  juce::Colour(0xFF252522));
+        pol.setColour(juce::TextButton::buttonOnColourId,juce::Colour(0xFF3A3A35));
+        pol.setClickingTogglesState(false);   // state mirrors the snapshot, not the click
+
         rem.setButtonText(juce::String::fromUTF8("\xc3\x97"));
         rem.setColour(juce::TextButton::textColourOffId, juce::Colour(0xFFE24B4A));
         rem.setColour(juce::TextButton::buttonColourId,  juce::Colour(0xFF252522));
@@ -2127,6 +2136,16 @@ void MorphosEditor::setupModMatrix()
             if (ignoreSliderCallbacks_) return;
             sendEdit(ManifoldEdit::Type::SetModConnectionDepth, slot,
                      (float)modDepthSliders_[slot].getValue());
+        };
+        pol.onClick = [this, slot] {
+            // Flip relative to the current displayed state and update the button
+            // optimistically (updateModTab only runs on tab-switch / count-change,
+            // so we can't wait for the snapshot round-trip to refresh the label).
+            const bool newBipolar = !modPolarityBtns_[slot].getToggleState();
+            modPolarityBtns_[slot].setToggleState(newBipolar, juce::dontSendNotification);
+            modPolarityBtns_[slot].setButtonText(newBipolar ? "BI" : "UNI");
+            sendEdit(ManifoldEdit::Type::SetModConnectionPolarity, slot,
+                     newBipolar ? 1.0f : 0.0f);
         };
         rem.onClick = [this, slot] {
             sendEdit(ManifoldEdit::Type::RemoveModConnection, slot, 0.0f);
@@ -2702,6 +2721,7 @@ int MorphosEditor::layoutModTabContent(int contentW)
     constexpr int REMOVE_W   = 22;
     constexpr int HEADER_H   = 22;
     constexpr int BTN_ROW_H  = 22;
+    constexpr int POL_W      = 38;   // BI/UNI toggle on the depth row
 
     const auto& state = processor_.getPhysicsStateForUI();
 
@@ -2717,26 +2737,29 @@ int MorphosEditor::layoutModTabContent(int contentW)
         auto& dst = modDstCombos_[slot];
         auto& dep = modDepthSliders_[slot];
         auto& lbl = modDepthLabels_[slot];
+        auto& pol = modPolarityBtns_[slot];
         auto& rem = modRemoveBtns_[slot];
 
         src.setVisible(active);
         dst.setVisible(active);
         dep.setVisible(active);
         lbl.setVisible(active);
+        pol.setVisible(active);
         rem.setVisible(active);
         if (!active) continue;
 
         // Row layout (~70 px tall):
         //   [Src ComboBox             ] [×]
         //   [Dst ComboBox                  ]
-        //   [Depth label] [Depth slider     ]
+        //   [Depth label] [Depth slider ] [BI/UNI]
         src.setBounds(0, y, contentW - REMOVE_W - 2, COMBO_H);
         rem.setBounds(contentW - REMOVE_W, y, REMOVE_W, COMBO_H);
         y += COMBO_H + 2;
         dst.setBounds(0, y, contentW, COMBO_H);
         y += COMBO_H + 2;
         lbl.setBounds(0, y, 36, SLIDER_H);
-        dep.setBounds(36, y, contentW - 36, SLIDER_H);
+        dep.setBounds(36, y, contentW - 36 - POL_W - 4, SLIDER_H);
+        pol.setBounds(contentW - POL_W, y, POL_W, SLIDER_H);
         y += SLIDER_H + ROW_GAP;
     }
 
@@ -2764,6 +2787,9 @@ void MorphosEditor::updateModTab()
             modDstCombos_[slot].setSelectedId(dstId, juce::dontSendNotification);
         if (modDepthSliders_[slot].getValue() != (double)c.depth)
             modDepthSliders_[slot].setValue(c.depth, juce::dontSendNotification);
+        if (modPolarityBtns_[slot].getToggleState() != c.bipolar)
+            modPolarityBtns_[slot].setToggleState(c.bipolar, juce::dontSendNotification);
+        modPolarityBtns_[slot].setButtonText(c.bipolar ? "BI" : "UNI");
     }
     ignoreSliderCallbacks_ = false;
 }

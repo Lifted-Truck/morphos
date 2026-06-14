@@ -123,6 +123,8 @@ struct ModConnection
     int           dstIndex = 0;
     float         depth    = 0.0f;   // [-1, +1] — see perDestSwing for per-dest amplitude
     float         base     = 0.0f;   // Captured at creation; user-edits update this
+    bool          bipolar  = true;   // true: src centres on 0.5 (±swing); false: unipolar,
+                                     //   src=0 sits at base and depth sign sets direction
     bool          active   = false;
 };
 

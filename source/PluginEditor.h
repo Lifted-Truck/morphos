@@ -249,6 +249,7 @@ private:
     std::array<juce::ComboBox,   MAX_MOD_CONNECTIONS> modDstCombos_;
     std::array<juce::Slider,     MAX_MOD_CONNECTIONS> modDepthSliders_;
     std::array<juce::Label,      MAX_MOD_CONNECTIONS> modDepthLabels_;
+    std::array<juce::TextButton, MAX_MOD_CONNECTIONS> modPolarityBtns_;   // "BI" / "UNI" toggle
     std::array<juce::TextButton, MAX_MOD_CONNECTIONS> modRemoveBtns_;
     juce::Label      lblModHeader_;
     juce::TextButton btnModAdd_       { "+ Add Mod" };

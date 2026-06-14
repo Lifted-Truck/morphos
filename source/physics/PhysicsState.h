@@ -464,6 +464,7 @@ struct ManifoldEdit
         SetModConnectionBase,     // x = base — issued by sliders when their dest is under modulation,
                                   //   so the user-facing edit updates the connection's pivot value
                                   //   instead of being overwritten by the mod write next tick
+        SetModConnectionPolarity, // x = bipolar (>= 0.5f = bipolar, else unipolar)
 
         // ── Path object spawn / remove / edits ────────────────────────────────
         AddPathObject,            // Spawn a new PathObject at (x,y) with defaults

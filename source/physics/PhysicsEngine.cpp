@@ -1014,6 +1014,7 @@ void PhysicsEngine::drainEditCommands()
                     c.dstIndex = 0;
                     c.depth    = 0.0f;
                     c.base     = 0.0f;
+                    c.bipolar  = true;
                     c.active   = true;
                     break;
                 }
@@ -1229,6 +1230,11 @@ void PhysicsEngine::drainEditCommands()
                 case ManifoldEdit::Type::SetModConnectionBase:
                     if (idx >= 0 && idx < MAX_MOD_CONNECTIONS)
                         modConnections_[idx].base = e.x;
+                    break;
+
+                case ManifoldEdit::Type::SetModConnectionPolarity:
+                    if (idx >= 0 && idx < MAX_MOD_CONNECTIONS)
+                        modConnections_[idx].bipolar = e.x >= 0.5f;
                     break;
 
                 // ── Path object spawn / remove / edits ────────────────────────
@@ -2158,10 +2164,15 @@ void PhysicsEngine::evaluateModMatrix()
         if (!c.active) continue;
         if (c.srcType == ModSourceType::None || c.dstType == ModDestType::None) continue;
 
-        const float src    = readModSource(c.srcType, c.srcIndex);
-        // Bipolar around 0.5, scaled to the destination's musically meaningful
-        // full-swing range so depth = ±1 = full sweep regardless of dest units.
-        const float offset = (src - 0.5f) * 2.0f * c.depth * perDestSwing(c.dstType);
+        const float src   = readModSource(c.srcType, c.srcIndex);
+        const float swing = c.depth * perDestSwing(c.dstType);
+        // Bipolar: src centres on 0.5, so a neutral source sits at base and the
+        //   dest sweeps ±swing. Depth = ±1 = full sweep regardless of dest units.
+        // Unipolar: src = 0 sits at base and rises to +swing at src = 1; the depth
+        //   sign chooses direction. Useful for sources that rest at 0 (envelopes,
+        //   velocity) where bipolar would offset the rest state by −swing.
+        const float offset = c.bipolar ? (src - 0.5f) * 2.0f * swing
+                                       :  src * swing;
         writeModDest(c.dstType, c.dstIndex, c.base + offset);
     }
 }
